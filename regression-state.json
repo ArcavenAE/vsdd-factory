@@ -1,1 +1,1 @@
-{"status":"pass","timestamp":"2026-09-07T03:41:11Z","command":"cd /Users/zious/Documents/GITHUB/vsdd-factory/.worktrees/S-25.02-cap-trigger\ncargo test -p factory-dispatcher --lib shard_manager::tests::test_BC_1_18_005_vector_write_50000_bytes_over_cap_triggers -- --exact --nocapture 2>&1 | tail -30"}
+{"status":"pass","timestamp":"2026-09-07T19:36:38Z","command":"cd /Users/zious/Documents/GITHUB/vsdd-factory/.worktrees/S-25.02-cap-trigger && cargo test -p factory-dispatcher --lib shard_manager 2>&1 | tail -100"}

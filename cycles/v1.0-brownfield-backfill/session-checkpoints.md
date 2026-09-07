@@ -6972,3 +6972,56 @@ BC-4.17.001 v1.29 active. BC-6.28.001 v1.3 active. BC-5.45.001 v1.3 active. BC-1
 ### §8. BC-5.39.001 streak
 
 **Cycle-level streak: 3/3 — CONVERGED, UNCHANGED this burst** (no cycle-level adversary pass ran). **S-25.02's OWN F2 cascade CONVERGED at 3-CONSECUTIVE-CLEAN (P10/P11/P12), D-1167 — CLOSED**, a separate local-equivalent track (same convention as S-17.05/S-25.01/S-25.04 LOCAL streaks). **Cluster-1's OWN LOCAL BC-5.39.001 cascade CONVERGED at 3-CONSECUTIVE-CLEAN (P10/P11/P12), D-1172 — CLOSED**, also a separate LOCAL track. Next adversary activity: cluster-2's (roll, BC-1.18.006) own fresh LOCAL cascade once its TDD delivery starts — no cycle-level pass pending.
+
+## Session Resume Checkpoint (2026-09-06 — SESSION-WRAP-PAUSE-2026-09-06; develop 54fa985f (PR #817 merged); main 51023185; merged_count 118; v1.0.0-rc.25 SHIPPED; PIPELINE PAUSED)
+
+> **SELF-SUFFICIENT RESUME CONTEXT.** Brownfield cycle `v1.0-brownfield-backfill`. Human `/vsdd-factory:wrap` Step-4 checkpoint-write; `pipeline:` flips **in_progress→PAUSED** this burst, resting at S-25.02 Phase F4 cluster-1 (cap+trigger, BC-1.18.005) LOCAL 3-CLEAN CONVERGED (D-1172, passes 10/11/12) with **PR #818 OPEN mid-review** on `feature/S-25.02-cap-trigger` @ `d9eeb9bc`. The pr-manager sub-agent (task `a42d0ac4`) was HALTED mid-PR-lifecycle by the wrap — it completed push + PR-creation + dispatched the AI reviews (pr-reviewer fresh-eyes + code-reviewer cognitive-diversity) but had NOT yet collected/triaged review findings or merged; those two review sub-agents were abandoned mid-review. No new BC/VP/STORY/ARCH content this burst; no adversary pass ran.
+> Prior checkpoint (S2502-CLUSTER1-CAP-TRIGGER-LOCAL-3CLEAN-CONVERGED) archived verbatim to
+> `cycles/v1.0-brownfield-backfill/session-checkpoints.md`.
+
+### §1. Position (a)
+
+**S-25.02 Feature-Mode Phase F4 (delta-implementation), incremental-by-BC-cluster (D-1170).** Cluster 1 (cap+trigger, BC-1.18.005) LOCAL adversary 3-CLEAN CONVERGED (D-1172). **PR #818 OPEN.** NEXT = finish PR #818 → post-merge burst → cluster-2 (roll, BC-1.18.006). Remaining clusters: 2 roll (BC-1.18.006), 3 mech-A backfill (BC-1.18.007+008), 4 B1 rotation (BC-1.18.009), 5 B2 sharding (BC-1.18.010+011), 6 migrations (BC-1.18.012), 7 Cohort-B flip (BC-7.08.001).
+
+### §2. Convergence (b)
+
+Cluster-1 LOCAL BC-5.39.001 = **3/3 CONVERGED** (passes 10/11/12 clean; 12-pass cascade total). Cycle-level BC-5.39.001 = **3/3 CONVERGED** (separate track, unchanged). No trajectory-tail drift — unchanged `→0→1→1→1` LENGTH=4.
+
+### §3. In-flight (c)
+
+**PR #818 OPEN** (https://github.com/drbothen/vsdd-factory/pull/818) on `feature/S-25.02-cap-trigger` @ `d9eeb9bc` (pushed, worktree clean), title "feat(S-25.02): cluster 1 — cap formula + native shard-cap trigger (BC-1.18.005)", mergeStateStatus UNSTABLE (CI in progress). The pr-manager sub-agent (task `a42d0ac4`) was HALTED mid-PR-lifecycle by the wrap: it completed push + PR-creation + dispatched the AI reviews (pr-reviewer fresh-eyes + code-reviewer cognitive-diversity) but had NOT yet collected/triaged review findings or merged. Those two review sub-agents were abandoned mid-review. **ON RESUME: re-dispatch pr-manager to continue PR #818 from CI-verification + review-collection + triage + squash-merge to develop.** Demo evidence already committed at `docs/demo-evidence/S-25.02/cluster-1-cap-trigger/` (5 clips).
+
+### §4. Pending human decisions / blockers — OWED (d)
+
+This session + carried:
+1. **67.8 MB factory-artifacts telemetry log** `logs/dispatcher-internal-2026-09-06.jsonl` over GitHub's 50MB soft limit (hard-rejects at 100MB) — MAINTENANCE: gitignore/rotate/LFS before it blocks factory-artifacts pushes.
+2. **F6-owed VPs** for BC-1.18.005 EC-013/EC-014/EC-015/EC-016/EC-017/EC-018/EC-019 + PC9 (deferred to Phase F6 targeted-hardening).
+3. **BC-1.18.009/cluster-4 carry-forward:** `read_changelog_item_count` closing-fence heuristic robustness (Drift Item D-1172).
+4. **`replace_all` multiplicity gap** deferred to BC-1.18.006/cluster-2.
+5. **Branch protection on `develop`** BLOCKED on repo-admin.
+6. **All prior carried OWED items** (Dependabot backlog, ~871 stale input-hashes, decision-log backfill, O-P18-001, VP-INDEX PriorChainSplit drift [D-1170]) unchanged.
+
+**Full historical long-tail (unchanged, nothing dropped — see archived session-checkpoints.md history):** cargo-deny advisory disposition; VP-079/VP-028 POLICY-9 "ten events" propagation; PG-CI-1/2/3 + F-WG5-001 + PR-MANAGER-MERGE-OVER-RED; ADR-045 v1.3 ratification burst (Wave-7 HELD); E-23 re-scope to frozen-provenance model (STALE); LOW-7 DEFERRED AC-006 events-sink wording; `[process-gap]` registry-comment-lint (E-12 follow-up); spec-hygiene sweep OWED (E-10 follow-up); the 4 D-1164 documentary follow-ups; redundant `git stash@{0}`.
+
+### §5. WIP branches (e)
+
+`feature/S-25.02-cap-trigger` @ `d9eeb9bc` (**PUSHED, PR #818 open**) — the active cluster-1 delivery. Inert carried-forward (unchanged, not re-verified): `fix/d999-sentinel-code-migration` @ `bf642fd9`, `feature/S-21.04` @ `323f440f`.
+
+### §6. Resume command (f)
+
+`/vsdd-factory:rehydrate-wave` then `/vsdd-factory:next-step`.
+
+BC-4.17.001 v1.29 active. BC-6.28.001 v1.3 active. BC-5.45.001 v1.3 active. BC-10.13.001 v1.3 active. BC-4.18.001 v1.2 active. BC-1.18.001 v1.7 active. BC-1.18.002 v1.8 active. BC-1.18.003 v1.8 active. BC-1.18.004 v1.4 active. BC-3.08.001 v1.34 active. BC-4.16.002 v1.2 active. BC-5.39.006 v1.9 active. BC-1.18.005 v1.12/006 v1.3/007 v1.2/008 v1.1/009 v1.5/010 v1.2/011 v1.0/012 v1.1 (draft; SS-01) + BC-7.08.001 v1.1 (draft; SS-07) — 9 BCs, all anchored in S-25.02's frontmatter (F3 population). BC-INDEX v5.64 (2,006 BCs, UNCHANGED). VP-INDEX v3.07 (141 VPs, UNCHANGED). STORY-INDEX v4.445 (176 stories; 25 epics; S-25.02 v2.6, status ready, cluster-1 LOCAL-CONVERGED, PR #818 open; S-25.01 v1.22 merged; S-25.04 v2.0 merged; S-15.03 v1.8 merged; UNCHANGED). ARCH-INDEX v4.22 (48 ADRs; UNCHANGED).
+
+### §7. HEADs
+
+- `develop`: **`54fa985f`** (PR #817 merged). merged_count **118** (UNCHANGED this burst).
+- `main`: **`51023185`** (origin/main; v1.0.0-rc.25 bundle+retag commit 2026-09-04; immediate parent `101ebb64`, the release PR #808 merge commit). Tag `v1.0.0-rc.25` → `101ebb64`.
+- `factory-artifacts`: **this burst's commit** — per TD-VSDD-053 SHA-patch anti-pattern retirement, this burst does not self-cite its own resulting commit SHA — run `git -C .factory log -1` for the live HEAD. Pre-burst HEAD: `56f6a2ba` (S2502-CLUSTER1-CAP-TRIGGER-LOCAL-3CLEAN-CONVERGED commit).
+- `feature/S-25.02-cap-trigger`: **PUSHED** @ `d9eeb9bc` — PR #818 open, mid-review (CI in progress).
+- `fix/d999-sentinel-code-migration`: clean+inert @ `bf642fd9` (ADR-041 sentinel).
+- `feature/S-21.04-story-worktree-write-path-discipline`: clean+inert @ `323f440f` (pass-31 pending, no PR).
+
+### §8. BC-5.39.001 streak
+
+**Cycle-level streak: 3/3 — CONVERGED, UNCHANGED this burst** (session pause; no adversary pass ran). Cluster-1's OWN LOCAL BC-5.39.001 cascade stays **3/3 CONVERGED** (D-1172 — CLOSED), a separate LOCAL track. Next adversary activity: cluster-2's (roll, BC-1.18.006) own fresh LOCAL cascade once its TDD delivery starts, after PR #818 merges — no cycle-level pass pending.

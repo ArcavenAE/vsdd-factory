@@ -1,10 +1,10 @@
 ---
 document_type: behavioral-contract
 level: L3
-version: "1.12"
-status: draft
+version: "1.14"
+status: active
 producer: product-owner
-timestamp: 2026-09-06T00:00:00Z
+timestamp: 2026-09-07T00:00:00Z
 phase: F2
 inputs:
   - .factory/specs/architecture/decisions/ADR-051-layer-2-two-mechanism-size-triggered-shard-rotation-append-logs-and-bc-index-sharding.md
@@ -14,13 +14,13 @@ inputs:
   - .factory/cycles/v1.0-brownfield-backfill/S-25.02-f2-architecture-delta.md
   - .factory/specs/domain-spec/capabilities.md
   - .factory/specs/verification-properties/VP-INDEX.md
-input-hash: "af83d3c"
+input-hash: "47a8e62"
 traces_to: .factory/specs/prd.md
 origin: greenfield
 extracted_from: null
 subsystem: "SS-01"
 capability: "CAP-043"
-lifecycle_status: draft
+lifecycle_status: active
 introduced: v1.0-brownfield-backfill
 modified: []
 deprecated: null
@@ -122,7 +122,8 @@ F-S2502-F2-005).
      P6-001 itself acknowledges: `find_matching_entry` needs every entry's `artifact_stem`, which
      requires a successful structural parse of the whole file). A NEW function, `validate_entry
      (&ShardEntry) -> Result<(), ShardConfigError>`, carries the SEMANTIC checks previously inlined
-     in `load()`'s per-entry loop (EC-009's `shape` presence, EC-015/EC-017's `worst_case_fuel_per_
+     in `load()`'s per-entry loop (EC-009's `shape` presence, EC-022's `artifact_path`
+     non-emptiness, EC-015/EC-017's `worst_case_fuel_per_
      byte` divisor-door guards, Postcondition 9/EC-013's cap-vs-formula comparison, EC-016's `N`
      presence, EC-011/EC-012's `low_water_mark` range/advisory). `shard_cap_precheck`/
      `shard_cap_gate_check` MUST call `find_matching_entry` FIRST; if it returns `None`, this
@@ -150,8 +151,36 @@ F-S2502-F2-005).
      grammar, not a validation-eagerness design choice this ruling controls, and is explicitly OUT
      OF SCOPE of the (A)-vs-(B) adjudication above — it is the one case where (A)'s blast radius is
      unavoidable rather than a choice. See EC-019.
-   See EC-018 (new, the resolved blast-radius scenario) and EC-019 (new, the residual structural-
-   parse-failure exception) below, and the matching Canonical Test Vectors.
+
+   **Empty-`artifact_path` structural defect guard (NEW, PR #818 cycle-4 fresh-context PR reviewer
+   finding F-1, product-owner adjudication, v1.14 backfill of an already-shipped code ruling).**
+   `path_falls_under_or_equals` (`crates/factory-dispatcher/src/shard_manager.rs`) matches a
+   tool-call target path against a `[[shard]]` entry's `artifact_path` by comparing the two paths'
+   NORMALIZED component suffixes (after filtering `Component::CurDir` components out of both
+   sides). When an entry's `artifact_path` is EMPTY, or NORMALIZES TO EMPTY after that
+   `Component::CurDir` filtering (`""`, `"."`, `"./"`), the component-suffix comparison degenerates
+   to `[] == []`, which is trivially true against ANY target path's component suffix — the entry
+   VACUOUSLY MATCHES every `Edit`/`Write`/`MultiEdit` dispatch in the repository, silently
+   mis-applying that entry's shard-cap gate (and, for a `"frontmatter-changelog-array"`-shaped
+   entry, its item-count gate) to artifacts the entry was never intended to govern. This is a
+   FAIL-OPEN-BY-OVER-MATCH structural defect in the MATCH ITSELF, distinct in kind from every other
+   `validate_entry` check (each of which rejects a malformed entry's OWN semantic fields — `shape`,
+   `low_water_mark`, `N`, the cap-formula inputs); it must therefore be caught as a structural
+   precondition of the match, BEFORE any cap-formula arithmetic (Postcondition 9's cap-vs-formula
+   comparison and its EC-015/EC-017 divisor-door guards) is even attempted for that entry.
+   `validate_entry` MUST check, for the entry under validation, that `artifact_path`'s component
+   sequence — after filtering `Component::CurDir` — is non-empty. If it IS empty, `validate_entry`
+   MUST return `Err(ShardConfigError::EmptyArtifactPath { artifact_stem, artifact_path })` (a new,
+   per-field-diagnostic variant mirroring `MissingShape`/`InvalidLowWaterMark`/
+   `CapExceedsFormulaCeiling`/`FormulaCeilingSaturated`/`MissingN`'s existing convention), which
+   `shard_cap_precheck` surfaces as `HookResult::Error` — NEVER a silent vacuous match, and NEVER a
+   silent skip of the entry. Consistent with this Postcondition's own v1.12 MATCH-FIRST re-scoping,
+   this check runs at ENTRY-MATCH time (immediately after `find_matching_entry` resolves the entry
+   that would otherwise vacuously match every path) and validates only the matched entry — it is
+   never run eagerly across the whole config. See EC-022 and its Canonical Test Vector.
+   See EC-018 (new, the resolved blast-radius scenario), EC-019 (new, the residual structural-
+   parse-failure exception), and EC-022 (new, the empty-`artifact_path` structural defect guard)
+   below, and the matching Canonical Test Vectors.
 
 2. **`stat()`-only size read — no file content enters WASM memory or a fuel budget.** For a
    matched path, the check reads ONLY the current shard's byte size via filesystem metadata
@@ -354,9 +383,107 @@ F-S2502-F2-005).
      hard block on a legitimate create is a user-facing wrong behavior, not an acceptable asymmetry.
      Combined with the trigger condition below, `current_item_count + 1 = 0 + 1 = 1 > N` is false
      for any config `N >= 1`, so the create always returns `Continue`. Any OTHER `io::Error` kind
-     encountered reading an EXISTING file (a genuinely malformed/unreadable frontmatter fence, a
-     permissions failure, etc.) is UNCHANGED and still propagates as `HookResult::Error`
-     (fail-loud) — ONLY `NotFound` is special-cased. See EC-014.
+     encountered reading an EXISTING file (a permissions failure, etc.) is UNCHANGED and still
+     propagates as `HookResult::Error` (fail-loud) — ONLY `NotFound` is special-cased. **Scope
+     note (added v1.13, cross-reference only — no behavior change to THIS bullet):** a
+     present-but-fenceless file (no `---`/`---` delimiters found at all) is ALSO treated
+     permissively as `Ok(0)`, per the "present-but-fenceless" ruling below (PR #818 fix-burst
+     finding B1) — that case is a STRUCTURAL absence of a frontmatter block to parse, not an
+     `io::Error` this bullet's "any OTHER io::Error kind... is UNCHANGED" sentence was ever meant to
+     cover. A file that HAS a well-formed fence pair but whose YAML content inside fails to parse
+     remains fail-loud under the malformed-YAML ruling further below (PR #818 fix-burst finding
+     M-1, EC-020) — that IS the "genuinely malformed/unreadable frontmatter" `io::Error` case this
+     bullet's fail-loud sentence describes. See EC-014.
+
+   - **Present-but-fenceless case — PERMISSIVE, mirroring this bullet's own missing-file precedent
+     (NEW, PR #818 fix-burst finding B1, product-owner adjudication, v1.13 backfill of an
+     already-shipped code ruling).** When the `"frontmatter-changelog-array"`-shaped target
+     artifact EXISTS on disk but carries NO well-formed `---` frontmatter fence at all — no
+     line-anchored opening fence (`raw` does not start with `---\n` or `---\r\n`), OR an opening
+     fence is found but no line-anchored closing fence (a line consisting of exactly `---`,
+     optionally with a trailing `\r`) is ever found before end-of-file — `read_changelog_item_count`
+     MUST return `Ok(0)` rather than propagating an `io::Error`. This mirrors the missing-file
+     bullet's rationale exactly: a file with no delimited frontmatter block has no `changelog:`
+     sequence to undercount — `Ok(0)` is the CORRECT count, not an approximation of one, because
+     zero delimited items exist when no delimited block exists at all. Combined with the trigger
+     condition below, `current_item_count + 1 = 0 + 1 = 1 > N` is `false` for any config `N >= 1`,
+     so a present-but-fenceless target's edit is never hard-blocked. **This bullet backfills a
+     ruling the sanctioned implementation already shipped** (`read_changelog_item_count`'s two
+     `Ok(0)` early-returns, one for a missing opening fence and one for a missing closing fence) in
+     response to a fresh-context PR reviewer's cycle-1 finding that the pre-fix behavior propagated
+     a bare parse-adjacent `io::Error` for a legitimate present-but-fenceless file (e.g. a
+     newly-created artifact whose `content` payload had not yet been written with frontmatter, or a
+     match against an unrelated file that happens to lack frontmatter entirely) and hard-blocked it
+     exactly as EC-014 already forbids for the missing-file case. **Distinguish sharply from the
+     malformed-YAML case immediately below (M-1/EC-021):** this bullet applies ONLY when no fence
+     pair is found to parse in the first place; it does NOT apply when a fence pair IS found and the
+     content between the fences fails to parse — that case is fail-loud, never `Ok(0)`, per the next
+     bullet. See EC-020 and its Canonical Test Vector, and EC-021's Canonical Test Vector table for a
+     side-by-side contrast of the two cases.
+
+   - **Malformed-YAML case — FAIL-LOUD, with MANDATORY self-deadlock-escape guidance in the error
+     message (NEW, PR #818 fix-burst finding M-1, MAJOR, product-owner adjudication, v1.13).** When
+     the `"frontmatter-changelog-array"`-shaped target artifact EXISTS on disk AND carries a
+     well-formed `---`/`---` fence pair (i.e., neither the missing-file bullet above nor the
+     present-but-fenceless bullet above applies), but the YAML content BETWEEN the fences fails to
+     parse (`serde_norway::from_str` returns `Err`), `read_changelog_item_count` MUST continue to
+     map that failure to `io::ErrorKind::InvalidData` and propagate it as `Err`, which the gate
+     (`shard_cap_gate_check`'s item-count arm) MUST continue to surface as `HookResult::Error`
+     (fail-loud) — it MUST NEVER be mapped to `Ok(0)` the way `NotFound` (EC-014) or a genuinely
+     fenceless file (the bullet immediately above) are. **The question posed by a fresh-context PR
+     reviewer (M-1):** because `Edit`, `Write`, AND `MultiEdit` against the target artifact ALL
+     route through this same read of the CURRENT on-disk content before the gate decides whether to
+     allow the edit, a target file that has already acquired malformed YAML inside an otherwise
+     well-formed fence blocks every subsequent gated edit — INCLUDING the repair edit that would fix
+     the YAML — with no gated path out; the only escape under the pre-v1.13 spec text was an
+     ungated shell-level rewrite of the file, bypassing the gate entirely. Two readings were
+     weighed: **(A) FAIL-LOUD** — malformed YAML in a registered, fence-bearing artifact is itself a
+     real defect distinct from "no frontmatter to count," and silently coercing it to `Ok(0)` would
+     UNDERCOUNT the live `changelog:` sequence's true size (the corruption event does not shrink the
+     sequence, only the parser's ability to see it), defeating this BC's own
+     fuel-exhaustion-prevention purpose by suppressing the rotation trigger exactly when the
+     artifact's true state is least trustworthy; vs. **(B) PERMISSIVE** — extend the
+     present-but-fenceless `Ok(0)` posture to this case too, on the theory that any read-path
+     failure this gate cannot safely characterize should default to "let the write through" rather
+     than deadlock repair. **ADJUDICATED (A) FAIL-LOUD, over (B) PERMISSIVE:**
+     - The present-but-fenceless ruling and this case are NOT the same shape of problem. A
+       fenceless file has NO frontmatter block at all to fail to parse — there is no YAML content
+       whose loss `Ok(0)` could be hiding, so `Ok(0)` there is the CORRECT count, not an
+       approximation. THIS case's file HAS a fence pair with actual YAML content inside that failed
+       to parse — the `changelog:` sequence the artifact is registered to track may hold any number
+       of items, and `Ok(0)` would silently report zero when the truth is "unknown, possibly large."
+       Collapsing the two cases into one "any read-path failure is permissive" rule would erase this
+       distinction and reintroduce exactly the unbounded-growth-goes-undetected failure mode this
+       BC's cap-and-trigger mechanism exists to prevent (Postcondition 9's rationale makes the
+       identical point about a silently-inflated ceiling; this is its item-count-shape analogue for
+       a silently-deflated count).
+     - CLAUDE.md's production-grade default treats "surface-and-defer-via-error" as the correct
+       pattern and "silently return a default that hides partial-failure state" as the violation to
+       avoid (Standing Rule 3 §2's `Vec::new()` example is the direct analogue: a corrupted count
+       silently reported as `0` is the identical anti-pattern applied to a `u64` instead of a
+       `Vec`). Malformed YAML in a registered sharded artifact is a real defect an operator should
+       be told about, not one this gate should paper over.
+     - The self-deadlock is real, but it is a MESSAGING gap, not a reason to weaken the fail-loud
+       posture: the fix is to make the escape path DISCOVERABLE from the error itself, not to stop
+       erroring. **This is therefore a MANDATORY, load-bearing amendment to the error message
+       constructed by `read_changelog_item_count`'s YAML-parse-failure branch (the `map_err` that
+       builds the `io::ErrorKind::InvalidData` error from `serde_norway::from_str`'s `Err`):** from
+       v1.13 forward, that message MUST, in addition to the underlying parser error text it already
+       includes, state PLAINLY (a) that this specific frontmatter block failed YAML parsing (not
+       some other cause), and (b) that the gate producing this error only intercepts
+       `Edit`/`Write`/`MultiEdit` tool calls against this artifact — the operator can repair the
+       malformed frontmatter block directly (fixing the YAML syntax so it parses) using any means
+       OUTSIDE those three gated tool calls (e.g., a `Bash`-invoked editor, script, or heredoc
+       rewrite of the file), after which this SAME gate will parse successfully and every
+       subsequent `Edit`/`Write`/`MultiEdit` — including ones touching only content outside the
+       frontmatter block — proceeds normally again. This is NOT a sanctioned exception to
+       TD-FACTORY-HOOK-BYPASS-001 (that policy governs bypassing the WASM hook-plugin chain via
+       `--no-verify`-class flags; this native dispatcher check has no such flag and none is
+       introduced here) — it is pointing the operator at the one degree of freedom that already,
+       structurally, exists outside this native check's own gated tool surface. The message
+       requirement is normative, not advisory: an unchanged, generic `"{path}: frontmatter YAML
+       parse failed: {e}"`-only message is a NON-COMPLIANT implementation of this Postcondition from
+       v1.13 forward. See EC-021 and the matching Canonical Test Vector.
 
    - **Load-time presence requirement for `N` — scope CORRECTED to entry-match time (S-25.02 Phase
      F4 LOCAL adversary cluster-1 pass-6 finding F-C1-P6-001, LOW pending-intent, product-owner
@@ -564,7 +691,7 @@ F-S2502-F2-005).
    and fixed-size regardless of the target artifact, and is not a per-target-path filesystem read of
    the artifact itself. **Extended (v1.12, F-C1-P6-001):** the config-match check (`find_matching_
    entry`) MUST likewise occur before ANY entry's semantic VALIDATION (`validate_entry` — EC-009/
-   EC-011/EC-012/EC-013/EC-015/EC-016/EC-017) is attempted, and validation MUST run against the
+   EC-011/EC-012/EC-013/EC-015/EC-016/EC-017/EC-022) is attempted, and validation MUST run against the
    MATCHED entry only — never against sibling entries the current dispatch does not target. A
    dispatch whose target path does not match the malformed entry (whether it matches nothing, or
    matches a DIFFERENT well-formed entry) MUST NEVER observe `HookResult::Error` as a consequence
@@ -619,6 +746,9 @@ F-S2502-F2-005).
 | EC-017 (NEW, S-25.02 Phase F4 LOCAL adversary cluster-1 pass-5 finding F-C1-P5, MEDIUM/HIGH, product-owner adjudication) | A `[[shard]]` config entry declares a `worst_case_fuel_per_byte` that is finite and `> 0.0` (passes EC-015's guard) but is so small (e.g. `1e-300`) that the RAW division `practical_fuel_ceiling as f64 / worst_case_fuel_per_byte` is non-finite or `>= u64::MAX as f64` — i.e. the result saturates the subsequent `.floor() as u64` cast to (or beyond) `u64::MAX`, even though the divisor itself is legal under EC-015 | Fail-loud: `ShardRegistry::load()` returns `HookResult::Error` (new `ShardConfigError::FormulaCeilingSaturated` variant) — evaluated BEFORE the `CapExceedsFormulaCeiling` comparison (Postcondition 9); the entry is REJECTED, never silently accepted with a saturated (and therefore meaningless) computed ceiling |
 | EC-018 (NEW, S-25.02 Phase F4 LOCAL adversary cluster-1 pass-6 finding F-C1-P6-001, LOW pending-intent, product-owner adjudication) | A `[[shard]]` config entry for an artifact OTHER than the current dispatch's target is semantically malformed (fails any of EC-009/EC-011/EC-012/EC-013/EC-015/EC-016/EC-017's checks), and the target path does not match that malformed entry — it matches a DIFFERENT, well-formed entry, or matches no entry at all | `Continue` (unmatched target) or normal gate logic against the correctly-matched, well-formed entry (matched-but-different target) — the malformed sibling entry is NEVER validated (`validate_entry` is called only on the MATCHED entry, per-dispatch) and NEVER causes `HookResult::Error` for this dispatch (Postcondition 1's "Blast-radius scoping" ruling, Invariant 3 extension) |
 | EC-019 (NEW, S-25.02 Phase F4 LOCAL adversary cluster-1 pass-6 finding F-C1-P6-001, LOW pending-intent, product-owner adjudication) | The `[[shard]]` config FILE itself fails STRUCTURAL TOML deserialization — invalid TOML syntax, or any entry omits a non-`Option`-typed field required for `toml::from_str` to succeed (`artifact_stem`, `shard_cap_bytes`, or any of the four `cap_formula_inputs` fields) | Fail-loud: `HookResult::Error` for EVERY `Edit`/`Write`/`MultiEdit` dispatch while the config file exists, matched or not — `find_matching_entry` cannot run without a successfully deserialized registry. This is the ONE residual case where a config defect retains whole-file blast radius; it is inherent to TOML's grammar, not the eager-semantic-validation pattern EC-018 closes, and is NOT weakened by this BC's v1.12 ruling |
+| EC-020 (NEW, PR #818 fix-burst finding B1, product-owner adjudication, v1.13 backfill of an already-shipped code ruling) | A `"frontmatter-changelog-array"`-shaped target artifact EXISTS on disk but carries NO well-formed `---` frontmatter fence at all (no line-anchored opening fence, or an opening fence with no line-anchored closing fence found before end-of-file) | Permissive: `read_changelog_item_count` returns `Ok(0)` — mirroring EC-014's `NotFound`-is-zero precedent, because a file with no delimited frontmatter block genuinely has zero delimited items, not an undercounted unknown quantity. `current_item_count + 1 = 1 > N` is `false` for any `N >= 1`, so the target is never hard-blocked. Distinguish sharply from EC-021's malformed-YAML case below, which fails loud |
+| EC-021 (NEW, PR #818 fix-burst finding M-1, MAJOR, product-owner adjudication, v1.13) | A `"frontmatter-changelog-array"`-shaped target artifact EXISTS on disk with a well-formed `---`/`---` fence pair, but the YAML content between the fences fails to parse (`serde_norway::from_str` returns `Err`) | Fail-loud: `read_changelog_item_count` maps the parse failure to `io::ErrorKind::InvalidData` and propagates `Err`, which the gate surfaces as `HookResult::Error` — NEVER coerced to `Ok(0)` (distinct from EC-014's `NotFound` and EC-020's fenceless cases, neither of which involves actual unparsed YAML content whose count could be silently lost). The error message MUST name the YAML-parse cause specifically and MUST state that the gate only intercepts `Edit`/`Write`/`MultiEdit`, so the malformed block can be repaired via any other means (e.g., a `Bash`-invoked edit) to escape the resulting self-deadlock |
+| EC-022 (NEW, PR #818 cycle-4 fresh-context PR reviewer finding F-1, product-owner adjudication, v1.14 backfill of an already-shipped code ruling) | A `[[shard]]` config entry (of ANY `shape`) declares an `artifact_path` that is EMPTY, or normalizes to empty after `Component::CurDir` filtering (`""`, `"."`, `"./"`) | Fail-loud: `validate_entry` returns `Err(ShardConfigError::EmptyArtifactPath { artifact_stem, artifact_path })`, surfaced as `HookResult::Error` at entry-match time (Postcondition 1's v1.12 MATCH-FIRST scoping — only the MATCHED entry is checked, evaluated BEFORE any cap-formula arithmetic) — NEVER a silent vacuous `[] == []` component-suffix match that would otherwise cause the entry to mis-apply its shard-cap (and item-count, for a `"frontmatter-changelog-array"`-shaped entry) gate to every unrelated `Edit`/`Write`/`MultiEdit` dispatch in the repository |
 
 ## Canonical Test Vectors
 
@@ -649,6 +779,10 @@ F-S2502-F2-005).
 | **NEW (S-25.02 Phase F4 LOCAL adversary cluster-1 pass-6 finding F-C1-P6-001, product-owner adjudication).** `Edit` to `lessons.md` — matches the malformed `lessons` entry itself (omits `shape`) | `HookResult::Error` (EC-009) — UNCHANGED from pre-v1.12 behavior: the MATCHED entry is still validated and still fails loud, now at entry-match time via `validate_entry` rather than inside `load()`'s eager loop | error |
 | **NEW (S-25.02 Phase F4 LOCAL adversary cluster-1 pass-6 finding F-C1-P6-001, product-owner adjudication).** `Write` to `decision-log.md` — matches a DIFFERENT, well-formed entry (`shard_cap_bytes=49,152`, `content` length 5,000 bytes), while the SAME config's sibling `lessons` entry omits `shape` (malformed) | `projected_size = len(content) = 5,000 <= 49,152` → `Continue` — normal Postcondition 3 gate logic against `decision-log.md`'s own well-formed entry proceeds entirely unaffected by the `lessons` entry's malformation (EC-018) | edge-case |
 | **NEW (S-25.02 Phase F4 LOCAL adversary cluster-1 pass-6 finding F-C1-P6-001, product-owner adjudication, EC-019 residual-exception vector).** `Edit` to `src/foo.rs` (matches NO `[[shard]]` entry); the config FILE has invalid TOML syntax (or an entry omits `shard_cap_bytes`, a non-`Option` field) | `HookResult::Error` for this dispatch too — `find_matching_entry` cannot run without a successfully deserialized registry (EC-019). Distinguishes the residual, unavoidable whole-file structural-parse failure from EC-018's semantic-malformation scenario, which this ruling scopes to the matched entry only | error |
+| **NEW (PR #818 fix-burst finding B1, product-owner adjudication, v1.13).** `Edit` to a `"frontmatter-changelog-array"`-shaped target artifact that EXISTS on disk with NO `---` frontmatter fence at all (e.g. a plain-text file, or a file whose `content` has not yet had frontmatter added) | `read_changelog_item_count` returns `Ok(0)` (no opening fence found); `current_item_count + 1 = 1 <= N` for any `N >= 1` → `Continue` — the edit is NEVER hard-blocked (EC-020) | edge-case |
+| **NEW (PR #818 fix-burst finding B1, product-owner adjudication, v1.13).** `Edit` to a `"frontmatter-changelog-array"`-shaped target artifact with an opening `---` fence but NO line-anchored closing `---` fence before end-of-file | `read_changelog_item_count` returns `Ok(0)` (opening fence found, closing fence never found); `current_item_count + 1 = 1 <= N` for any `N >= 1` → `Continue` — the edit is NEVER hard-blocked (EC-020) | edge-case |
+| **NEW (PR #818 fix-burst finding M-1, product-owner adjudication, v1.13) — side-by-side contrast with the two EC-020 vectors immediately above.** `Edit` to a `"frontmatter-changelog-array"`-shaped target artifact with a well-formed `---`/`---` fence pair whose YAML content is malformed (e.g. unbalanced quotes, invalid indentation, a duplicate mapping key) | `read_changelog_item_count` returns `Err(io::Error { kind: InvalidData, .. })` — NEVER `Ok(0)`, unlike the fenceless case above; the gate returns `HookResult::Error` with a message that (a) names the YAML-parse failure specifically and (b) states the gate only intercepts `Edit`/`Write`/`MultiEdit`, directing the operator to repair the frontmatter via any other means to escape the resulting self-deadlock (EC-021) | error |
+| **NEW (PR #818 cycle-4 fresh-context PR reviewer finding F-1, product-owner adjudication, v1.14).** `[[shard]]` entry declares `artifact_path = ""` (or `"."`, or `"./"`) — every other field well-formed | `validate_entry` returns `Err(ShardConfigError::EmptyArtifactPath { artifact_stem, artifact_path })` at entry-match time — `HookResult::Error` for any dispatch whose target matches this entry. WITHOUT this check, `path_falls_under_or_equals`'s component-suffix comparison degenerates to `[] == []`, vacuously matching EVERY target path and silently mis-applying this entry's shard-cap (and item-count, for a `"frontmatter-changelog-array"`-shaped entry) gate to unrelated artifacts across the whole repository (EC-022) | error |
 
 ## Verification Properties
 
@@ -747,6 +881,65 @@ invoked AFTER `find_matching_entry`, per Postcondition 1's "Blast-radius scoping
 tests specified in the new Canonical Test Vectors above, plus a regression test asserting the
 existing EC-009/EC-011/EC-012/EC-013/EC-015/EC-016/EC-017 fail-loud outcomes are preserved for a
 MATCHED malformed entry post-restructuring).
+
+**Adjudication note (PR #818 fix-burst findings B1 + M-1, product-owner, v1.13):** new EC-020
+(present-but-fenceless permissive `Ok(0)`, backfilling an already-shipped code ruling) and EC-021
+(malformed-YAML fail-loud, with a MANDATORY error-message escape-hatch requirement) are NEW
+verification obligations not yet covered by VP-116, VP-117, or VP-140. Per this BC's own EC-013
+through EC-019 precedent (product-owner does not self-allocate a VP number for a
+load/read-path-validation extension), product-owner does NOT allocate a VP number here either.
+**Routed to architect/formal-verifier; VP allocation DEFERRED TO F6 (per the EC-013..EC-019
+precedent above):** extend VP-140's multi-facet unit-test row (or allocate a new VP) covering (a)
+EC-020's permissive `Ok(0)` outcome for both the missing-opening-fence and missing-closing-fence
+sub-cases, (b) EC-021's fail-loud outcome for malformed-but-fenced YAML (asserting `Ok(0)` is NEVER
+returned for this case, in contrast to EC-014's `NotFound` and EC-020's fenceless cases at the same
+call site), and (c) a message-content assertion that the resulting `HookResult::Error`'s message
+text names the YAML-parse cause AND states the gate's `Edit`/`Write`/`MultiEdit`-only scope as the
+self-deadlock escape guidance; propagate to VP-INDEX.md, verification-architecture.md, and
+verification-coverage-matrix.md per `vp_index_is_vp_catalog_source_of_truth` (POLICY 9).
+
+**Routing note (v1.13, PR #818 fix-burst finding M-1) — code change required (error-message
+enhancement, Reading (A) FAIL-LOUD adopted over Reading (B) PERMISSIVE):** unlike EC-020 (which
+backfills spec text for an already-shipped, already-compliant code ruling — no code change), this
+ruling requires `read_changelog_item_count`'s YAML-parse `map_err` branch
+(`crates/factory-dispatcher/src/shard_manager.rs`) to be EXTENDED with the escape-hatch guidance
+text specified in Postcondition 8's malformed-YAML bullet above — the current generic `"{path}:
+frontmatter YAML parse failed: {e}"` message does not name the gate's `Edit`/`Write`/`MultiEdit`-only
+scope or point the operator at an out-of-band repair path, and is therefore NON-COMPLIANT with this
+Postcondition from v1.13 forward. **Routed to implementer** (the message-text amendment) **and
+test-writer** (a new EC-021 pinning test asserting (i) `Err` propagation with `InvalidData` kind is
+preserved for malformed-but-fenced YAML — i.e. that FAIL-LOUD behavior is unchanged — and (ii) the
+resulting message text contains both a YAML-parse-cause substring and an escape-hatch-guidance
+substring naming the `Edit`/`Write`/`MultiEdit` gated-tool scope; a substring assertion, not a full
+string match, so future message wording refinements do not spuriously break the test as long as
+both required elements remain present). No code change is required for EC-020 (B1) — the sanctioned
+implementation's two `Ok(0)` early-returns already satisfy this Postcondition's fenceless-case
+bullet as written.
+
+**Adjudication note (PR #818 cycle-4 fresh-context PR reviewer finding F-1, product-owner, v1.14):**
+new EC-022 (empty-`artifact_path` structural defect guard, backfilling an already-shipped code
+ruling) is a NEW verification obligation not yet covered by VP-116, VP-117, or VP-140. Per this BC's
+own EC-013 through EC-021 precedent (product-owner does not self-allocate a VP number for a
+load/match-time-validation extension), product-owner does NOT allocate a VP number here either.
+**Routed to architect/formal-verifier; VP allocation DEFERRED TO F6 (per the EC-013..EC-021
+precedent above):** extend VP-117's multi-facet unit-test row (or allocate a new VP) covering
+EC-022's empty-`artifact_path` guard — asserting `validate_entry` rejects `artifact_path ∈ {"", ".",
+"./"}` (and any other sequence that filters down to empty after `Component::CurDir` removal) with
+`ShardConfigError::EmptyArtifactPath` BEFORE the component-suffix match is ever evaluated against a
+target path, and that the guard runs at entry-match time (the matched entry only, per Postcondition
+1's v1.12 MATCH-FIRST scoping) — and propagate to VP-INDEX.md, verification-architecture.md, and
+verification-coverage-matrix.md per `vp_index_is_vp_catalog_source_of_truth` (POLICY 9).
+
+**Routing note (v1.14, PR #818 cycle-4 finding F-1) — NO further code or test change required (spec
+backfill for already-shipped, already-tested code, mirroring EC-020's v1.13 precedent):** the
+implementer's fix — a new `ShardConfigError::EmptyArtifactPath { artifact_stem, artifact_path }`
+variant enforced in `validate_entry` — was already shipped in the SAME PR #818 cycle-4 fix-burst, at
+develop squash-commit `fff5e4cc`, with 7 covering tests (`test_BC_1_18_005_F1_*`) landed in the same
+commit. This BC amendment closes the spec-anchor gap the fresh-context PR reviewer identified —
+shipped, tested code with no prior BC text describing it — it does not itself require a further code
+or test change. If the F6 VP-allocation review above finds the existing `test_BC_1_18_005_F1_*`
+tests do not already satisfy the VP-140/VP-117 facet extension's coverage bar, closing that gap is
+formal-verifier's task at F6, not a reopening of this spec backfill.
 
 ## Related BCs
 
@@ -853,6 +1046,8 @@ S-25.02 — Artifact Sharding Layer 2: Size-Triggered Shard Rotation for Cycle A
 
 | Version | Date | Author | Change |
 |---------|------|--------|--------|
+| 1.14 | 2026-09-07 | product-owner | Spec-anchor backfill for an already-shipped fail-open-gap fix (PR #818 cycle-4 fresh-context PR reviewer finding F-1, product-owner adjudication). **The gap:** `path_falls_under_or_equals` (`crates/factory-dispatcher/src/shard_manager.rs`) matches a tool-call target path against a `[[shard]]` entry's `artifact_path` by comparing the two paths' normalized component suffixes (after filtering `Component::CurDir`); when an entry's `artifact_path` is EMPTY or normalizes to empty after that filtering (`""`, `"."`, `"./"`), the comparison degenerates to `[] == []`, which is vacuously true against ANY target path — the entry silently mis-applies its shard-cap gate (and, for a `"frontmatter-changelog-array"`-shaped entry, its item-count gate) to every unrelated `Edit`/`Write`/`MultiEdit` dispatch in the repository, a FAIL-OPEN-BY-OVER-MATCH structural defect with no prior BC text describing it. The implementer already fixed this in the SAME PR #818 cycle-4 fix-burst, shipped at develop squash-commit `fff5e4cc`: a new `ShardConfigError::EmptyArtifactPath { artifact_stem, artifact_path }` variant, enforced in `validate_entry`, with 7 covering tests (`test_BC_1_18_005_F1_*`) landed in the same commit. ADDED a new "Empty-`artifact_path` structural defect guard" sub-paragraph to Postcondition 1 (immediately before its closing EC cross-reference sentence) specifying the guard: `validate_entry` MUST check, for the entry under validation and BEFORE any cap-formula arithmetic (Postcondition 9 and its EC-015/EC-017 divisor-door sub-paragraphs), that `artifact_path`'s component sequence — after filtering `Component::CurDir` — is non-empty, returning `Err(ShardConfigError::EmptyArtifactPath)` (surfaced as `HookResult::Error`) if it is, evaluated at ENTRY-MATCH time consistent with this Postcondition's own v1.12 MATCH-FIRST re-scoping (the matched entry only, never eagerly across the config). Updated Postcondition 1's closing EC cross-reference sentence and its "Terminology re-grounding" `validate_entry` checklist enumeration to cite EC-022, and swept the parallel enumeration in Invariant 3 to add EC-022 (sibling-site sweep, TD-VSDD-060). ADDED EC-022 (+ matching Canonical Test Vector) to the Edge Case Catalog and Canonical Test Vectors table. Added an adjudication note under §Verification Properties routing EC-022 VP allocation to architect/formal-verifier, DEFERRED TO F6 per the EC-013..EC-021 precedent (product-owner does not self-allocate a VP number). Added a routing note: this ruling requires NO further code or test change — the sanctioned implementation and its 7 `test_BC_1_18_005_F1_*` tests already ship the described behavior at `fff5e4cc`; this amendment is spec-catchup only, mirroring EC-020's v1.13 precedent for an already-shipped, already-compliant ruling. No change to Postconditions 2-9, other bullets of Postcondition 1, other Invariants, or any pre-existing Edge Case/Canonical Test Vector/VP numeric content. |
+| 1.13 | 2026-09-07 | product-owner | Self-deadlock adjudication for a present-and-fenced-but-malformed-YAML target artifact (fresh-context PR reviewer finding M-1, MAJOR, PR #818 cycle-2 re-review), plus a spec backfill for an already-shipped, related B1 ruling. **B1 backfill (present-but-fenceless, no code change — spec catch-up only):** the cycle-1 fix-burst already shipped `read_changelog_item_count` returning `Ok(0)` when a `"frontmatter-changelog-array"`-shaped target EXISTS but has no `---` fence at all (missing opening fence, or opening fence with no closing fence) — mirroring EC-014's `NotFound`-is-zero precedent — but this BC's text had not yet been updated to describe it; Postcondition 8's "any OTHER io::Error kind... is UNCHANGED" sentence (from v1.9) was, on its literal wording, in tension with this already-shipped behavior. ADDED a new "Present-but-fenceless case" sub-bullet to Postcondition 8 and EC-020 (+ two Canonical Test Vectors) documenting the shipped `Ok(0)` behavior; no code or test change follows from this half of the ruling. **M-1 adjudication (substantive, FAIL-LOUD ruling — the important one):** a target file that HAS a well-formed fence pair but whose YAML content inside fails to parse produces `io::ErrorKind::InvalidData`, surfaced as `HookResult::Error` for every `Edit`/`Write`/`MultiEdit` against that file — including the repair edit that would fix the YAML — a genuine self-deadlock the reviewer flagged as sitting in tension with the B1 permissive ruling landed in the same fix-burst. Two readings were weighed: (A) FAIL-LOUD (malformed YAML is a real defect distinct from "no frontmatter to count"; silently returning `Ok(0)` would undercount a possibly-large `changelog:` sequence, defeating this BC's fuel-exhaustion-prevention purpose exactly when the artifact's true state is least trustworthy) vs. (B) PERMISSIVE (extend B1's `Ok(0)` posture to this case too, to eliminate the deadlock). **ADJUDICATED (A) FAIL-LOUD, over (B) PERMISSIVE:** B1's fenceless case has NO YAML content to lose — `Ok(0)` there is the CORRECT count, not an approximation — whereas THIS case's file has actual (corrupted) YAML content whose true item count is unknown and possibly large; collapsing the two into one permissive rule would reintroduce the unbounded-growth-goes-undetected failure mode this BC exists to prevent (the item-count-shape analogue of Postcondition 9's silently-inflated-ceiling concern, now for a silently-deflated count). Per CLAUDE.md's production-grade default, the self-deadlock is a MESSAGING gap to close, not a reason to weaken the fail-loud posture (Standing Rule 3 §2's `Vec::new()`-hiding-partial-failure anti-pattern is the direct analogue for a corrupted-count-as-`0`). ADDED a "Malformed-YAML case" sub-bullet to Postcondition 8 imposing a MANDATORY, load-bearing requirement on the error message `read_changelog_item_count`'s YAML-parse `map_err` branch constructs: it MUST name the YAML-parse failure specifically AND state that the gate only intercepts `Edit`/`Write`/`MultiEdit`, directing the operator to repair the malformed frontmatter via any other means (e.g., a `Bash`-invoked edit) — an unchanged generic message is explicitly declared NON-COMPLIANT from v1.13 forward. Clarified this is NOT a TD-FACTORY-HOOK-BYPASS-001 exception (that policy governs the WASM hook-plugin chain; this native check has no bypass flag and none is introduced). ADDED EC-021 (+ a contrasting Canonical Test Vector alongside the two new EC-020 vectors). Corrected Postcondition 8's pre-existing v1.9 "any OTHER io::Error kind... (a genuinely malformed/unreadable frontmatter fence...)... is UNCHANGED" sentence to remove the now-superseded fenceless framing and instead cross-reference EC-020 (fenceless, permissive) and EC-021 (malformed-YAML, fail-loud) precisely. Added adjudication notes under §Verification Properties routing EC-020/EC-021 VP allocation to architect/formal-verifier, DEFERRED TO F6 per the EC-013..EC-019 precedent (product-owner does not self-allocate a VP number). Added a routing note: EC-020 (B1) requires NO code change (already shipped and compliant); EC-021 (M-1) requires an ACTUAL code change — routed to implementer (the error-message amendment) and test-writer (an EC-021 pinning test asserting both the preserved fail-loud outcome and the message's escape-hatch substring content). No change to Postconditions 1-7, 9, other bullets of Postcondition 8, Invariants, or any pre-existing Edge Case/Canonical Test Vector/VP numeric content. |
 | 1.12 | 2026-09-06 | product-owner | Blast-radius adjudication (S-25.02 Phase F4 LOCAL adversary cluster-1 pass-6 finding F-C1-P6-001, LOW pending-intent). **The question:** `shard_cap_precheck` (`executor.rs`) calls `ShardRegistry::load()` — which parses AND semantically validates (fail-loud on EC-009/EC-011/EC-013/EC-015/EC-016/EC-017 for ANY entry) EVERY `[[shard]]` entry — on EVERY `Edit`/`Write`/`MultiEdit` dispatch whose config file exists, BEFORE `shard_cap_gate_check` matches the target path to a specific entry. A single malformed sibling entry therefore caused `HookResult::Error` for EVERY matched-tool dispatch in the repo, INCLUDING dispatches targeting paths that match NO entry at all or match a DIFFERENT, well-formed entry. Two readings were weighed: (A) EAGER FAIL-FAST (malformed config should block all matched-tool dispatches, ops-hygiene style — no code change, Postcondition 1 clarified to scope the zero-cost guarantee to well-formed configs) vs. (B) MATCH-FIRST (Postcondition 1's zero-cost-bypass promise holds per-artifact — an unmatched or differently-matched target returns `Continue`/proceeds normally even with a malformed sibling; only the MATCHED entry is validated — requires a code restructuring). **ADJUDICATED (B) MATCH-FIRST over (A):** Postcondition 1's own literal "no arithmetic" text for unmatched paths already leans B (eager validation performs arithmetic, and can outright block, for paths this Postcondition promises pay zero cost — a stronger violation than the O(1) config-presence probe the v1.9 scoping clarification exempted); the blast radius under (A) is disproportionate to the actual risk (a malformed entry for artifact Z threatens only Z's own protection, never an edit to `src/foo.rs` or to a different well-formed entry's artifact — halting ALL repository editing over one artifact's config typo inverts this BC's own fuel-exhaustion-containment purpose); and match-first does not weaken any existing fail-loud guarantee (a dispatch that DOES target the malformed entry's own artifact still fails loud, now at entry-match time instead of inside `load()`'s eager loop — the "before any write against the artifact" timing guarantee EC-009/EC-011/EC-012/EC-013/EC-015/EC-016/EC-017 and Postcondition 8's N-presence bullet already establish is UNCHANGED, only the entry-SCOPE narrows from all-entries-in-the-file to the one matched entry). ADDED a "Blast-radius scoping" sub-paragraph to Postcondition 1 specifying the required restructuring: `ShardRegistry::load()` becomes structural-TOML-deserialization-only (unavoidably whole-file — `find_matching_entry` needs every entry's `artifact_stem`, so some parse per dispatch is unavoidable); a NEW `validate_entry(&ShardEntry) -> Result<(), ShardConfigError>` function carries the semantic checks (EC-009/EC-011/EC-012/EC-013/EC-015/EC-016/EC-017's logic) previously inlined in `load()`'s per-entry loop; `shard_cap_precheck`/`shard_cap_gate_check` MUST call `find_matching_entry` FIRST and invoke `validate_entry` ONLY on the matched entry (zero validation calls when unmatched). Every existing downstream reference to "`ShardRegistry::load()` MUST... for EVERY entry... at load time" (Postcondition 8's N-presence bullet, Postcondition 9, EC-009/EC-011/EC-012/EC-013/EC-015/EC-016/EC-017) is retroactively read, from v1.12 forward, as "for the entry matched against the current dispatch's target, at entry-match time" — an entry-scope narrowing, not a change to any cited check's substantive outcome or timing guarantee. Carved out an explicit, UNAVOIDABLE residual exception: a config file failing STRUCTURAL TOML deserialization (invalid syntax, or a missing non-`Option` field such as `artifact_stem`/`shard_cap_bytes`/a formula input) still fails `HookResult::Error` for every dispatch regardless of match, since `find_matching_entry` cannot run without a successfully deserialized registry — this is inherent to TOML's whole-file grammar, not a validation-eagerness choice this ruling controls. Extended Invariant 3 to state the config-match check must precede entry validation, and validation must be scoped to the matched entry only. ADDED EC-018 (the resolved blast-radius scenario: malformed sibling + unmatched-or-differently-matched target → `Continue`/normal gate logic, sibling never validated) and EC-019 (the residual structural-parse-failure exception: malformed TOML syntax or missing required field → `HookResult::Error` regardless of match). ADDED four Canonical Test Vectors (EC-018 pinning: unmatched target with malformed sibling → `Continue`; matched-to-the-malformed-entry target → unchanged `HookResult::Error`; matched-to-a-different-well-formed-entry target with malformed sibling → normal gate logic; EC-019 pinning: unmatched target with structurally-invalid config file → `HookResult::Error`). Added an adjudication note under §Verification Properties routing EC-018/EC-019 VP allocation to architect/formal-verifier, DEFERRED TO F6 per the EC-013..EC-017 precedent (product-owner does not self-allocate a VP number). Added a routing note flagging that — UNLIKE v1.7-v1.11's wording-only or additive-check amendments — this ruling requires an ACTUAL code restructuring, routed to implementer (the restructuring) and test-writer (the EC-018/EC-019 pinning tests plus a regression test preserving EC-009/EC-011/EC-012/EC-013/EC-015/EC-016/EC-017's fail-loud outcomes for a matched malformed entry). No change to Postconditions 2-8's substantive formulas/thresholds, other Invariants, or any pre-existing Edge Case/Canonical Test Vector/VP's numeric content — additive/clarifying at the spec level, but NOT a no-code-change amendment (code restructuring is required, per Reading (B)). |
 | 1.11 | 2026-09-06 | product-owner | Residual divisor-door closure + `replace_all` multiplicity adjudication (S-25.02 Phase F4 LOCAL adversary cluster-1 pass-5 finding F-C1-P5, two items). **Item 1 (substantive, FAIL-LOUD ruling — "the important one," divisor-door RESIDUAL):** EC-015's `worst_case_fuel_per_byte.is_finite() && > 0.0` guard is NECESSARY but INSUFFICIENT — a legal tiny-positive divisor (e.g. `1e-300`) passes that guard yet still drives `compute_shard_cap_bytes`'s internal division to a value so large its `.floor() as u64` cast saturates to `u64::MAX`, reproducing the IDENTICAL failure mode EC-015 exists to close (an oversized `shard_cap_bytes` sails past `CapExceedsFormulaCeiling` because the computed ceiling itself is meaninglessly large). Picking a larger arbitrary lower bound on the divisor would only move the threshold, never close it. ADJUDICATED: the robust close is to detect a SATURATED/non-finite COMPUTED CEILING directly, not to bound the divisor. ADDED a new "Residual divisor-door closure" sub-paragraph to Postcondition 9 requiring `ShardRegistry::load()` to independently evaluate the RAW pre-cast division result (`practical_fuel_ceiling as f64 / worst_case_fuel_per_byte`) for every entry that passes the EC-015 guard, and reject the entry (`HookResult::Error`, new `ShardConfigError::FormulaCeilingSaturated` variant — POLICY 1 append-only, distinct from `InvalidWorstCaseFuelPerByte`) if that raw value is non-finite OR `>= u64::MAX as f64`, evaluated BEFORE the `CapExceedsFormulaCeiling` comparison. ADDED EC-017 and a matching Canonical Test Vector (`worst_case_fuel_per_byte = 1e-300` → fail-loud). Together with EC-015's existing divisor-legality guard, this closes the divisor-door completely. VP allocation deferred to F6 per the EC-013..EC-016 precedent (adjudication note added under §Verification Properties). **Item 2 (DEFERRED, explicit anchor to BC-1.18.006):** `net_delta_bytes_for_edit` computes a SINGLE-occurrence `len(new) - len(old)` delta, matching Postcondition 3's formula exactly — but the `Edit` tool's `replace_all: true` mode applies the delta `occurrence_count × (len(new) - len(old))` times, which this formula does not account for, potentially under-counting `projected_size` for a bulk `replace_all` edit. ADJUDICATED DEFER (not fix-now) for this cluster: computing the true occurrence count requires reading the current file's full content to count matches of `old_string` — a departure from Postcondition 2's stat()-only guarantee for the `"flat"` shape, with real cost/consistency implications warranting cross-component assessment rather than a same-burst patch; AND this cluster's trigger is non-blocking today (`shard_cap_gate_check`'s `ShardShape::Flat` arm only `tracing::warn!`s and returns `Continue` on a fired trigger — BC-1.18.006's roll/block outcome does not exist yet), so an under-count has zero live user-facing consequence until BC-1.18.006 lands and trigger accuracy becomes load-bearing. ADDED a "Known formula gap — `replace_all: true` occurrence multiplicity, DEFERRED to BC-1.18.006" sub-paragraph to Postcondition 3 recording the gap, the non-blocking-today rationale, and an EXPLICIT deferral anchor: BC-1.18.006 MUST add a precondition/postcondition acknowledging this gap and MUST NOT treat its roll/block outcome as production-ready against a `replace_all: true` `Edit` until either this Postcondition is amended (with Postcondition 2 explicitly re-scoped) or BC-1.18.006's own roll-execution path (which must already read full content to perform a rotation) independently re-validates post-apply size. UPDATED the BC-1.18.006 Related-BCs bullet to cite this dependency. No code/test change follows from Item 2 in this burst — anchor only. No change to Postconditions 1-2, 4-8, Invariants, or any pre-existing Edge Case/Canonical Test Vector/VP — additive/clarifying only. |
 | 1.10 | 2026-09-06 | product-owner | Load-time fail-loud gap-closure + PC5 wiring-intent adjudication (S-25.02 Phase F4 LOCAL adversary cluster-1 pass-4 findings F-C1-P4-001 MEDIUM/HIGH + F-C1-P4-002 MEDIUM + F-C1-P4-003 LOW pending-intent). **F-C1-P4-001 (substantive, FAIL-LOUD ruling):** `compute_shard_cap_bytes` divides `practical_fuel_ceiling` by `worst_case_fuel_per_byte` with no validation that the latter is finite and strictly positive — a `[[shard]]` entry declaring `worst_case_fuel_per_byte = 0.0` makes the division yield `+inf`, whose saturating `as u64` cast is `u64::MAX`, so Postcondition 9's cap-vs-formula check (`shard_cap_bytes > computed_ceiling`) is defeated: ANY declared `shard_cap_bytes` passes, the oversized cap loads silently, and the roll never triggers — reintroducing the exact fuel-exhaustion failure mode this BC exists to prevent. ADJUDICATED FAIL-LOUD (this is squarely this cluster's own load-time-validation job, per this BC's own EC-009/EC-011/EC-013 precedent and CLAUDE.md's production-grade default): ADDED a new sub-bullet to Postcondition 9 requiring `ShardRegistry::load()` to validate `worst_case_fuel_per_byte.is_finite() && worst_case_fuel_per_byte > 0.0` for every entry BEFORE computing `compute_shard_cap_bytes`, fail-loud `HookResult::Error` (new `ShardConfigError` variant, e.g. `InvalidWorstCaseFuelPerByte`) on violation. Explicitly scoped OUT the other three formula inputs: `practical_fuel_ceiling`/`max_single_record_bytes`/`safety_margin` are `u64`-typed (TOML already excludes non-finite/negative values for them) and a degenerate `0` on any of the three drives the ceiling toward the SAFE direction (0), not the exploitable-widening direction — no analogous check needed for them. ADDED EC-015 (non-finite/`<=0.0` `worst_case_fuel_per_byte` → `HookResult::Error`) and two matching Canonical Test Vectors (the `0.0` divisor-door case and a `NaN` case). **F-C1-P4-002 (substantive, FAIL-LOUD ruling):** `ShardRegistry::load()` only validates a `"frontmatter-changelog-array"` entry's `low_water_mark` when BOTH `entry.n` and `entry.low_water_mark` are `Some` — the destructure short-circuits when `n` is `None`, so an entry that omits `n` AND declares an out-of-range `low_water_mark` is never validated at load time (EC-011 silently bypassed for that entry); the current implementation only fail-louds on missing `n` at gate/dispatch time (`shard_cap_gate_check`), not at load time, an asymmetry with EC-009/EC-011/EC-013's uniform load-time posture. ADJUDICATED YES — missing `n` MUST fail-loud AT LOAD: ADDED a new sub-bullet to Postcondition 8's rotation-target-config bullet requiring `ShardRegistry::load()` to validate `entry.n.is_some()` for every `"frontmatter-changelog-array"`-shaped entry, evaluated BEFORE `low_water_mark` is examined, fail-loud `HookResult::Error` (new `ShardConfigError` variant, e.g. `MissingN`) on `None` — this restructuring ensures no entry can silently load with BOTH a missing `N` and an out-of-range `low_water_mark` undetected. ADDED EC-016 and a matching Canonical Test Vector. **F-C1-P4-003 (wording-only, Reading (A) CONFIG-TIME/HARNESS-HELPER adjudicated over Reading (B) RUNTIME):** `effective_shard_cap_bytes` (implementing Postcondition 5's Cross-Validator Minimum Rule) is implemented and unit-tested but has no live caller in `shard_cap_gate_check`, which compares against the raw single `entry.shard_cap_bytes` instead. ADJUDICATED Reading (A): ADR-051 §Decision 2 places the Cross-Validator Minimum Rule inside the F4 calibration harness's own design (harness step 5), `ShardEntry` carries exactly one `shard_cap_bytes` field (no per-validator breakdown for a live gate to combine), and the existing Postcondition-5 prose/Canonical Test Vectors already describe an authoring-time MIN computation — REWORDED Postcondition 5 (additive "Timing clarified" paragraph) to state explicitly that the effective cap is DECLARED as `shard_cap_bytes`, computed via the MIN rule at config-authoring/F4-harness time, and consumed directly (not re-derived per-write) by the live gate; `effective_shard_cap_bytes` is correctly implemented as this authoring-time helper and needs no live caller wired into `shard_cap_gate_check` — NO code change follows from this ruling. Recorded an explicit deferral: a hypothetical future RUNTIME re-derivation of the Cross-Validator Minimum is a separate, out-of-scope obligation requiring a new postcondition and `architect`/ADR-051 involvement (a Cohort-B-reader-set-to-artifact mapping the current schema does not carry) — not assumed to already exist. VP allocation for EC-015/EC-016 deferred to F6 per the PC9/EC-014 precedent (adjudication note added under §Verification Properties). No change to Postconditions 1-4, 6-7, Invariants, or any pre-existing Edge Case/Canonical Test Vector/VP — additive/clarifying only. |

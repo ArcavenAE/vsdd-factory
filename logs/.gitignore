@@ -1,0 +1,8 @@
+# Churny dispatcher/events telemetry logs — high write-volume, no historical
+# value once superseded, and left unchecked they blow past GitHub's 50MB
+# soft push limit (hard-rejects at 100MB). Untracked here 2026-09-07
+# (S-25.02 cluster-1 post-merge burst) per the owed maintenance item recorded
+# at SESSION-WRAP-PAUSE-2026-09-06. History purge (BFG) is a separate,
+# human-approved action — this stops future growth only.
+dispatcher-internal-*.jsonl
+events-*.jsonl
