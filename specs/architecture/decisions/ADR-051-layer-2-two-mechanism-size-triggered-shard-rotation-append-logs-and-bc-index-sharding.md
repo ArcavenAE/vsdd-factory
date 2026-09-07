@@ -1295,6 +1295,118 @@ just-closed pathology from write #1 of the new steady state. Both the ongoing pe
 `low_water_mark` config value for the corrected steady state to hold from the first post-migration
 write onward, not merely from the second rotation.
 
+### Decision 15 — PostToolUse Native Reconciliation Leg for BC-1.18.006 Postcondition 7 (`replace_all` Closure); Silent Filesystem Side Effect, No `HookResult` Signaling (addendum, closing a BC-1.18.006 v1.4 Traceability overclaim)
+
+**Why this addendum exists.** BC-1.18.006 v1.4 (S-25.02 cluster-2, F2 spec-evolution, closing
+BC-1.18.005 v1.11 Postcondition 3's deferred `replace_all: true` occurrence-multiplicity gap) added
+Postcondition 7 — two redundant catch points reconciling a canonical file that BC-1.18.005's
+single-occurrence-estimate PreToolUse trigger under-projected. BC-1.18.006's own Traceability
+section asserts "No NEW ADR decision was required to close the v1.4 `replace_all` gap —
+Postcondition 7 is contained within ADR-051's existing native-check (non-WASM, PreToolUse/
+PostToolUse dispatcher-internal) architecture pattern." That citation OVERCLAIMS: Decision 1 above,
+as written, scopes its native-check pattern strictly to "the top of the dispatcher's PreToolUse
+handling for `Edit`/`Write`/`MultiEdit` tool calls" and to a check whose only two observable
+outcomes are `Continue` or `HookResult::Block` (with, for other failure modes, `HookResult::Error`).
+Decision 1 contains no PostToolUse leg and no provision for a check that returns NEITHER `Block` nor
+`Error` nor an observed `Continue` decision — because catch point (i) is exactly that: a
+PostToolUse-side check, running after the tool call has already completed, that performs a silent
+filesystem repair with no `HookResult` outcome of its own. This Decision supplies the missing
+architectural grounding so BC-1.18.006's citation becomes accurate rather than aspirational.
+
+**1. The PostToolUse-side native check leg.** Decision 1's native (non-WASM, dispatcher-internal,
+no fuel budget) check pattern is extended with a SECOND call site: a PostToolUse-side check for
+`Edit`/`MultiEdit` calls carrying `replace_all: true` against a path matching a `[[shard]]` config
+entry — this IS BC-1.18.006 Postcondition 7 catch point (i). The "why native, not WASM" rationale is
+identical to Decision 1's: the check is a `stat()`-based filesystem probe with no untrusted logic to
+sandbox, so a WASM plugin would add sandbox overhead and reintroduce exactly the self-inflicted
+INDETERMINATE-loop risk F1 §4 flagged for a naive WASM-based size check, for zero benefit over
+native code (which has no fuel budget to exhaust). No new crate, no `HOST_ABI_VERSION` bump, no new
+`hooks-registry.toml` entry — this remains dispatcher-internal native code extending the existing
+`shard_manager.rs` module (per BC-1.18.006 Architecture Anchors), never a registry-dispatched
+plugin.
+
+**2. No `HookResult` signaling — a silent side effect, not a Block/Continue/Error decision.** By the
+time catch point (i) runs, the PostToolUse-relevant outcome for this tool call has ALREADY been
+decided: BC-1.18.005's PreToolUse trigger already evaluated `projected_size` against the
+single-occurrence estimate and already returned `Continue` (that is precisely why the call was
+allowed to apply and why a TRUE over-cap state can now exist on disk). Catch point (i) cannot
+retroactively revoke that `Continue`, and BC-1.18.006 EC-016 does not ask it to: "the agent has no
+proactive signal that a roll occurred; its next `Edit` against the (now-empty) canonical file fails
+at the tool layer with a standard 'old_string not found' error... no new agent-facing contract is
+introduced by Postcondition 7." Catch point (i)'s entire observable footprint is therefore a pure
+filesystem side effect (seal + truncate + index publish, when the check fires) with no accompanying
+`HookResult` variant, no message shown to the agent, and no dispatcher-level signal distinguishable
+from an ordinary unmatched dispatch. **This is the load-bearing contrast with Decision 1's PreToolUse
+leg**, which DOES signal — every one of Decision 1's over-cap outcomes ends in an observed
+`HookResult::Block` (or, on a step 1-2 failure, `HookResult::Error`) that the calling agent receives
+and reacts to. Decision 1's leg is a gate: it intercepts a call BEFORE it lands and decides whether
+it may proceed. Decision 15's leg is a janitor: it runs AFTER a call has already landed and silently
+repairs on-disk state with no decision left to communicate to anyone.
+
+**3. Retroactive-roll reuse semantics — no new roll logic.** When catch point (i)'s post-write
+`stat()` shows `actual_size > shard_cap_bytes`, this leg re-invokes Postcondition 1's EXISTING
+four-step staged roll sequence (Decision 11's staged sequence: (a) read the canonical file's current
+full content, (b) publish it as a new sealed shard via `write_atomic`, (c) atomically truncate the
+canonical file to empty via `write_atomic`, (d) atomically publish the updated shard-index) VERBATIM
+— but applied RETROACTIVELY, against content that is ALREADY durably on disk, rather than
+PROSPECTIVELY, against content about to be written. No new atomic-write primitive, no new roll
+ordering, no new partial-failure error code: `E-SHD-001`/`E-SHD-006`/`E-SHD-007` (Decision 11) apply
+identically regardless of which of the two triggers (prospective, Decision 1; retroactive, this
+Decision) invoked the sequence. This closes the false-negative class a `stat()`-ONLY PreToolUse
+trigger structurally cannot catch: BC-1.18.005's trigger evaluates `projected_size` from a
+single-occurrence delta BEFORE the write is applied, so an `Edit{replace_all: true}` whose
+`old_string` occurs more than once can under-project pre-write (the single-occurrence estimate stays
+under `shard_cap_bytes`) while the TRUE occurrence-multiplied post-apply size exceeds it — a state
+only discoverable by re-`stat()`-ing the canonical file AFTER the write lands. Catch point (ii) (the
+next-dispatch backstop) is not a third mechanism: it is Decision 1's OWN existing PreToolUse `stat()`
+read (step 2) with one added leading comparison against `shard_cap_bytes` BEFORE evaluating the new
+call's own trigger, so it requires no placement or reuse discussion beyond what Decision 1 already
+specifies. Only catch point (i) is a genuinely NEW call site.
+
+**4. Placement caveat (load-bearing for the implementer) — wire unconditionally, before the
+early-return short-circuit.** Catch point (i) MUST be invoked as an unconditional native call inside
+the dispatcher's `run` function (`factory_dispatcher::main::run`, `crates/factory-dispatcher/src/
+main.rs`) BEFORE that function's `sync_tiers.is_empty() && partition.async_group.is_empty()`
+early-return guard (the check that short-circuits dispatch with `return Ok(0)` when the registry has
+zero matched plugins for the current tool/event pair) — mirroring Decision 1's own placement rule
+("before the registry-driven plugin loop"). **Why this matters and is not merely cosmetic:** that
+early-return guard short-circuits the ENTIRE remainder of dispatch handling whenever the registry has
+zero matched plugins (sync or async) for the current tool/event pair. If catch point (i) were placed
+AFTER this guard — e.g. implemented as "one more thing the registry-driven loop does" rather than as
+an unconditional native call preceding it — then on any configuration where the registered
+PostToolUse `Edit`/`Write`/`MultiEdit` plugin set becomes empty (an operator disables the last such
+plugin, or a future `hooks-registry.toml` edit removes it), the guard would fire first and catch
+point (i) would silently stop running altogether: no error, no telemetry, no warning — the exact
+"silently stop firing if the plugin set changes" failure mode Decision 1's own "before the
+registry-driven plugin loop" placement rule already exists to prevent for the PreToolUse leg. This
+Decision extends that same placement discipline to the PostToolUse leg by name, so it is not left to
+be independently (and possibly incorrectly) re-derived by whichever implementer wires catch point
+(i) at F4. **Precedent for a native call sitting unconditionally in this exact slot, independent of
+the registry's matched-plugin count:** `write_indeterminate_marker`
+(`crates/factory-dispatcher/src/indeterminate_marker.rs`, invoked from `executor.rs`'s marker-write
+call sites, themselves reached from `run`) already performs native, non-WASM, non-registry-gated
+filesystem mutation inside the PostToolUse path, exactly the shape catch point (i) needs; and the
+`git_context` injection performed by `inject_git_context_if_qualifying` (ADR-029 §Decision 1-3,
+called directly from `run`) is the direct straight-line precedent for a native call placed in the
+dispatcher's own main flow, unconditional on the plugin registry's contents.
+
+**5. Rationale — why native, why no new `hooks-registry.toml` entry, why an addendum and not a new
+ADR.** Native, not WASM: identical to Decision 1 — a `stat()`-based filesystem probe has no
+meaningful plugin boundary to sandbox and no benefit from a fuel budget; a WASM plugin would add
+sandboxing overhead and reintroduce F1 §4's INDETERMINATE-loop risk for a check that is, by
+construction, cheap and trusted dispatcher-internal code. No new `hooks-registry.toml` entry:
+dispatcher-internal native code is not a registry-dispatched plugin, exactly as `write_indeterminate_marker`
+and the `git_context` injection have none. Addendum, not a new freestanding ADR: (a) this Decision
+introduces no new architectural mechanism — it is Decision 1's SAME native-check pattern and
+Decision 11's SAME roll primitive and error taxonomy, extended to a second call site and a
+no-signal variant of the pattern Decision 1 already established, not a new one; (b) this ADR's own
+Decisions 11-14 already establish "fix/extension addenda to the SAME ADR" as this project's
+convention for closing gaps a subsequent review discovers against an already-accepted design, rather
+than spawning a new ADR per gap; (c) BC-1.18.006's Architecture Anchors already described both catch
+points as extending `shard_manager.rs` with no new `HookResult` variant and no new
+`hooks-registry.toml` entry — this Decision supplies the ADR-level grounding that citation assumed
+but that Decision 1's literal PreToolUse-only, signaling-only text did not yet state.
+
 ---
 
 ## Rationale
@@ -1712,6 +1824,7 @@ Principle Rule 3. Not a design-content change — no Decision text is altered by
 
 | Version | Date | Author | Summary |
 |---|---|---|---|
+| 1.9 | 2026-09-07 | architect | Addendum (ARCH-citation-gap closure, S-25.02 cluster-2): NEW §Decision 15 documents the PostToolUse-side native reconciliation leg BC-1.18.006 v1.4's Postcondition 7 catch point (i) requires, closing an overclaim in BC-1.18.006's own Traceability section ("No NEW ADR decision was required... contained within ADR-051's existing native-check... pattern") — Decision 1 as originally written scopes its native-check pattern strictly to the top of the dispatcher's PreToolUse handling and to a Continue/Block/Error-signaling check; it has no PostToolUse leg and no provision for a silent, non-signaling check. Decision 15 extends Decision 1's pattern to a PostToolUse call site (catch point (i)); establishes that this leg emits NO `HookResult` (a pure filesystem seal+truncate side effect, per BC-1.18.006 EC-016), contrasting with Decision 1's own signaling PreToolUse leg; specifies retroactive reuse of Postcondition 1's/Decision 11's existing four-step roll sequence against already-on-disk content (no new roll logic, no new error code); and states a placement caveat — the check must be an unconditional native call inside `factory_dispatcher::main::run` BEFORE its `sync_tiers.is_empty() && partition.async_group.is_empty()` early-return guard, mirroring Decision 1's own "before the registry-driven plugin loop" rule, so the leg cannot silently stop firing if the registered PostToolUse plugin set changes — grounded against `write_indeterminate_marker` (`indeterminate_marker.rs`, invoked from `executor.rs`) and the `git_context` injection (`inject_git_context_if_qualifying`, ADR-029 §Decision 1-3) as existing native-call-in-`run` precedents. Not a POLICY 22 design-direction reversal — no existing Decision's content is altered; this is a net-new addendum closing a citation gap identified during architect review of BC-1.18.006 v1.4. Product-owner's corresponding BC-1.18.006 Traceability-row fix (citing "ADR-051 §Decision 15") is a follow-on burst, not performed by this addendum. Refs: BC-1.18.006 v1.4, ADR-051 v1.9. |
 | 1.8 | 2026-09-06 | architect | POLICY 22 STATUS FLIP (D-1167; S-25.02 Phase F2 CLOSE): frontmatter `status: proposed` -> `accepted`. Human REVIEWED the full F2 spec delta (this ADR's two-mechanism design plus the simpler/validator-fix alternatives considered) and RATIFIED the current design as-is on 2026-09-06. ADJUDICATED the top-of-file BROWNFIELD template note ("cite implementation evidence before this ADR can be accepted") against this ADR's forward-design posture: `shard_manager.rs` and the `rotate_changelog` `archive_path` extension are F4-implementer scope, not yet built, so no crates/ file:line exists for the NEW code — but this ADR already cites file:line evidence for every REUSED primitive (`write_atomic`, `write_indeterminate_marker`/`block_if_marker_check`, `HookResult`, `rotate_changelog`/`resolve_archive_path`), satisfying the note's evidentiary intent for the design's grounded portions. Followed this project's own established precedent for identically-postured forward-design ADRs carrying the SAME BROWNFIELD comment: ADR-048 and ADR-049 (both `status: accepted`, comment still present, new-code evidence delivered downstream of acceptance) and the platform-wide POLICY 22 pattern of ADR-050 (D-1158 — "ci.yml implementation routed to devops-engineer" AFTER the accept flip) and ADR-039's AMD-001/AMD-002/AMD-003 sub-decisions (each ratified purely on human sign-off of the design, ahead of Phase 3/4 implementation) — POLICY 22 gates on human ratification of the DESIGN, not on crates/ evidence for not-yet-built code. New-module implementation evidence deferred to F4 (named future story S-25.02 F4), per §Decision 2/4/7/11/13's own F4-ownership language — not an unattached defer. Added a v1.8 Status-section paragraph and updated the Status header/opening paragraph to ACCEPTED; also folded in the untracked v1.6 (F-P6-001) and v1.7 (adversary pass-7 F-P7-001) fix-bursts' Status-section coverage, which had not yet been backfilled into the narrative Status paragraphs (Changelog rows below already documented both). No Decision content altered by this row.|
 | 1.7 | 2026-09-06 | architect | S-25.02 F2 sibling-sweep micro-burst (adversary pass-7 F-P7-001 closure, product-owner-flagged architect stragglers): Decision 7's block-and-retry sequence (the "PURE TRIM" grounding bullet, and steps 3-4 of the corrected single-actor contract) and Decision 11's staged-roll-sequence heading both still described B1's rotation TARGET as a literal `N-1`, contradicting Decision 14 (v1.3+), which replaced the fixed `N-1` eviction target with the configured `low_water_mark` (default `floor(N/2)`) precisely to close the every-write rotation-churn pathology Decision 14 documents. Corrected all four LIVE occurrences (Decision 7's pure-trim descriptor; Decision 7 step 3's rotation-target citation and step 4's post-retry item-count math; Decision 11's "truncate-to-N-1-items" heading clause; the Rationale section's "Why B1's gate performs ONLY the trim" pure-trim descriptor) to cite `low_water_mark`/`keep_recent` generically, each with an explicit "NEVER a fixed `N-1`" cross-reference to Decision 14. No decision content changed — Decision 14 already establishes `low_water_mark` as the authoritative target; this burst brings Decision 7/11/Rationale's own exposition into agreement with the Decision they predate. Full grep-verified: every remaining `N-1` occurrence in this ADR is now either an explicit negation ("NEVER `N-1`", "distinct from `N-1`"), a legal-but-poor-boundary-value discussion (Decision 14's own F-P4-001 adjudication, which correctly treats `N-1` as an admitted-but-suboptimal value, not the design target), a superseded-version attribution (Decision 14's "Problem" paragraph, explicitly citing "`BC-1.18.009` **v1.2**'s rotation step"), or a Changelog/Status-narrative historical row (POLICY-1 append-only exempt). Reviewed the companion `S-25.02-f2-architecture-delta.md`'s §4a/§4b per-pass BC-authorship-input tables for the same staleness: LEFT UNCHANGED — those sections are explicitly labeled by adversary-pass number ("adversary pass-1"/"adversary pass-2, architect-routed findings"), and §4c/§4d already perform the identical `N-1`→`low_water_mark` correction one/two passes later in the SAME append-only document, so §4a/§4b's `N-1` content is a genuinely historical record of what THAT pass's ADR version (v1.1/v1.2) instructed, superseded in-document rather than in need of retroactive rewrite. Status remains PROPOSED — not a POLICY 22 reversal; corrects this ADR's own exposition to agree with its own already-adopted Decision 14, no decision content altered. Companion `S-25.02-f2-architecture-delta.md` UNCHANGED this burst.|
 | 1.6 | 2026-09-06 | architect | S-25.02 F2 gate-audit fix (F-P6-001, MEDIUM): Decision 6's opening justification paragraph carried a now-stale present-tense claim that CAP-043's `SS-01/SS-07`-only subsystem list was "incomplete" and "flagged as a product-owner follow-up ... not amended here." That follow-up CLOSED same-cycle — CAP-043 (v1.21) now lists SS-01/SS-04/SS-07 — leaving the ADR body contradicting the capability it describes. Rewrote the clause to past tense/closure-acknowledging, referencing CAP-043's §Subsystems list structurally (by name/section anchor, no version pin) rather than reasserting incompleteness. SS-04 justification substance (the four-WASM-crate validator-enumeration audit + POLICY-1 archive-inclusive-glob obligation) is UNCHANGED. Status remains PROPOSED — not a POLICY 22 reversal; corrects a stale cross-reference only.|

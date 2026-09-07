@@ -7644,3 +7644,118 @@ same LOCAL-streak convention S-17.05/S-25.01/S-25.04 each established for their 
 ### Canonical 6-column row (STATE.md Decisions Log)
 
 | D-1172 | D-1172-S2502-CLUSTER1-CAP-TRIGGER-LOCAL-3CLEAN-CONVERGED | **S-25.02 Phase F4 cluster-1 (cap+trigger, BC-1.18.005) LOCAL adversary cascade CONVERGED at LITERAL BC-5.39.001 3-CONSECUTIVE-CLEAN — passes 10/11/12 all CLEAN (0 findings) on the frozen delta `feature/S-25.02-cap-trigger` HEAD `95f07d9d`, human-directed grind-to-literal-3-CLEAN (not the cycle-level D-386 Option C asymptotic-acceptance convention)** 2026-09-06 (state-manager; single-commit TD-VSDD-053; BOOKKEEPING-ONLY burst — NO BC/VP/STORY/ARCH content or index-version change). The cascade ran 12 passes total: substantive fixes landed through pass 6 (F-001 fail-loud wiring, F-002 `Write`-no-`stat`, PC9 cap-vs-formula, EC-015 divisor-sanity, EC-017 divisor-door closure, EC-016 missing-N, EC-014 missing-file graceful, and the MATCH-FIRST blast-radius restructure — `ShardRegistry::load()` becomes parse-only, new `validate_entry`); passes 7-9 closed residual doc/test propagation gaps; passes 10-12 converged CLEAN. Full code gate GREEN throughout (2,985 workspace tests + `cargo fmt --check` + `cargo clippy -D warnings` + 2,234 bats), parallel-stable. BC-1.18.005 spans v1.6→v1.12 across the cascade — ALREADY reflected in BC-INDEX v5.64 / STORY-INDEX v4.445 (S-25.02 v2.6) from the prior pass-1..pass-6 bursts; UNCHANGED this burst. **BC-5.39.001 LOCAL cluster-1 streak: 0/3→3/3 CONVERGED** (cycle-level 3/3 CONVERGED streak, separate track, UNCHANGED — same LOCAL-streak convention as S-17.05/S-25.01/S-25.04). Carry-forward advisory Drift Item recorded (adversary O2/pass-10 + ADVISORY/pass-12, anchored BC-1.18.009/cluster-4 scope): BC-1.18.005's `read_changelog_item_count` closing-fence heuristic (`after_open.find("\n---")`) can undercount changelog items if the frontmatter body contains a `---` line — HARMLESS in cluster-1 (item-count trigger is warn+`Continue`, undercount only delays a fire, safe direction) but becomes LOAD-BEARING against unbounded growth in BC-1.18.009 — anchored to BC-1.18.009's own spec-evolution burst, which must address robust fence parsing. Cycle-Closing Checklist S-7.02: the pass-5 `[process-gap][codified-pending]` stale-comment/partial-fix-propagation finding class (D-1171) is now FULLY EVIDENCED across all 12 passes — 7 recurrences (F-P1-003→F-P2-002→F-P3-002→F-P5-001→F-P7-001/002/003/004/005→F-P8-001/002→F-P9-001) — PROMOTED `[codified-pending]`→`[codified]`: lesson `L-BB-D1172-partial-fix-propagation-stale-comment-sibling-sweep` appended to `cycles/v1.0-brownfield-backfill/lessons.md`; cluster-1's S-7.02 obligation for THIS finding class is SATISFIED. NO BC/VP/STORY/ARCH content or index-version change this burst — BC-INDEX v5.64 / VP-INDEX v3.07 / STORY-INDEX v4.445 / ARCH-INDEX v4.22 all CONFIRMED UNCHANGED. Pre-existing dirty telemetry (`logs/*.jsonl`, `regression-state.json`, `sidecar-learning.md`) folded into this SAME single commit so the `.factory/` worktree ends CLEAN. `pipeline:` stays in_progress. No trajectory-tail drift — unchanged →0→1→1→1 LENGTH=4. **NEXT = demo-recorder records cluster-1 AC-001..005/AC-023 evidence → pr-manager opens PR on `feature/S-25.02-cap-trigger` → 9-step PR cycle → squash-merge → state-manager post-merge burst → cluster-2 (roll, BC-1.18.006) begins.** Refs: D-1172, D-1171, S-25.02, BC-1.18.005 v1.12, BC-INDEX v5.64, STORY-INDEX v4.445. STATE.md v9.96→v9.97. | D-1172 | 2026-09-06 |
+
+## D-1174
+
+**D-1174-S2502-CLUSTER2-F2F3-SPEC-EVOLUTION-FINALIZED**
+
+Allocated as next GLOBAL D-NNN per POLICY 16: max D-NNN across all cycle decision-logs was D-1173
+(recorded directly in STATE.md's own Decisions Log table at the S2502-CLUSTER1-DELIVERY-MERGE-BURST
+burst; not yet individually backfilled into this file — a pre-existing gap, out of this burst's
+scope). D-1174 allocated cleanly above the true max.
+
+**Summary:** S-25.02 Phase F4 cluster-2 (roll, BC-1.18.006) **F2 (spec-evolution) + F3 (incremental
+stories) FINALIZED** 2026-09-07 (product-owner + architect + story-writer content; state-manager
+index/version-sync + single-commit TD-VSDD-053).
+
+product-owner's F2 spec-evolution burst amended **BC-1.18.006 v1.3→v1.4**, closing the
+`replace_all: true` occurrence-multiplicity gap BC-1.18.005 v1.11 Postcondition 3 explicitly
+DEFERRED to this BC at cluster-1 pass-5 (S2502-CLUSTER1-PASS5 STATE.md Drift Item). The gap: an
+`Edit{replace_all: true}` whose `old_string` occurs more than once causes BC-1.18.005's PreToolUse
+trigger to under-project `projected_size` (it computes a SINGLE-occurrence delta, not multiplied by
+occurrence count), so a write that TRULY exceeds `shard_cap_bytes` can land without BC-1.18.005's
+own trigger catching it. product-owner ADJUDICATED Option (b) of BC-1.18.005's own pre-authorized
+closure fork: rather than amending BC-1.18.005's already-ACTIVE, already-shipped trigger formula to
+occurrence-multiply (Option (a), NOT taken — BC-1.18.005's PreToolUse estimate stays EXACTLY as
+specified, unchanged), BC-1.18.006 gains an independent POST-WRITE reconciliation check that
+`stat()`s the artifact's ACTUAL on-disk size after the write lands, needing NO occurrence-counting
+arithmetic at all. This is the load-bearing design choice this decision codifies: **actual
+post-apply size, not occurrence-counting, is the closure mechanism** — BC-1.18.005's PreToolUse
+trigger is deliberately LEFT as a bounded, sometimes-under-projecting approximation, and
+BC-1.18.006's new post-write net catches the consequence after the fact, bounded to at most one
+subsequent matched dispatch's observable window.
+
+BC-1.18.006 v1.4 gained: new **Precondition 4** (closure-scope statement, applying ONLY to an `Edit`
+carrying `replace_all: true` or a `MultiEdit` containing at least one `replace_all: true` block);
+new **Postcondition 7** (bounded post-write reconciliation) with two redundant catch points — (i) an
+immediate post-write `stat()` check, reusing Postcondition 1's existing four-step roll sequence
+RETROACTIVELY against content already on disk, and (ii) a next-dispatch leading-probe backstop
+(reusing BC-1.18.005's own existing `stat()` read) covering a crash between the write and catch
+point (i); a precise, testable **bounded-window postcondition** (the canonical file may be observed
+over-cap for at most one subsequent matched dispatch, never indefinitely); new **Invariant 6**
+(canonical zero-bytes-after-roll holds UNCONDITIONALLY even under the retroactive path — only the
+retroactively-sealed shard's OWN per-shard cap guarantee is exceptionally relaxed); an EXTENDED
+Postcondition 5 shard-index schema with a new optional `sealed_retroactively` boolean field (default
+`false`, backward compatible) as the sole audit trail distinguishing the two shard-cap guarantee
+regimes; new **EC-014/EC-015/EC-016** + 3 Canonical Test Vectors; and one new **pending Verification
+Property row (VP-NNN)** — allocation explicitly routed to architect/formal-verifier at Phase F6
+targeted-hardening, mirroring BC-1.18.005's own EC-013..EC-022 VP-owed-to-F6 precedent — product-owner
+did NOT self-allocate a VP number this burst. `status`/`lifecycle_status` REMAINS `draft` — cluster-2
+has NOT shipped; POL-14 auto-promotion is deferred to cluster-2's future PR merge, not performed here.
+
+architect's same-burst addendum resolved a same-burst self-correction: BC-1.18.006 v1.4's initial
+Traceability draft overclaimed "no NEW ADR decision required — contained within ADR-051's existing
+native-check pattern." That overclaimed, because ADR-051 §Decision 1 as originally written scopes
+its native-check pattern strictly to PreToolUse and to a check whose only outcomes are
+`Continue`/`Block`/`Error` — it has no PostToolUse leg and no provision for a silent,
+non-`HookResult`-signaling check, which is exactly what Postcondition 7 catch point (i) is. architect
+added **ADR-051 §Decision 15** (**ADR-051 v1.8→v1.9**) — PostToolUse Native Reconciliation Leg for
+BC-1.18.006 Postcondition 7 — documenting: (1) the PostToolUse-side native-check leg as a second call
+site extending Decision 1's pattern, same "why native, not WASM" rationale (a `stat()`-based
+filesystem probe has no meaningful sandbox boundary); (2) that this leg emits NO `HookResult` — a
+pure filesystem side effect, contrasting with Decision 1's own signaling PreToolUse leg (Decision
+1 = a gate that intercepts before landing; Decision 15 = a janitor that repairs after landing); (3)
+retroactive reuse of Postcondition 1's/Decision 11's existing four-step roll sequence verbatim, no
+new roll logic, no new error code; (4) a **placement caveat, load-bearing for the F4 implementer**:
+catch point (i) MUST be wired as an unconditional native call inside
+`factory_dispatcher::main::run` BEFORE that function's
+`sync_tiers.is_empty() && partition.async_group.is_empty()` early-return guard — mirroring Decision
+1's own "before the registry-driven plugin loop" placement rule — so the leg cannot silently stop
+firing if the registered PostToolUse plugin set ever becomes empty; grounded against
+`write_indeterminate_marker` (`indeterminate_marker.rs`) and the `git_context` injection (ADR-029
+§Decision 1-3) as existing native-call-in-`run` precedents; (5) addendum, not a new freestanding ADR
+— same convention as this ADR's own Decisions 11-14. BC-1.18.006's Traceability ADR row is corrected
+to cite §Decision 15 for catch point (i) specifically (catch point (ii) and the core roll mechanism
+remain under §Decision 1/§Decision 11).
+
+story-writer's F3 AC-population burst finalized **S-25.02 v2.7→v2.8**: two NEW acceptance criteria
+— **AC-024** (Postcondition 7 catch point (i), traces to postcondition 7/EC-014/invariant 6) and
+**AC-025** (catch point (ii), traces to postcondition 7/EC-015) — plus a documentary (non-AC) note
+for EC-016, mirroring this story's own existing EC-002 no-agent-signal-change precedent. UNLIKE the
+v2.3–v2.7 bursts' already-shipped-backfill facets, AC-024/AC-025 describe code that does **NOT yet
+exist** and **WILL be TDD'd from scratch** under this story's `tdd_mode: strict` — a NEW
+implementation task **T-13** was inserted ahead of the renumbered RED-Gate/stub-coverage task (now
+T-14, count extended 23→25 ACs). New §Edge Cases rows EC-035/EC-036/EC-037 (mirroring BC
+EC-014/EC-015/EC-016); §Behavioral Contracts table BC-1.18.006 cell v1.3→v1.4; §Token Budget
+BC-1.18.006 line 4,500→6,000 tokens (Total ~77,100→~78,600, ~38%→~39%). `verification_properties:`
+frontmatter stays VP-116..VP-141 (26 VPs), UNCHANGED — no VP allocated this burst.
+
+state-manager's finalization burst (this decision's own bookkeeping half): **BC-INDEX v5.65→v5.66**
+(BC-1.18.006 version-cell v1.3→v1.4 sync + new EC-014/015/016 registered + the pending-VP row noted;
+`status` row STAYS `draft`; `total_bcs` UNCHANGED 2,006 — amendment, no new BC); **STORY-INDEX
+v4.446→v4.447** (S-25.02 row → v2.8, BC-1.18.006 cell → v1.4, inlined `last_amended`-string form per
+D-448(b) kept); **ARCH-INDEX v4.23** (ADR-051 version-pointer v1.8→v1.9 + a new Architecture Decisions
+summary line for §Decision 15). Input-hashes reconciled via `compute-input-hash --update`, run AFTER
+all content was final: BC-1.18.006.md `a2945e7`→`d39e2f4`; S-25.02 story `b006363`(drifted
+`b159469`)→`d159583`; both confirmed CLEAR of the `--scan` STALE list post-update. `pipeline:` stays
+`in_progress`. No trajectory-tail drift — unchanged →0→1→1→1 LENGTH=4 (bookkeeping/spec-finalization
+burst, no adversary pass ran; cluster-2's OWN fresh LOCAL BC-5.39.001 cascade has not yet started,
+still 0/3).
+
+**NEXT = cluster-2 Phase F4 (TDD-implementation) begins**: `stub-architect` generates the Red Gate
+stubs for T-13 (Postcondition 7's two catch points) + the renumbered T-14, then `test-writer` writes
+the failing tests for AC-024/AC-025, then `implementer` lands the code. The TDD worktree MUST be
+created rebased onto `origin/develop` @ `fff5e4cc19206b7f3af9ced6cd07f412e1f89d7f` — local `develop`
+is STALE at `54fa985f` (missing PR #818). **Carried implementer caveat (ADR-051 §Decision 15,
+load-bearing):** catch point (i) must be wired as an unconditional native call inside
+`factory_dispatcher::main::run` BEFORE its
+`sync_tiers.is_empty() && partition.async_group.is_empty()` early-return guard — placing it AFTER
+that guard (e.g. as registry-loop-conditional logic) would silently stop it firing whenever the
+registered PostToolUse plugin set for `Edit`/`Write`/`MultiEdit` becomes empty.
+
+Refs: D-1174, D-1173, D-1171 (BC-1.18.005 v1.11 Postcondition 3 deferral origin), S-25.02,
+BC-1.18.006 v1.4, ADR-051 v1.9, BC-INDEX v5.66, STORY-INDEX v4.447, ARCH-INDEX v4.23.
+
+### Canonical 6-column row (STATE.md Decisions Log)
+
+| D-1174 | D-1174-S2502-CLUSTER2-F2F3-SPEC-EVOLUTION-FINALIZED | **S-25.02 Phase F4 cluster-2 (roll, BC-1.18.006) F2 (spec-evolution) + F3 (incremental stories) FINALIZED — BC-1.18.006 v1.3→v1.4 closes BC-1.18.005 v1.11 Postcondition 3's deferred `replace_all: true` occurrence-multiplicity gap via a post-write `stat()` safety net (actual post-apply size, NOT occurrence-counting, is the closure mechanism — BC-1.18.005's PreToolUse trigger stays a bounded approximation, BC-1.18.006's new post-write net catches the consequence)** 2026-09-07 (product-owner + architect + story-writer content; state-manager index/version-sync + single-commit TD-VSDD-053). product-owner: BC-1.18.006 v1.4 — new Precondition 4 (closure scope), new Postcondition 7 (bounded post-write reconciliation, 2 redundant catch points, bounded-window guarantee), new Invariant 6 (canonical zero-bytes-after-roll unconditional; only the retroactively-sealed shard's per-shard cap relaxed), Postcondition-5 `sealed_retroactively` field, EC-014/EC-015/EC-016 + 3 test vectors, 1 pending VP row routed to Phase F6 (NOT self-allocated); `status` STAYS `draft` (cluster-2 not shipped, POL-14 deferred to future merge). architect: same-burst self-correction — NEW **ADR-051 §Decision 15** (**v1.8→v1.9**) supplies the PostToolUse native-check-leg grounding BC-1.18.006's initial Traceability draft had overclaimed as already-covered by §Decision 1 (which is PreToolUse-only, signaling-only); documents catch point (i) as a silent no-`HookResult` filesystem side effect, retroactive four-step-roll reuse, and a load-bearing placement caveat (unconditional native call in `factory_dispatcher::main::run` BEFORE the `sync_tiers.is_empty() && partition.async_group.is_empty()` early-return guard). story-writer: S-25.02 v2.7→v2.8 — NEW pending AC-024/AC-025 (genuinely unimplemented, will be TDD'd from scratch) + EC-035/EC-036/EC-037 + new task T-13 inserted ahead of renumbered T-14 (23→25 ACs); BC-table cell v1.3→v1.4; Token Budget line 4,500→6,000 (~78,600 total, ~39%). state-manager: **BC-INDEX v5.65→v5.66** (BC-1.18.006 cell v1.3→v1.4; `total_bcs` UNCHANGED 2,006; `status` stays `draft`); **STORY-INDEX v4.446→v4.447** (S-25.02 row v2.8/v1.4); **ARCH-INDEX v4.23** (ADR-051 pointer v1.8→v1.9 + Decision 15 summary). Input-hashes reconciled via `compute-input-hash --update` run AFTER content finalized: BC-1.18.006.md `a2945e7`→`d39e2f4`; S-25.02 story `b006363`(drifted `b159469`)→`d159583`. `pipeline:` stays in_progress. No trajectory-tail drift — unchanged →0→1→1→1 LENGTH=4 (spec-finalization burst, no adversary pass ran; cluster-2's own fresh LOCAL cascade not yet started, 0/3). **NEXT = cluster-2 Phase F4 (TDD-implementation): stub-architect (Red Gate for T-13/T-14) → test-writer (AC-024/AC-025 failing tests) → implementer. TDD worktree MUST rebase onto `origin/develop` @ `fff5e4cc` (local `develop` stale at `54fa985f`). Carried implementer caveat (ADR-051 §Decision 15): catch point (i) wired as an unconditional native call BEFORE `main::run`'s early-return guard.** Refs: D-1174, D-1173, S-25.02, BC-1.18.006 v1.4, ADR-051 v1.9, BC-INDEX v5.66, STORY-INDEX v4.447, ARCH-INDEX v4.23. STATE.md v9.99→v10.00. | D-1174 | 2026-09-07 |

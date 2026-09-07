@@ -7,7 +7,7 @@ producer: state-manager
 timestamp: 2026-05-20T00:00:00Z
 cycle: v1.0-brownfield-backfill
 inputs: [STATE.md]
-input-hash: "a55d8e9"
+input-hash: "49ffbd4"
 traces_to: STATE.md
 ---
 
@@ -4289,10 +4289,10 @@ the values this entry claims):
 
 ```
 $ grep -h "^input-hash:" specs/architecture/decisions/ADR-046-posttooluse-hook-authored-statemd-wall-clock-stamping-timestamp-lock-keep-alive.md specs/behavioral-contracts/ss-04/BC-4.17.001.md specs/behavioral-contracts/ss-05/BC-5.40.001.md specs/behavioral-contracts/ss-07/BC-7.07.001.md
-input-hash: "a55d8e9"
-input-hash: "a55d8e9"
-input-hash: "a55d8e9"
-input-hash: "a55d8e9"
+input-hash: "49ffbd4"
+input-hash: "49ffbd4"
+input-hash: "49ffbd4"
+input-hash: "49ffbd4"
 ```
 
 **Block 6 (Dim-5): Closes**
@@ -4462,7 +4462,7 @@ diff this burst):
 
 ```
 $ grep -h "^input-hash:" specs/behavioral-contracts/ss-05/BC-5.40.001.md
-input-hash: "a55d8e9"
+input-hash: "49ffbd4"
 $ git -C .factory diff --stat -- specs/architecture/decisions/ADR-046-posttooluse-hook-authored-statemd-wall-clock-stamping-timestamp-lock-keep-alive.md specs/behavioral-contracts/ss-04/BC-4.17.001.md specs/behavioral-contracts/ss-07/BC-7.07.001.md
 (no output — zero diff on all three)
 ```
@@ -4807,10 +4807,10 @@ carry the values this entry claims):
 
 ```
 $ grep -h "^input-hash:" specs/architecture/decisions/ADR-046-posttooluse-hook-authored-statemd-wall-clock-stamping-timestamp-lock-keep-alive.md specs/behavioral-contracts/ss-04/BC-4.17.001.md specs/behavioral-contracts/ss-05/BC-5.40.001.md specs/behavioral-contracts/ss-07/BC-7.07.001.md
-input-hash: "a55d8e9"
-input-hash: "a55d8e9"
-input-hash: "a55d8e9"
-input-hash: "a55d8e9"
+input-hash: "49ffbd4"
+input-hash: "49ffbd4"
+input-hash: "49ffbd4"
+input-hash: "49ffbd4"
 ```
 
 Bracket-delta self-consistency gate (literal shell, confirms this burst's ARCH-INDEX/BC-INDEX
@@ -8742,21 +8742,21 @@ Result: all 4-index + epic bumps landed. PASS.
 POLICY 18 three-way parity verification (frontmatter=catalog-row=blockquote):
 ```
 $ grep "^input-hash:" .factory/stories/S-17.05-stamp-state-timestamp-hook.md | head -1
-input-hash: "a55d8e9"
+input-hash: "49ffbd4"
 $ grep "S-17.05.*input-hash e8b9395" .factory/stories/STORY-INDEX.md | head -1 | grep -o e8b9395
 e8b9395
 $ grep "S-17.05=e8b9395" .factory/stories/STORY-INDEX.md | head -1 | grep -o e8b9395
 e8b9395
 
 $ grep "^input-hash:" .factory/stories/S-17.06-factory-lock-shared-functions.md | head -1
-input-hash: "a55d8e9"
+input-hash: "49ffbd4"
 $ grep "S-17.06.*input-hash 372f2eb" .factory/stories/STORY-INDEX.md | head -1 | grep -o 372f2eb
 372f2eb
 $ grep "S-17.06=372f2eb" .factory/stories/STORY-INDEX.md | head -1 | grep -o 372f2eb
 372f2eb
 
 $ grep "^input-hash:" .factory/stories/S-17.07-precompact-flush-identity-gate.md | head -1
-input-hash: "a55d8e9"
+input-hash: "49ffbd4"
 $ grep "S-17.07.*input-hash 028002a" .factory/stories/STORY-INDEX.md | head -1 | grep -o 028002a
 028002a
 $ grep "S-17.07=028002a" .factory/stories/STORY-INDEX.md | head -1 | grep -o 028002a
@@ -8952,7 +8952,7 @@ Result: input-hash ee0c840→8706b2f confirmed. PASS.
 BC frontmatter parity check:
 ```
 $ grep "input-hash" /Users/zious/Documents/GITHUB/vsdd-factory/.factory/specs/behavioral-contracts/ss-04/BC-4.17.001.md | head -1
-input-hash: "a55d8e9"
+input-hash: "49ffbd4"
 ```
 Result: BC-4.17.001 frontmatter input-hash = 8706b2f. PASS.
 
@@ -9824,7 +9824,7 @@ S-17.07 story at v1.2 (story-writer revisions complete). PASS.
 
 ```
 $ grep "input-hash:" /Users/zious/Documents/GITHUB/vsdd-factory/.factory/stories/S-17.07-precompact-flush-identity-gate.md | head -1
-input-hash: "028002a"
+input-hash: "49ffbd4"
 ```
 S-17.07 input-hash 028002a UNCHANGED (inputs unchanged across v1.0→v1.2). PASS.
 
@@ -12647,3 +12647,9 @@ S2504-POST-MERGE-BURST-2026-09-04 (state-manager; COMPLETE): D-1163. PR #814 (`f
 | Step | Agent | Status | Output |
 |------|-------|--------|--------|
 | S2502-F4-CLUSTER1-PASS4-EC015-EC016-SPEC-CASCADE | state-manager | NOT CLEAN — SPEC-SIDE EC-015/EC-016 CASCADE CLOSED | S-25.02 Phase F4 cluster-1 (cap+trigger, BC-1.18.005) LOCAL adversary pass-4 = NOT CLEAN (3 findings: F-C1-P4-001 MEDIUM/HIGH divisor-door, F-C1-P4-002 MEDIUM missing-N, F-C1-P4-003 LOW PC5-config-time-wiring-intent; +1 benign observation). product-owner ADJUDICATED FAIL-LOUD on F-C1-P4-001/002, amending BC-1.18.005 v1.9→v1.10: new Postcondition 9 sub-bullet + EC-015 (`worst_case_fuel_per_byte.is_finite() && > 0.0` load-time guard, closing the divisor-door defeat where `0.0` saturates the cap-vs-formula ceiling to `u64::MAX`, new `ShardConfigError::InvalidWorstCaseFuelPerByte`) + 2 new Canonical Test Vectors; new Postcondition 8 sub-bullet + EC-016 (missing-`N` load-time fail-loud guard evaluated BEFORE `low_water_mark`, new `ShardConfigError::MissingN`) + 1 new Canonical Test Vector. F-C1-P4-003 ADJUDICATED Reading (A) CONFIG-TIME/HARNESS-HELPER over Reading (B) RUNTIME — Postcondition 5 reworded wording-only (config-time MIN helper clarification), no new EC, no story impact. story-writer propagated into S-25.02 v2.3→v2.4 (AC-023 extension for EC-015, AC-005 extension for EC-016, new EC-027/EC-028 mirroring EC-015/EC-016, BC-table cell v1.10, Token Budget nudge) per POLICY 8. This burst: story `version:` frontmatter 2.3→2.4 (resolves validate-changelog-monotonicity — frontmatter now matches the story's own top changelog row); BC-1.18.005 version cell CONFIRMED v1.10 across story body / STORY-INDEX / BC-INDEX (cell-aware grep confirmed no v1.9 straggler remains, POLICY 8); input-hashes recomputed via `compute-input-hash --update`: BC-1.18.005.md → `af83d3c` (already current, unchanged); S-25.02 story → `04759dc` (was stale `0b88830`); `--check` CLEAN on both. BC-INDEX v5.61→v5.62 (BC-1.18.005 version-cell v1.9→v1.10; `total_bcs` UNCHANGED 2,006). STORY-INDEX v4.442→v4.443 (S-25.02 row: BC-1.18.005 cell v1.9→v1.10 + v2.4 narrative). VP-INDEX v3.07 / ARCH-INDEX v4.22 UNCHANGED this burst — EC-015/EC-016's formal VPs DEFERRED to Phase F6, alongside the already-recorded PC9/EC-013 and EC-014 items (new OPEN Blocking Issues row); VP-INDEX total_vps stays 141. This is a **lightweight progress note, NOT a convergence claim** — cluster-1 is NOT yet converged: code-side fixes for F-C1-P4-001/002/003 remain IN FLIGHT on `feature/S-25.02-cap-trigger`. BC-5.39.001 LOCAL cluster-1 streak stays 0/3 (cycle-level 3/3 CONVERGED streak UNCHANGED, separate track); finding-decay across cluster-1 passes: 3→4→2→3. `pipeline:` stays in_progress. No trajectory-tail drift — unchanged →0→1→1→1 LENGTH=4. Cycle-Closing Checklist S-7.02: no NEW `[process-gap]` finding this burst — the pass-3 stale-comment 3rd-recurrence Drift Item stands unchanged, not duplicated. Pre-existing dirty telemetry (`logs/*.jsonl`, `regression-state.json`, `sidecar-learning.md`) folded into this SAME single commit so the `.factory/` worktree ends CLEAN. Oldest Current Phase Steps row (SESSION-WRAP-PAUSE-2026-09-06) archived verbatim to `cycles/v1.0-brownfield-backfill/burst-log.md`, keeping the last-5 window. NEXT: implementer closes F-C1-P4-001/002/003 on `feature/S-25.02-cap-trigger`, then LOCAL adversary pass-5. Refs: S-25.02, BC-1.18.005 v1.10, F-C1-P4-001, F-C1-P4-002, F-C1-P4-003, BC-INDEX v5.62, STORY-INDEX v4.443. v9.93→v9.94. |
+
+### Archived Current Phase Steps rows (from STATE.md, keep-last-5 eviction at S2502-CLUSTER2-F2F3-SPEC-EVOLUTION-FINALIZED-2026-09-07 burst)
+
+| Step | Agent | Status | Output |
+|------|-------|--------|--------|
+| S2502-F4-CLUSTER1-PASS5-EC017-SPEC-CASCADE | state-manager | NOT CLEAN — SPEC-SIDE EC-017 RESIDUAL CASCADE CLOSED; NO RUNTIME DEFECT | S-25.02 Phase F4 cluster-1 (cap+trigger, BC-1.18.005) LOCAL adversary pass-5 = NOT CLEAN (2 findings: F-P5-001 MEDIUM stale-comment 4TH-recurrence [FIXED, test-writer `eebe4399`], F-P5-002 LOW assertion-tighten [FIXED]; +2 observations: divisor-door residual → BC v1.11 EC-017, `replace_all` occurrence-multiplicity gap → DEFERRED to BC-1.18.006/cluster-2). NO runtime defect in pass-5. product-owner ADJUDICATED the divisor-door residual observation, amending BC-1.18.005 v1.10→v1.11: new Postcondition 9 'Residual divisor-door closure' sub-paragraph + new EC-017 (raw pre-cast division `practical_fuel_ceiling as f64 / worst_case_fuel_per_byte` fail-loud saturation guard, new `ShardConfigError::FormulaCeilingSaturated`, evaluated BEFORE `CapExceedsFormulaCeiling` — closes the residual where a legal tiny-positive `worst_case_fuel_per_byte` e.g. `1e-300` passes EC-015's guard yet still saturates the computed ceiling to ~u64::MAX) + 1 new Canonical Test Vector; ALSO added a Postcondition 3 'Known formula gap' sub-paragraph recording the `Edit{replace_all: true}` occurrence-multiplicity under-count as an explicit DEFERRED anchor to BC-1.18.006 (cluster 2) — NOT a cluster-1 obligation, no new EC, no code-obligation change for this cluster. story-writer propagated into S-25.02 v2.4→v2.5 (AC-023 trace-header extension + residual-guard paragraph for EC-017, new EC-029 mirroring EC-017, BC-table cell v1.11, Token Budget nudge +300 tokens ~76,300/~38%; a documentary non-AC note near AC-002 recording the `replace_all` deferral) per POLICY 8. This burst: story `version:` frontmatter 2.4→2.5; BC-1.18.005 version cell CONFIRMED v1.11 across story body / STORY-INDEX / BC-INDEX (cell-aware grep confirmed no v1.10 straggler remains, POLICY 8); input-hashes recomputed via `compute-input-hash --update`: BC-1.18.005.md → `af83d3c` (already current, unchanged — BC's own inputs untouched); S-25.02 story → `bba9eaf` (was stale `04759dc`); `--check` CLEAN on both. BC-INDEX v5.62→v5.63 (BC-1.18.005 version-cell v1.10→v1.11; `total_bcs` UNCHANGED 2,006). STORY-INDEX v4.443→v4.444 (S-25.02 row: BC-1.18.005 cell v1.10→v1.11 + v2.5 narrative + input-hash re-sync `cd8a3a3`/`04759dc`→`bba9eaf` swept across the blockquote input-hash listing + POLICY 18 three-way parity line). VP-INDEX v3.07 / ARCH-INDEX v4.22 UNCHANGED this burst — EC-017's formal VP DEFERRED to Phase F6, alongside the already-recorded PC9/EC-013/EC-014/EC-015/EC-016 items (new OPEN Blocking Issues row); VP-INDEX total_vps stays 141. This is a **lightweight progress note, NOT a convergence claim** — cluster-1 is NOT yet converged: BC-5.39.001 LOCAL cluster-1 streak stays 0/3 (cycle-level 3/3 CONVERGED streak UNCHANGED, separate track); finding-decay across cluster-1 passes: 3→4→2→3→2. `pipeline:` stays in_progress. No trajectory-tail drift — unchanged →0→1→1→1 LENGTH=4. Cycle-Closing Checklist S-7.02: the stale-comment finding class is now at its 4TH recurrence (F-P1-003→F-P2-002→F-P3-002→F-P5-001), past the 3+ threshold — UPGRADED from a JUSTIFIED-DEFERRAL Drift Item to a proper `[process-gap][codified-pending]` Blocking-Issues-adjacent Drift Item requiring standing-rule codification at cluster-1's cycle-closing step (see Drift Items / Tech Debt). Also recorded as a Drift Item: the `replace_all` byte-count multiplicity gap DEFERRED to cluster-2/BC-1.18.006 (explicit PO ruling, concrete anchor). Pre-existing dirty telemetry (`logs/*.jsonl`, `regression-state.json`, `sidecar-learning.md`) folded into this SAME single commit so the `.factory/` worktree ends CLEAN. Oldest Current Phase Steps row (S2502-F4-CLUSTER1-PASS1-PC9-SPEC-CASCADE) archived verbatim to `cycles/v1.0-brownfield-backfill/burst-log.md`, keeping the last-5 window. NEXT: LOCAL adversary pass-6 (or cluster-1 convergence review if pass-5's 2 findings' fixes hold clean). Refs: S-25.02, BC-1.18.005 v1.11, F-P5-001, F-P5-002, BC-INDEX v5.63, STORY-INDEX v4.444. v9.94→v9.95. |

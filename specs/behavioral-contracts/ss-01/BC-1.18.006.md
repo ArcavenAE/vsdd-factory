@@ -1,17 +1,17 @@
 ---
 document_type: behavioral-contract
 level: L3
-version: "1.3"
+version: "1.4"
 status: draft
 producer: product-owner
-timestamp: 2026-09-05T00:00:00Z
+timestamp: 2026-09-07T00:00:00Z
 phase: F2
 inputs:
   - .factory/specs/architecture/decisions/ADR-051-layer-2-two-mechanism-size-triggered-shard-rotation-append-logs-and-bc-index-sharding.md
   - .factory/specs/behavioral-contracts/ss-01/BC-1.18.005.md
   - crates/hook-sdk/src/result.rs
   - .factory/cycles/v1.0-brownfield-backfill/S-25.02-f2-architecture-delta.md
-input-hash: "a2945e7"
+input-hash: "d39e2f4"
 traces_to: .factory/specs/prd.md
 origin: greenfield
 extracted_from: null
@@ -68,6 +68,27 @@ text below for the exact replacement sequence, which reuses ONLY the already-est
    this precondition is a structural SDK fact, not a runtime state, and is what makes this BC's
    block-and-retry design the ONLY implementable option for roll-before-write under the current
    dispatcher contract.
+
+4. **NEW (F2 spec-evolution, closing BC-1.18.005 v1.11 Postcondition 3's deferred `replace_all: true`
+   occurrence-multiplicity gap; S2502-CLUSTER1-PASS5 STATE.md Drift Item).** BC-1.18.005's
+   Postcondition 3 `Edit`/`MultiEdit` formula computes `net_delta_bytes` as a SINGLE-occurrence
+   `len(new_string) - len(old_string)` and does not multiply by
+   `occurrence_count(old_string, current_file_content)` for a `replace_all: true` call — an
+   explicit, adjudicated, DEFERRED gap (BC-1.18.005 Postcondition 3's "Known formula gap"
+   sub-paragraph) that this BC MUST NOT treat its roll/block outcome as production-ready against
+   until closed. This BC closes the gap WITHOUT modifying BC-1.18.005's already-ACTIVE, already-
+   shipped trigger contract — it adopts Option (b) of BC-1.18.005's own pre-authorized closure fork
+   ("BC-1.18.006's own roll-execution path... independently re-validates the post-apply size...
+   using the ACTUAL applied content length, catching an under-counted trigger before or immediately
+   after write"), not Option (a) (amending BC-1.18.005's formula itself). BC-1.18.005's PreToolUse
+   single-occurrence estimate remains EXACTLY as BC-1.18.005 specifies it, unchanged; this BC
+   instead adds an independent, narrowly-scoped POST-WRITE reconciliation check (Postcondition 7)
+   that catches and corrects any resulting under-projection using the artifact's ACTUAL on-disk
+   size — no occurrence counting is performed anywhere by this BC. This closure scope applies ONLY
+   to an `Edit` call carrying `replace_all: true` and to a `MultiEdit` call containing at least one
+   edit block with `replace_all: true`; a plain `Edit`/`MultiEdit`/`Write` without `replace_all:
+   true` is unaffected by this Precondition or by Postcondition 7 (BC-1.18.005's formula is already
+   exact for those cases, per its Postcondition 3's own UNCHANGED-leg text).
 
 ## Postconditions
 
@@ -192,6 +213,16 @@ text below for the exact replacement sequence, which reuses ONLY the already-est
    `bytes_at_seal` recording the sealed shard's exact final byte count (always `<= shard_cap_bytes`
    per Postcondition 3).
 
+   **NEW field (F2 spec-evolution, replace_all closure) — `sealed_retroactively` (boolean, OPTIONAL,
+   default `false` when omitted — backward compatible with every `[[shard]]` entry produced before
+   Postcondition 7 existed).** A seal produced by Postcondition 7's retroactive reconciliation path
+   (either catch point (i) or catch point (ii)) MUST set `sealed_retroactively = true`; every seal
+   produced by Postcondition 1's normal pre-write block-and-retry path MUST omit the field or set it
+   `false`. This is the sole audit trail distinguishing a shard whose `bytes_at_seal` may
+   legitimately exceed `shard_cap_bytes` (Postcondition 7's documented, narrowly-scoped exception)
+   from one that is guaranteed `<= shard_cap_bytes` (Postcondition 3's normal, unconditional
+   guarantee).
+
 6. **Stable-current-filename addressing is a consequence of this BC's seal mechanism, not a
    separate lookup step.** Because the seal PUBLISHES a copy of the old content as a NEW sealed
    file and ATOMICALLY REPLACES the canonical file's content with empty (CORRECTED, F-P2-003 —
@@ -204,6 +235,82 @@ text below for the exact replacement sequence, which reuses ONLY the already-est
    numerically less than `m`, sealed shards sort first (ADR-051 §Decision 3 fix-burst-corrected
    sort-order rationale — the "current file sorts last" conclusion is unchanged) — no
    special-casing needed in a `sort`-fed pipeline.
+
+7. **NEW (F2 spec-evolution, closing BC-1.18.005 v1.11 Postcondition 3's deferred `replace_all:
+   true` occurrence-multiplicity gap, S2502-CLUSTER1-PASS5) — bounded post-write reconciliation for
+   `replace_all: true` `Edit`/`MultiEdit` calls.**
+
+   **Why a post-write check, not a pre-write formula fix.** BC-1.18.005's Postcondition 3 PreToolUse
+   trigger is, by Precondition 4 above, left unchanged: it evaluates `projected_size` using the
+   single-occurrence delta BEFORE the write is applied. When the call carries `replace_all: true`
+   and the TRUE occurrence-multiplied delta would have pushed `projected_size` over
+   `shard_cap_bytes` while the single-occurrence estimate did not, the trigger returns `Continue`
+   and the tool call is applied normally by the underlying editor — this BC's own block-and-retry
+   roll (Postcondition 1) is a downstream CONSEQUENCE of BC-1.18.005's trigger firing (Precondition
+   1) and is therefore structurally never invoked for a call the trigger itself failed to flag.
+   Correcting this requires either changing BC-1.18.005's own trigger formula (Option (a) of
+   BC-1.18.005's pre-authorized closure fork — amending an ALREADY-ACTIVE, already-shipped BC's
+   contract, NOT taken here) or catching the resulting under-count independently, after the fact,
+   using the artifact's true on-disk state (Option (b), specified below). Option (b) needs NO
+   occurrence counting at all: a `stat()` of the ACTUAL post-apply file gives the TRUE size
+   directly, exactly as it will for the artifact's own next trigger evaluation; no
+   `len(new_string)`/`len(old_string)`/occurrence-count arithmetic is required or performed by this
+   Postcondition.
+
+   **Scope (zero added cost outside the narrow case).** This check runs ONLY for an `Edit` call
+   whose `replace_all` field is `true`, or a `MultiEdit` call containing at least one edit block
+   whose `replace_all` field is `true`, AND whose target path matches a `[[shard]]` config entry
+   (the SAME match BC-1.18.005 Precondition 3/Postcondition 1 already performs — no additional
+   config lookup). A `Write`, a plain `Edit`/`MultiEdit` without `replace_all: true`, or any call
+   against an unmatched path is completely unaffected — zero added `stat()` calls, zero added
+   arithmetic, consistent with Postcondition 1's own zero-cost-bypass precedent.
+
+   **Mechanism — two redundant catch points, bounding the observable-over-cap window to at most one
+   subsequent matched dispatch:**
+   - **(i) Immediate post-write check (primary).** In the SAME native dispatcher handling that
+     already distinguishes PreToolUse (BC-1.18.005 Precondition 1) from PostToolUse for this tool
+     call, once a `replace_all: true` call has been applied, this BC's gate performs a fresh
+     `stat()` of the canonical file. If `actual_size <= shard_cap_bytes`, no action is taken (the
+     single-occurrence estimate was conservative or exactly correct; `Continue`'s outcome stands
+     unmodified). If `actual_size > shard_cap_bytes`, this BC executes Postcondition 1's EXACT
+     four-step sequence (read the now-over-cap canonical content, publish it as a sealed shard,
+     atomically truncate the canonical file to empty, publish the updated shard-index)
+     RETROACTIVELY — i.e., against content that is ALREADY on disk, not content about to be
+     written. The three per-step partial-failure codes (`E-SHD-001`/`E-SHD-006`/`E-SHD-007`) apply
+     identically, self-healing exactly as Postcondition 1 already specifies; no new error code is
+     introduced for the retroactive invocation itself.
+   - **(ii) Next-dispatch backstop (defense-in-depth, covers a crash between apply and (i)).**
+     Before evaluating BC-1.18.005's own trigger for ANY subsequent `Edit`/`Write`/`MultiEdit`
+     against a matched artifact, this BC's gate first checks (via the same `stat()` BC-1.18.005
+     Postcondition 2 already performs to read `current_shard_bytes`) whether the CURRENT on-disk
+     size already exceeds `shard_cap_bytes` — a state that is structurally impossible to persist
+     under the normal pre-write block-and-retry flow, and should already have been resolved by (i),
+     but can transiently survive a dispatcher crash between the `replace_all` write's completion and
+     (i)'s own execution. If so, this BC executes the SAME retroactive four-step sequence BEFORE
+     evaluating the new call's own trigger. This backstop adds no cost beyond the `stat()`
+     BC-1.18.005 already performs for every matched dispatch — no new `stat()` call, only a
+     comparison against an already-read value.
+
+   **Bounded-window postcondition (testable, not "known limitation" prose).** For a `replace_all:
+   true` call whose true occurrence-multiplied delta was under-projected by BC-1.18.005's
+   single-occurrence trigger estimate, the canonical file MAY be observed in an over-cap state ONLY
+   during the window between that call's completed write and the EARLIER of: (i) firing for the
+   SAME tool invocation, or (ii) the artifact's NEXT matched `Edit`/`Write`/`MultiEdit` dispatch
+   (whichever occurs first) — never indefinitely, never spanning more than one subsequent matched
+   dispatch. This is the SOLE, explicitly bounded exception to Postcondition 3's "no shard is ever
+   observed in an over-cap state by any downstream reader" structural guarantee, and it applies
+   ONLY to this narrow `replace_all: true` case — every other call class this BC governs retains
+   Postcondition 3's unconditional guarantee.
+
+   **Sealed-shard cap exception (documented, scoped only to retroactive rolls).** Because a
+   retroactive roll seals content that has ALREADY been written (its size could not be prevented
+   pre-write), the resulting sealed shard's `bytes_at_seal` MAY exceed `shard_cap_bytes` — a
+   documented, narrow exception to Postcondition 3's per-shard cap guarantee, scoped ONLY to shards
+   produced by this Postcondition (marked `sealed_retroactively: true`, Postcondition 5). The
+   CANONICAL file's own guarantee is UNAFFECTED and holds unconditionally once reconciliation
+   completes: step (c)'s atomic truncate-to-empty never accepts an exception, so the canonical file
+   is always exactly 0 bytes immediately after either catch point (i) or (ii) fires — see
+   Invariant 6.
 
 ## Invariants
 
@@ -260,6 +367,16 @@ text below for the exact replacement sequence, which reuses ONLY the already-est
    historical content. See EC-012 below for the caller-responsibility failure mode when this
    assumption is violated, and its sanctioned escape hatch.
 
+6. **NEW (F2 spec-evolution, replace_all closure) — the canonical file's zero-bytes-after-roll
+   guarantee holds unconditionally, even under Postcondition 7's retroactive path; only the SEALED
+   shard's per-shard cap guarantee is exceptionally relaxed, and only when `sealed_retroactively:
+   true`.** Postcondition 1 step (c) (atomic truncate-to-empty) is IDENTICAL code whether invoked
+   from the normal pre-write block-and-retry sequence or from Postcondition 7's retroactive
+   reconciliation (catch point (i) or (ii)) — there is no code path in which the canonical file is
+   left non-empty after either catch point completes successfully. Invariant 3's "canonical filename
+   never moves" guarantee is likewise unaffected: Postcondition 7 reuses the exact same
+   rename-ONTO-existing-destination truncate, never a rename-away.
+
 ## Edge Cases
 
 | ID | Description | Expected Behavior |
@@ -274,6 +391,9 @@ text below for the exact replacement sequence, which reuses ONLY the already-est
 | EC-011 (fix-burst pass-2, F-P2-004) | Postcondition 1 step (d) (index publish) fails AFTER step (c) (atomic-truncate) succeeded | `E-SHD-007`: canonical file is correctly fresh/empty and the sealed shard exists correctly on disk, but the shard-index has not yet recorded the new `[[shard]]` entry (discoverability-metadata gap only, no reader-visible data loss); self-healing index reconciliation runs on the next dispatch attempt (Postcondition 1) |
 | EC-012 (fix-burst pass-2, F-P2-005) | An `Edit`/`MultiEdit`'s target content was ALREADY relocated to a SEALED shard by an EARLIER roll (a policy-violating attempt to amend deep-historical content, or a caller operating on stale in-memory state) | The retry-instruction text ("reissue as a fresh `Write` containing only your new entry") is INAPPLICABLE — there is no "new entry" to reissue against the canonical file, because that content no longer lives there. **Sanctioned escape hatch:** a sealed shard file (`<stem>.<seq:04>.md`) is an ORDINARY file that does NOT match any `[[shard]]` config entry's canonical-path pattern (BC-1.18.005 Postcondition 1's zero-cost bypass for unmatched paths) — it is entirely UNGATED by this BC's gate, and a caller with a genuine, policy-sanctioned need to touch historical content addresses the sealed file DIRECTLY by its own on-disk filename, exactly as it would edit any other ordinary file. This gate makes no attempt to detect, permit, or forbid such an edit — that is POLICY-1's concern (enforced at the `consistency-validator`/adversary-prompt agent level), entirely orthogonal to this gate's byte-size-triggered rotation concern. |
 | EC-013 (fix-burst pass-2, F-P2-005) | A net-positive `Edit`/`MultiEdit` targets a STILL-MUTABLE tail record (e.g., a same-burst typo fix to an entry not yet sealed away) and pushes `projected_size` over cap | Triggers the SAME generic roll+block+retry sequence as any other over-cap write (Postcondition 1/2) — Invariant 5's append-only-tail assumption is not violated by this case (the target is still-mutable tail content, not deep-historical content); EC-002's `old_string`-mismatch failure mode applies identically |
+| EC-014 (NEW, F2 spec-evolution, replace_all closure) | An `Edit{replace_all: true}` against a matched artifact has multiple occurrences of `old_string`; BC-1.18.005's single-occurrence estimate keeps `projected_size <= shard_cap_bytes`, but the TRUE occurrence-multiplied delta would have exceeded it | BC-1.18.005's trigger returns `Continue` (under-projected); the `Edit` is applied, producing an actual over-cap canonical file; Postcondition 7 catch point (i) fires immediately post-write, detects `actual_size > shard_cap_bytes` via `stat()`, and executes the retroactive roll: canonical truncated to 0 bytes, sealed shard published with `bytes_at_seal` equal to the TRUE (over-cap) size and `sealed_retroactively: true` (Postcondition 5) |
+| EC-015 (NEW, F2 spec-evolution, replace_all closure) | Postcondition 7 catch point (i) fails to execute at all (e.g., dispatcher process crash between the `replace_all` write's completion and (i)'s own invocation) | The canonical file is left over cap on disk with no seal; catch point (ii) — the leading `stat()`-based backstop probe on the SAME artifact's NEXT matched `Edit`/`Write`/`MultiEdit` dispatch — detects the pre-existing over-cap state BEFORE evaluating that new call's own trigger, and executes the same retroactive roll; Postcondition 7's bounded-window guarantee ("at most one subsequent matched dispatch") holds |
+| EC-016 (NEW, F2 spec-evolution, replace_all closure) | Agent's `Edit{replace_all: true}` tool call returns SUCCESS (`Continue`, not `Block`) to the agent, and a retroactive roll subsequently occurs via catch point (i) with no block/retry message ever shown to the agent | Expected and unchanged from this BC's existing EC-002 scope ("this BC's contract covers the dispatcher's OWN block message, not enforcement of agent compliance"): the agent has no proactive signal that a roll occurred; its next `Edit` against the (now-empty) canonical file fails at the tool layer with a standard "old_string not found" error, identically to EC-002's already-specified outcome — no new agent-facing contract is introduced by Postcondition 7 |
 
 ## Canonical Test Vectors
 
@@ -287,6 +407,9 @@ text below for the exact replacement sequence, which reuses ONLY the already-est
 | **NEW (fix-burst pass-2, F-P2-004).** Postcondition 1 step (d) fails after step (c) succeeded (simulated crash between canonical truncate and index publish) | `E-SHD-007`: `decision-log.md` is correctly empty and `decision-log.0001.md` exists on disk, but the shard-index has no `[[shard]] seq=1` entry; next dispatch attempt scans for un-indexed sealed shards and appends the missing entry before evaluating any new trigger | error |
 | Whole-corpus `grep -n "D-1234" decision-log*.md` after 2 rolls | Glob matches `decision-log.0001.md`, `decision-log.0002.md`, `decision-log.md` in that lexicographic (and chronological) order | happy-path |
 | **NEW (fix-burst pass-2, F-P2-005).** `Edit` targets content already relocated to `decision-log.0001.md` by an earlier roll | Retry-instruction text is inapplicable against the (now-unrelated) canonical file; caller addresses `decision-log.0001.md` directly by filename — ungated, since it matches no `[[shard]]` config entry | edge-case |
+| **NEW (F2 spec-evolution, replace_all closure, EC-014).** `Edit{replace_all: true}` to `decision-log.md`; current shard 48,900 bytes; `old_string` (50 bytes) occurs 3 times; `new_string` 250 bytes (per-occurrence delta +200); single-occurrence projected size = 49,100 (`<= 49,152` cap → BC-1.18.005 trigger returns `Continue`, write applied); TRUE post-apply size = 48,900 + 3×200 = 49,500 (`> 49,152`) | Postcondition 7 catch point (i) `stat()`s the canonical file post-write, detects 49,500 > 49,152, executes retroactive roll: publishes `decision-log.0001.md` (49,500 bytes, `bytes_at_seal=49500`, `sealed_retroactively=true`); atomically truncates `decision-log.md` to 0 bytes; publishes the index entry | edge-case |
+| **NEW (F2 spec-evolution, replace_all closure, EC-015).** Same over-cap `replace_all` write as above, but Postcondition 7 catch point (i) is simulated as crashed/never-run | Canonical file remains at 49,500 bytes (over cap) until the artifact's next matched dispatch; catch point (ii)'s leading probe detects `actual_size (49,500) > shard_cap_bytes (49,152)` BEFORE evaluating the new call's own trigger, and executes the retroactive roll identically to the row above | edge-case |
+| **NEW (F2 spec-evolution, replace_all closure).** `Edit{replace_all: true}` where `old_string` occurs exactly once (`occurrence_count=1`) | Single-occurrence estimate equals the TRUE delta exactly (the identity case) — BC-1.18.005's trigger is exact; Postcondition 7 catch point (i)'s `stat()` finds `actual_size <= shard_cap_bytes` and takes no action | happy-path |
 
 ## Verification Properties
 
@@ -297,6 +420,7 @@ text below for the exact replacement sequence, which reuses ONLY the already-est
 | VP-120 | Retry-wording determinism (the block reason's retry instruction is the SAME fixed unified template regardless of the original tool name — CORRECTED, F-P2-002: no longer a per-tool-name choice between two divergent wordings); Fail-loud shard-seal-write-failure invariant (`E-SHD-001`, Postcondition 1 steps (a)-(b) failure, `HookResult::Error`, canonical file left untouched, per EC-003) | unit test — two facets: table-driven over both tool-name classes, asserting identical template with tool-specific guidance embedded within it; injected shard-seal-write-failure FS asserting `E-SHD-001` + pre-roll-state preservation |
 | VP-138 | Truncate-after-seal self-heal invariant (`E-SHD-006`) — a crash between Postcondition 1 step (b) (sealed-shard publish) and step (c) (atomic-truncate) resolves, on the NEXT dispatch attempt, to a byte-identity check against the sealed shard followed by resume-from-step-(c)-only recovery (truncate + index publish only; the already-correct sealed shard is never rewritten), per EC-010 | integration test (fault-injection across two dispatches: simulate a crash between steps (b) and (c); assert post-recovery state is exactly one sealed shard, one index entry, and an empty canonical file) |
 | VP-139 | Index-after-truncate self-heal invariant (`E-SHD-007`) — a crash between Postcondition 1 step (c) (atomic-truncate) and step (d) (index publish) resolves, on the NEXT dispatch attempt, to a filesystem scan for un-indexed sealed shards followed by an append-only reconciliation of the missing `[[shard]]` entry, per EC-011 and Postcondition 5's schema | integration test (fault-injection across two dispatches: simulate a crash between steps (c) and (d); assert the reconciled index gains exactly the missing entry, existing entries untouched, idempotent on repeat) |
+| VP-NNN (pending) | **NEW (F2 spec-evolution, replace_all closure).** Bounded post-write reconciliation for under-projected `replace_all: true` writes (Postcondition 7) — actual-size `stat()` check at catch point (i)/(ii), retroactive four-step roll reuse (`E-SHD-001`/`E-SHD-006`/`E-SHD-007` self-healing applies identically), the `sealed_retroactively` audit flag (Postcondition 5), and the bounded-window guarantee (over-cap observable for at most one subsequent matched dispatch, never indefinitely), per EC-014/EC-015/EC-016 | integration test (fault-injection: simulate a `replace_all` write whose true occurrence-multiplied size exceeds cap while BC-1.18.005's single-occurrence estimate does not; assert catch point (i) fires and reconciles; separately, simulate catch point (i) crashing/never-running and assert catch point (ii)'s next-dispatch backstop reconciles instead). **Allocation OWED to Phase F6 targeted-hardening (architect/formal-verifier), mirroring BC-1.18.005 EC-017's own VP-owed-to-F6 precedent (S2502-CLUSTER1-PASS5 STATE.md Drift Item) — product-owner does NOT self-allocate a VP number in this F2 spec-evolution burst.** |
 
 **Fix-burst note (fix-burst pass-3, F-P3-006):** VP-118's and VP-119's previously-separate rows are
 each collapsed to ONE row (multi-facet convention). The prior separate VP-118 "partial-failure
@@ -323,6 +447,7 @@ ordering) is its genuine, non-overlapping scope.
 - `crates/hook-sdk/src/result.rs` — `HookResult` enum (`Continue`/`Block { reason }`/`Error { message }`), the structural contract motivating block-and-retry over transparent redirection
 - `crates/factory-dispatcher/src/indeterminate_marker.rs` — `write_indeterminate_marker`'s temp-file-then-rename atomic-write pattern, reused for shard-index publication
 - `crates/last-amended-migrate/src/atomic_write.rs` — `write_atomic`, the alternative existing atomic-write primitive this BC's implementation may reuse instead of duplicating `indeterminate_marker.rs`'s
+- `crates/factory-dispatcher/src/shard_manager.rs` (extends the existing module, F2 spec-evolution, replace_all closure) — Postcondition 7's post-write reconciliation: catch point (i), a native PostToolUse-side `stat()` check alongside the existing native PreToolUse handling BC-1.18.005 Precondition 1 already establishes; and catch point (ii), a leading `stat()`-comparison probe within the existing native PreToolUse handling path, before BC-1.18.005's own trigger evaluation. Both reuse Postcondition 1's existing seal+atomic-truncate+index-publish sequence verbatim — no new atomic-write primitive, no new `HookResult` variant, no new `hooks-registry.toml` entry (this remains native dispatcher code, not a WASM plugin, per the existing "why native, not WASM" rationale, BC-1.18.005 Postcondition 2)
 
 ## SDK Grounding Evidence
 
@@ -371,6 +496,7 @@ S-25.02 — Artifact Sharding Layer 2: Size-Triggered Shard Rotation for Cycle A
 
 - VP-118, VP-119, VP-120 — allocated by formal-verifier (S-25.02 F2 verification-property extension burst; VP-INDEX v3.02). VP-118 (integration; publish-sealed-shard→atomic-truncate-canonical→atomic-index-publish before Block + same-invocation atomicity + NEW partial-failure self-healing invariant per fix-burst pass-2), VP-119 (proptest; no-over-cap + stable-current-filename — re-verified against the corrected copy-then-atomic-truncate mechanism), VP-120 (unit-test; retry-wording determinism — re-verified as a single unified template, not a per-tool-name choice — + fail-loud shard-seal-write error E-SHD-001 + NEW E-SHD-006/E-SHD-007 partial-failure codes). Formal-verifier should review VP-118/119/120 bodies against this fix-burst's corrected mechanics (copy-then-truncate instead of rename-then-create; unified retry wording; staged 4-step sequence) — not yet actioned in this burst.
 - VP-138, VP-139 — allocated by formal-verifier (S-25.02 F2 verification-property fix-burst pass-2; VP-INDEX v3.04, F-P2-004 partial-failure-code symmetry: every E-SHD code now has a VP leg). VP-138 (integration; Postcondition 1 step (c)/EC-010/Invariant 2/Invariant 3 — E-SHD-006 self-healing resume-from-truncate), VP-139 (integration; Postcondition 1 step (d)/EC-011/Postcondition 5 — E-SHD-007 self-healing index reconciliation). Back-references added S-25.02 F2 residual-cleanup micro-burst (formal-verifier's VP-138/VP-139 bodies already cited this BC in `source_bc`; this BC's own Verification Properties table and VP Anchors list did not yet cite them back — gap closed here, reference-only, no behavior change).
+- VP-NNN (pending, F2 spec-evolution, replace_all closure) — Postcondition 7's bounded post-write reconciliation for under-projected `replace_all: true` writes (catch point (i)/(ii) `stat()`-based reconciliation, retroactive four-step roll reuse, `sealed_retroactively` audit flag, bounded-window guarantee). Allocation routed to architect/formal-verifier at Phase F6 targeted-hardening, mirroring BC-1.18.005 EC-017's own VP-owed-to-F6 precedent (S2502-CLUSTER1-PASS5 STATE.md Drift Item) — NOT self-allocated by product-owner in this F2 spec-evolution burst.
 
 ## Traceability
 
@@ -380,15 +506,17 @@ S-25.02 — Artifact Sharding Layer 2: Size-Triggered Shard Rotation for Cycle A
 | Capability Anchor Justification | CAP-043 ("Artifact Sharding Layer 2: Size-Triggered Shard Rotation for Cycle Append-Logs and BC-INDEX Structured-Catalog Sharding") per capabilities.md §CAP-043 — this BC specifies CAP-043's roll-before-write mechanics: "performs a roll-before-write (publish a sealed shard copy as a new file, then atomically replace the canonical file's content with empty, then atomically publish the updated shard index) and returns `HookResult::Block` with an explicit, actionable retry instruction (transparent write-redirection is not implementable under `HookResult`'s ... contract)." (CORRECTED, fix-burst pass-2, F-P2-003, from the withdrawn "seal the current shard by rename, create a fresh empty current file" wording). |
 | L2 Domain Invariants | none (dispatcher runtime architectural invariant, not an L2 domain-spec DI-NNN) |
 | Architecture Module | SS-01 (Hook Dispatcher Core — `shard_manager.rs` roll/block sequence) |
-| ADR | ADR-051 §Decision 1 (block-and-retry mechanism, full algorithm, v1.2 per-tool `projected_size` correction); §Decision 3 (stable-current-filename addressing, v1.2 copy-then-atomic-truncate correction); §Decision 4 (shard-index schema); §Decision 11 (staged partial-failure sequence + E-SHD-006/007, fix-burst addition); §Decision 12 (append-only-tail assumption + sealed-shard escape hatch, fix-burst addition); §Context (`HookResult`'s three-variant SDK constraint) |
+| ADR | ADR-051 §Decision 1 (block-and-retry mechanism, full algorithm, v1.2 per-tool `projected_size` correction; PreToolUse-only scope for the core roll — Postconditions 1-6 remain governed here); §Decision 3 (stable-current-filename addressing, v1.2 copy-then-atomic-truncate correction); §Decision 4 (shard-index schema, extended v1.4 with `sealed_retroactively`); §Decision 11 (staged partial-failure sequence + E-SHD-006/007, fix-burst addition); §Decision 12 (append-only-tail assumption + sealed-shard escape hatch, fix-burst addition); **§Decision 15 (NEW, ADR-051 v1.8→v1.9, architect addendum) — governs Postcondition 7's catch point (i): the PostToolUse-side native check leg, which §Decision 1 did NOT originally scope (§Decision 1 is PreToolUse-only and had no retroactive-roll semantics); §Decision 15 documents that this leg performs no `HookResult` signaling (a pure side-effect check per EC-016) and specifies its reuse of the retroactive four-step roll**; §Context (`HookResult`'s three-variant SDK constraint). Catch point (ii) (the next-dispatch backstop probe) remains governed by §Decision 1's existing PreToolUse scope, since it runs as a leading step within that same existing handling path. |
 | Stories | S-25.02 |
 | Cycle | v1.0-brownfield-backfill (F2 — product-owner spec-evolution burst) |
 | Feature | E-25 — Validation Integrity and Large-Artifact Resilience |
+| Deferred-Gap Closure | v1.4 CLOSES the `replace_all: true` occurrence-multiplicity gap BC-1.18.005 v1.11 Postcondition 3 explicitly DEFERRED to this BC's own cluster-2 F2 spec-evolution burst (S2502-CLUSTER1-PASS5 STATE.md Drift Item). |
 
 ## Changelog
 
 | Version | Date | Author | Change |
 |---------|------|--------|--------|
+| 1.4 | 2026-09-07 | product-owner | F2 spec-evolution burst (S-25.02 cluster-2 pre-TDD): CLOSES BC-1.18.005 v1.11 Postcondition 3's deferred `replace_all: true` occurrence-multiplicity gap (S2502-CLUSTER1-PASS5 STATE.md Drift Item), adopting Option (b) of BC-1.18.005's own pre-authorized closure fork — BC-1.18.005's PreToolUse trigger formula is left UNCHANGED (Option (a), amending BC-1.18.005's already-ACTIVE/shipped contract, was NOT taken). ADDED Precondition 4 (closure-scope statement, `Edit`/`MultiEdit` `replace_all: true` calls only). ADDED Postcondition 7 (bounded post-write reconciliation): two redundant catch points — (i) an immediate post-write `stat()`-based check reusing Postcondition 1's exact four-step roll sequence retroactively, and (ii) a next-dispatch leading-probe backstop covering an (i)-crash scenario; a precise, testable bounded-window postcondition (canonical file over-cap observable for at most one subsequent matched dispatch, never indefinitely); and a documented, narrowly-scoped exception allowing a RETROACTIVELY-sealed shard's `bytes_at_seal` to exceed `shard_cap_bytes`, while the CANONICAL file's own zero-bytes-after-roll guarantee remains unconditional (codified in NEW Invariant 6). EXTENDED Postcondition 5's shard-index schema with an optional `sealed_retroactively` boolean field (default `false`, backward compatible) as the audit trail distinguishing the two shard-cap guarantee regimes. ADDED EC-014 (under-projected `replace_all` triggers catch point (i)), EC-015 (catch point (i) failure triggers catch point (ii) backstop), EC-016 (no agent-facing block/retry signal for a retroactive roll — unchanged from existing EC-002 scope) and three matching Canonical Test Vectors. ADDED one new Verification Property row, VP-NNN (pending) — allocation explicitly routed to architect/formal-verifier at Phase F6 targeted-hardening (NOT self-allocated), mirroring BC-1.18.005 EC-017's own VP-owed-to-F6 precedent. Architecture Anchors extended with the two new catch-point call sites (both native dispatcher code reusing Postcondition 1's existing mechanism; no new `HookResult` variant, no new atomic-write primitive, no new `hooks-registry.toml` entry). Traceability gained a "Deferred-Gap Closure" row citing the closed drift item. `status` remains `draft` (cluster-2 not yet shipped). **SAME-BURST CORRECTION (architect implementability-gate finding, post-initial-v1.4-draft):** this entry originally claimed "no new ADR decision required — contained within ADR-051's existing native-check pattern" for Postcondition 7. That OVERCLAIMED: ADR-051 §Decision 1 scoped the native check to PreToolUse ONLY, with no PostToolUse leg and no retroactive-roll semantics — catch point (i) (the PostToolUse-side check) was NOT already covered. The architect added **ADR-051 §Decision 15** (ADR-051 v1.8→v1.9) as a new addendum documenting the PostToolUse-side native-check leg, its pure-side-effect (no `HookResult` signaling, per EC-016) contract, and its reuse of the retroactive four-step roll. The Traceability ADR row is corrected accordingly: Postcondition 7 catch point (i) is now cited to §Decision 15; the core roll mechanism (Postconditions 1-6) and catch point (ii) remain under §Decision 1/§Decision 11. No postcondition, invariant, edge-case, or mechanism text changed — citation-accuracy correction only; BC stays at v1.4 (same-burst fix, not a new increment). |
 | 1.3 | 2026-09-05 | product-owner | Fix-burst amendment (adversary pass-3 finding F-P3-006 LOW): collapsed the §Verification Properties table's separate VP-118 (×2) and VP-119 (×2) rows into one row each (multi-facet convention). CRITICALLY, REMOVED the second VP-118 "partial-failure self-healing invariant" row entirely — it duplicated and OVER-CLAIMED coverage that VP-INDEX v3.04 authoritatively assigns per-code to VP-120 (`E-SHD-001`), VP-138 (`E-SHD-006`), and VP-139 (`E-SHD-007`) respectively; folded the `E-SHD-001` fail-loud facet explicitly into VP-120's row to match VP Anchors' existing description. No test coverage lost, no postcondition/invariant/edge-case content change — table presentation and mis-attribution correction only. |
 | 1.2 | 2026-09-05 | product-owner | Fix-burst amendment (adversary pass-2 findings F-P2-003 HIGH + F-P2-002 HIGH + F-P2-004 MEDIUM + F-P2-005 MEDIUM, ADR-051 v1.2 Decisions 1/3/11/12): (1) REWROTE Postcondition 1(a)/Invariant 2/Invariant 3 from the WITHDRAWN rename-away seal mechanism (which opened a real ENOENT window on the canonical path) to the CORRECTED copy-then-atomic-truncate-in-place mechanism — publish the sealed shard as a new file, then atomically replace the canonical file's content with empty via `write_atomic`'s temp-file-then-rename primitive; the canonical path is never absent. (2) REWROTE Postcondition 2/Invariant 4 to a SINGLE UNIFIED retry-instruction template, withdrawing the divergent `Write`-"simply retry unchanged" wording (unsound: could permanently deadlock a blocked `Write` whose stale pre-roll `content` remains over cap under the corrected `projected_size = len(content)` formula). (3) ADDED the staged 4-step per-write roll sequence (read/publish-sealed/atomic-truncate/publish-index) with two NEW partial-failure error codes `E-SHD-006` (seal published, canonical not yet truncated — self-healing resume-from-truncate) and `E-SHD-007` (canonical truncated, index not yet updated — self-healing index reconciliation), plus new EC-010/EC-011 and a new VP-118 fault-injection property. (4) ADDED Invariant 5 (append-only-tail assumption, explicit) and two new edge cases EC-012 (sealed-shard direct-edit escape hatch for already-relocated content) and EC-013 (still-mutable tail edit, unaffected by Invariant 5). Updated Canonical Test Vectors, Architecture Anchors, SDK Grounding cross-references, VP Anchors, and Traceability's Capability Anchor Justification quote and ADR citation accordingly. Added BC-1.18.012 to Related BCs. |
 | 1.1 | 2026-09-05 | product-owner | Fix-burst amendment (F-S2502-F2-007, POLICY 5): added `## SDK Grounding Evidence` section with literal stable-anchor grep output for `HookResult`'s three-variant enum, `write_indeterminate_marker`/`block_if_marker_check`, and `write_atomic`. No postcondition/invariant/VP content change — this BC's contract was confirmed unaffected by the sibling BC-1.18.009 BLOCKER fix (architect: "No change required," F2 architecture-delta §4a). |
