@@ -7865,3 +7865,213 @@ BC-INDEX v5.67, STORY-INDEX v4.448.
 ### Canonical 6-column row (STATE.md Decisions Log)
 
 | D-1175 | D-1175-S2502-CLUSTER2-PASS1-SEALEDRETRO-WRITEARM-SPEC-CASCADE | **S-25.02 Phase F4 cluster-2 (roll, BC-1.18.006) LOCAL adversary pass-1 = NOT CLEAN — 6 findings (4 MAJOR F-C2-P1-001/002/003/004, 2 MINOR F-C2-P1-005/006), ALL fixed this burst; BC-1.18.006 v1.4→v1.5 resolves 3 of the 4 MAJOR findings via NEW Invariant 7 (`sealed_retroactively` recovery-by-inference) and catch point (ii)'s corrected per-tool `stat()` cost split (`Write` gets its own dedicated probe, closing a real data-loss path)** 2026-09-07 (product-owner + story-writer content; state-manager index/version-sync + single-commit TD-VSDD-053). product-owner: BC-1.18.006 v1.4→v1.5 — F-C2-P1-001 NEW Invariant 7 (`bytes_at_seal > shard_cap_bytes ⇒ sealed_retroactively = true`) + NEW EC-018, requiring `E-SHD-007` self-heal reconciliation to INFER `sealed_retroactively` rather than hardcode `false`; F-C2-P1-002 catch point (ii)'s per-tool `stat()` cost split corrected — `Write` now performs its OWN dedicated, bounded `stat()`, closing a real data-loss path — NEW EC-017; F-C2-P1-004 stale first Canonical Test Vector REPLACED. F-C2-P1-003/005/006 are code-side-only, no BC text change, on `feature/S-25.02-roll` @ `d0514e14`. story-writer: S-25.02 v2.8→v2.9 — AC-024/AC-025 EXTENDED (not newly added; RED-Gate count stays 25 ACs) + EC-038/EC-039. state-manager: **BC-INDEX v5.66→v5.67** (BC-1.18.006 cell v1.4→v1.5; `total_bcs` UNCHANGED 2,006; also backfilled a missing v5.66 changelog entry); **STORY-INDEX v4.447→v4.448** (S-25.02 row v2.9/v1.5; also backfilled a missing v4.447 changelog entry + reconciled a stale blockquote/POLICY-18-parity cite). Input-hashes reconciled: BC-1.18.006.md CONFIRMED CURRENT `d39e2f4`; story `d159583`→`ef172c7`. Pending VP-NNN row EXTENDED (not newly allocated) to cover EC-017/EC-018/Invariant 7, still routed to Phase F6. New Drift Item: `.factory/policies.yaml` fails strict YAML parse (unescaped literal pipe character in a double-quoted scalar + an early `---`) — NOT fixed this burst, anchored next maintenance sweep. `pipeline:` stays in_progress. No trajectory-tail drift — unchanged →0→1→1→1 LENGTH=4 (LOCAL cluster-2 cascade, not a cycle-level pass). **NEXT = cluster-2 LOCAL adversary pass-2, fresh context.** Refs: D-1175, D-1174, S-25.02, BC-1.18.006 v1.5, F-C2-P1-001, F-C2-P1-002, F-C2-P1-004, BC-INDEX v5.67, STORY-INDEX v4.448. STATE.md v10.00→v10.01. | D-1175 | 2026-09-07 |
+
+## D-1176
+
+**D-1176-S2502-CLUSTER2-PASS2-FAILLOUD-STABLECAP-SPEC-CASCADE**
+
+Allocated as the next GLOBAL D-NNN per POLICY 16: max D-NNN across all cycle decision-logs was
+D-1175 (this file's own immediately-preceding entry, above). D-1176 allocated cleanly above the
+true max.
+
+**Summary:** S-25.02 Phase F4 cluster-2 (roll, BC-1.18.006) **LOCAL adversary pass-2 = NOT CLEAN**
+2026-09-07 (product-owner + story-writer + code-side content; state-manager index/version-sync +
+single-commit TD-VSDD-053) — 6 findings (2 MAJOR F-C2-P2-001/002, 2 MINOR F-C2-P2-003/004, 2
+ADVISORY F-C2-P2-005/006), ALL fixed this burst. BC-5.39.001 cluster-2 LOCAL streak stays **0/3**
+(pass-2 not clean; pass-3 next, fresh context; cycle-level 3/3 CONVERGED streak UNCHANGED, separate
+track).
+
+**F-C2-P2-001 (MAJOR — `E-SHD-006` read-error swallow, code-side, no BC text change).**
+`self_heal_resume_from_truncate`'s sealed-shard read (`std::fs::read_to_string`, `let Ok(...) else
+{ return Ok(None) }`) treated ANY read failure identically to "no sealed shard exists at all" —
+including a genuine I/O error or non-UTF-8 content. Because the plausibility probe gating this call
+already confirmed the file exists on disk, silently returning `Ok(None)` let
+`run_self_heal_if_plausible` fall through to `self_heal_reconcile_missing_index_entries`, which
+would append a "sealed" index entry for the file WITHOUT ever truncating the canonical — a
+permanent inconsistent state (index claims sealed; canonical still holds the un-truncated
+duplicate content), violating Invariant 6 and matching SOUL.md #4's silent-failure smell. Fixed
+(`feature/S-25.02-roll` @ `a9611f71`, commit `cdd86177`): both the sealed-shard and canonical reads
+switch to `std::fs::read` (bytes), mirroring the canonical read's own `NotFound`-vs-other-error
+split immediately below — `NotFound` still returns `Ok(None)` (genuinely absent/removed
+mid-probe), but any other read error now fails loud via `ShardRollError::TruncateFailedAfterSeal`.
+The byte-identity comparison itself also moves to raw bytes, so non-UTF-8 sealed content can no
+longer evade detection. No BC-1.18.006 text change — the existing Postcondition 1/`E-SHD-006`
+contract already requires exactly this; this closes an implementation-fidelity gap only.
+
+**F-C2-P2-002 (MAJOR — shape-blind catch point (i), code-side, no BC text change).**
+`invoke.rs::detect_replace_all_overcap_candidate` (Postcondition 7 catch point (i)) filtered on
+event/tool/`replace_all`/config-match but never checked the matched entry's `shape`. Catch point
+(i) exists ONLY to catch a `replace_all` occurrence-multiplicity under-projection gap in
+BC-1.18.005's byte-size "flat" formula — a defect that structurally cannot occur in the
+`frontmatter-changelog-array` item-count mechanism BC-1.18.009 owns entirely. Without a shape
+check, a byte-over-cap `replace_all` `Edit` against a matched `frontmatter-changelog-array`-shaped
+entry (e.g. a real index-style artifact like BC-INDEX.md, whose rotation is item-count-driven)
+would incorrectly byte-roll and empty it — cross-mechanism data corruption. Fixed
+(`feature/S-25.02-roll` @ `a9611f71`, commit `60807c9f`): adds `entry.shape != Some(ShardShape::
+Flat) -> None` immediately after resolving the matched entry, so catch point (i) fully no-ops
+(zero side effects) for any non-flat shape. No BC-1.18.006 text change — Postcondition 7's scope
+was always the "flat" mechanism; this closes an implementation-fidelity gap only.
+
+**F-C2-P2-003 (MINOR — Write-arm backstop `stat()`-failure disposition; BC-1.18.006 v1.5→v1.6,
+Invariant 8, NEW EC-019, NEW `E-SHD-008`).** The Write-arm's dedicated Postcondition 7 catch point
+(ii) crash-orphan backstop `stat()` probe (`current_shard_bytes_flat`, added F-C2-P1-002 at v1.5)
+was silently implemented to fail OPEN (`tracing::warn!` + continue) on any non-`NotFound` `stat()`
+error — an unadjudicated asymmetry against `Edit`/`MultiEdit`'s existing fail-loud disposition on
+the same class of error. product-owner ADJUDICATED fail-open UNSOUND, not merely under-specified:
+`stat()` follows symlinks and fails on `ELOOP` for a final-component symlink loop, while
+`write_atomic`'s `rename(temp, canonical)` does not need to dereference the destination's final
+symlink component and can still succeed — silently replacing the symlink and applying the
+`Write`'s under-cap `content` while the true, possibly-over-cap content the symlink pointed at is
+never examined or sealed. This is a real, specific data-loss path, not a hypothetical one.
+CORRECTED Postcondition 7 catch point (ii) to REQUIRE fail-loud (`HookResult::Error`, NEW
+`E-SHD-008`, "backstop probe stat failure") on any non-`NotFound` `stat()` error for the `Write`
+arm, matching `Edit`/`MultiEdit`'s existing disposition; `NotFound` remains the legitimate
+first-ever-write case (EC-004), unaffected. ADDED NEW **Invariant 8** (uniform fail-loud
+backstop-probe disposition, never tool-divergent), NEW EC-019, and a matching Canonical Test
+Vector. Code fixed (`feature/S-25.02-roll` @ `a9611f71`, commit `a9611f71`): adds
+`ShardRollError::BackstopProbeFailed` (`E-SHD-008`), a genuinely NEW error code distinct from the
+staged-roll-sequence `E-SHD-001`/`006`/`007` codes (no roll has started when this fires); flips the
+Write arm's `Err(e)` leg to construct it via the existing `From<ShardRollError> for HookResult`
+impl. The `NotFound -> Ok(0)` mapping and BC-1.18.005's stat-free Write TRIGGER formula
+(`projected_size = len(content)`) are untouched — only the backstop probe's own error disposition
+changes.
+
+**F-C2-P2-003 escalation — spec-vs-spec-looking conflict with cluster-1's shipped F-002 test,
+RESOLVED this burst.** This finding surfaced an apparent contradiction with BC-1.18.005's own
+already-shipped, already-merged (PR #818) Canonical Test Vector F-002, whose original fixture
+simulated a self-referential-symlink `ELOOP` on the Write arm's `stat()` call and asserted the
+PRE-existing fail-open behavior this finding was about to flip to fail-loud. Left unexamined, this
+looked like a genuine spec-vs-spec conflict between an already-active BC (BC-1.18.005) and the BC
+under amendment (BC-1.18.006). Escalation resolution, in order: **(1) research** — verified the
+POSIX `rename()`-vs-`stat()` dereferencing asymmetry is a real, documented filesystem property
+(not a fabricated hypothetical), and that fail-closed disposition on an unresolved-resource /
+ambiguous-error path is the correct discipline per OWASP's fail-securely guidance and CWE-636
+(not failing securely on error conditions); **(2) architect assessment** — confirmed the Write-arm
+`stat()` call F-002's fixture exercised did not exist anywhere in BC-1.18.005's OWN Postcondition 3
+trigger formula at the time F-002 was authored; it was added later, by BC-1.18.006 v1.5's own
+crash-orphan backstop probe (F-C2-P1-002). F-002 was therefore never actually proving a
+BC-1.18.005 invariant about THIS probe's failure disposition — it was proving Postcondition 3's
+content-alone trigger formula ignores `current_shard_bytes`'s *value*, using a fixture that
+happened to also exercise a `stat()` call that did not yet exist at BC-1.18.005's own genesis. The
+fixture was stale/over-broad, not BC-1.18.005 itself; **(3) explicit human approval of refined
+Option A** — BC-1.18.006 v1.6's Invariant 8/`E-SHD-008` wins outright (fail-loud, no exception
+carved out for this probe), NO BC-1.18.005 amendment is made, and F-002 is RETARGETED (not
+weakened or deleted) onto a real, successfully-`stat()`-able 45,000-byte canonical with a
+5,000-byte Write `content` — proving F-002's actual, intended invariant (Postcondition 3's
+content-alone formula ignores `current_shard_bytes`'s value; the withdrawn uniform formula would
+wrongly sum 45,000 + 5,000 = 50,000 > 49,152) without exercising the now-fail-loud stat-failure
+path at all. Code: test-writer commits `982a2998` (Red Gate for the fail-loud flip) +
+`d18bf08b` (F-002 retarget, renamed to
+`test_BC_1_18_005_F002_write_under_cap_continues_regardless_of_current_shard_bytes_value`);
+implementer commit `a9611f71` flips the arm and corrects a stale doc comment that had claimed
+F-002 was "still binding" on this probe's disposition. Both the flip and the retargeted F-002 are
+green; no BC-1.18.005 content was touched.
+
+**F-C2-P2-004 (MINOR — Invariant 7 Stable-Cap Precondition; BC-1.18.006 v1.5→v1.6, NEW EC-020,
+spec-only).** Invariant 7's `bytes_at_seal > shard_cap_bytes ⇒ sealed_retroactively = true`
+inference is exact only while `shard_cap_bytes` is STABLE across a shard's seal-to-reconciliation
+window; BC-1.18.005 Postcondition 6/AC-004 permits the F4 calibration harness to re-lock the cap
+when `DEFAULT_FUEL_CAP` changes. ADJUDICATED (Option (a), documented bounded risk, over Option (b)
+full schema-level re-architecture) under the production-grade lens: ADDED a STABLE-CAP
+PRECONDITION addendum to Invariant 7 documenting BOTH mislabel directions — a cap LOWERED between
+seal and reconciliation produces a false positive (a legitimately prospective seal inferred
+retroactive); a cap RAISED produces a false negative (a genuinely retroactive seal inferred
+prospective) — the false-negative direction was NOT identified by the adversary's finding text and
+was added under CLAUDE.md's "fix in scope when found" default rather than left for a future pass.
+Both directions judged operationally negligible and explicitly ACCEPTED: (1) the mislabeled field
+is a historical audit-trail annotation only, gating no hard structural guarantee (Invariant 6's
+canonical zero-bytes guarantee and the sealed-shard content-preservation guarantee are unaffected
+in either direction); (2) the window requires two independently rare events to coincide; (3) the
+bound is precisely testable (`shard_cap_bytes` unchanged across `[sealed_at, reconciliation_time]`
+⇒ inference is guaranteed correct). Spec-only; no code change follows — the current inference
+implementation is already correct under the now-explicit stable-cap precondition. ADDED NEW EC-020
++ matching Canonical Test Vector.
+
+**F-C2-P2-005 (ADVISORY — stale PENDING edge-case labels, story-side only).** story-writer cleared
+stale "PENDING TDD — not yet implemented" labels on §Edge Cases rows EC-035, EC-036, and EC-039 to
+IMPLEMENTED (green on `feature/S-25.02-roll`) — the corresponding code and tests are green on that
+branch; EC-037 was already correctly labeled documentary/no-code-obligation, unchanged; EC-038
+relabeled IMPLEMENTED with an explicit in-progress note (the backstop itself is implemented and
+green, but its stat-failure disposition is being changed to fail-loud this same burst per
+F-C2-P2-003/EC-040).
+
+**F-C2-P2-006 (ADVISORY — empty-shard on backstop-then-trigger double-fire, code-side, no BC text
+change).** After the Write-arm's own Postcondition 7 catch point (ii) backstop retroactively
+truncates a crash-orphaned over-cap canonical to 0 bytes, if the SAME dispatch's own Write content
+ALSO exceeds cap, BC-1.18.005's trigger fires a second time in the same dispatch — and
+`execute_roll` unconditionally sealed whatever the canonical currently held, which by then is 0
+bytes, accumulating a useless, permanent EMPTY (0-byte) sealed shard file plus a matching
+shard-index row on every such double-fire, never a real seal of real content. Fixed in-scope per
+CLAUDE.md's production-grade default (`feature/S-25.02-roll` @ `a9611f71`, commit `e9a984cd`):
+`execute_roll`'s signature changes from `Result<ShardIndexEntry, ShardRollError>` to
+`Result<Option<ShardIndexEntry>, ShardRollError>` — an empty pre-roll read now short-circuits to
+`Ok(None)` before steps (b)-(d) ever run (Invariant 6 holds trivially; truncate would have been a
+pure no-op anyway). Threaded through both callers
+(`reconcile_post_write_replace_all_overcap`/`reconcile_leading_probe_backstop`, both already
+`Option`-returning, `.map(Some)` simply removed) and `shard_cap_gate_check`'s flat trigger-fire
+branch, which gains a dedicated `build_empty_roll_retry_block_reason` message for the `Ok(None)`
+arm — still a `Block` (Invariant 1), never a silent `Continue` or a suppressed block for this
+Write's own genuinely over-cap content. The 5 pre-existing cluster-2 unit tests calling
+`execute_roll` directly gained a mechanical `.expect(...)` Option-unwrap adaptation
+(TD-VSDD-060 sibling-site sweep), no assertion weakened. No BC-1.18.006 text change — this closes
+an implementation-fidelity gap in the already-specified Invariant 6 guarantee only.
+
+### State-Manager Bookkeeping (this burst)
+
+- **BC-INDEX v5.67→v5.68** — BC-1.18.006 version-cell v1.5→v1.6; `total_bcs` UNCHANGED 2,006;
+  `status`/`lifecycle_status` STAYS `draft` (cluster-2 has not shipped; POL-14 promotion deferred
+  to cluster-2's future PR merge). BC-1.18.006's own table-row version-chain narrative EXTENDED
+  with a v1.6 segment covering F-C2-P2-003/004 + the F-002 escalation-and-resolution summary.
+- **STORY-INDEX v4.448→v4.449** — S-25.02 row: BC-1.18.006 cell v1.5→v1.6, story-cell v2.9→v3.0;
+  row's BCs-cell narrative prepended with a CLUSTER-2-PASS2-FIX-BURST block recording all 6
+  findings, their disposition, and pass-3 as NEXT.
+- **error-taxonomy.md** — product-owner's v1.2→v1.3 bump (new `E-SHD-008` row) confirmed; no
+  dedicated PRD-supplement registry/index file exists in this repo for `error-taxonomy.md`'s own
+  version (no `PRD-SUPPLEMENT-INDEX.md`, and neither `prd.md` nor any INDEX file pins a version
+  number against it — path-only references) — so there is no separate index row to propagate this
+  version bump into; the only propagation obligation is this file's own input-hash reconciliation
+  (below), satisfied this burst.
+- **Input-hashes reconciled via `compute-input-hash --update`, ORDER-DEPENDENT** (each file's hash
+  covers its declared `inputs:` file CONTENTS, so a dependency chain — BC-1.18.006.md →
+  error-taxonomy.md → S-25.02 story — must be updated in that order or the last-updated file's hash
+  goes immediately stale again):
+  1. BC-1.18.006.md — `--check` CONFIRMED CURRENT at `d39e2f4` (its own declared `inputs:` did not
+     change this burst; correctly stable across the BC's own v1.5→v1.6 self-content bump).
+  2. error-taxonomy.md (declares BC-1.18.006.md as an input) — `b3b214f`→`a002507`.
+  3. S-25.02 story (declares both BC-1.18.006.md and error-taxonomy.md as inputs) — `ef172c7`→
+     intermediate `e7ba028` (computed before error-taxonomy.md's own `--update` had run, hence
+     stale by the time step 2 completed) → final `6365adf` (re-run AFTER steps 1-2 settled).
+     `--check` CLEAN on all three as of this commit.
+- Pending VP-NNN row (BC-1.18.006 Postcondition 7) EXTENDED (not newly allocated) to also cover
+  EC-019/EC-020/Invariant 8, still routed to architect/formal-verifier at Phase F6 — the existing
+  `[D-1174, EXTENDED D-1175]` Blocking Issues row extended in place again, now
+  `[D-1174, EXTENDED D-1175, EXTENDED D-1176]`.
+- No new Drift Item this burst — all 6 findings, including the F-C2-P2-003 escalation, were
+  resolved in-scope (research + architect assessment + human approval), not deferred.
+- Pre-existing dirty telemetry (`hooks/cargo-audit-cache.json`, `regression-state.json`,
+  `sidecar-learning.md`) folded into this SAME single commit so the `.factory/` worktree ends
+  CLEAN, per the S2502-CLUSTER1-CAP-TRIGGER-LOCAL-3CLEAN-CONVERGED precedent.
+
+### Not Changed This Burst
+
+VP-INDEX (v3.07, 141 VPs), ARCH-INDEX (v4.23, 48 ADRs) — neither touched; no VP/ADR content
+changed. `pipeline:` stays `in_progress`.
+
+### Cluster-2 Convergence Status
+
+BC-5.39.001 cluster-2 LOCAL streak: **0/3** (pass-2 NOT CLEAN; pass-1 was also NOT CLEAN — 2
+consecutive not-clean passes, streak has not yet started accumulating). Cycle-level BC-5.39.001
+streak: **3/3 CONVERGED**, UNCHANGED (separate track — this is a LOCAL cluster cascade, not a
+cycle-level adversary pass). No trajectory-tail drift — unchanged `→0→1→1→1` LENGTH=4.
+
+### Next Steps
+
+**NEXT = cluster-2 LOCAL adversary pass-3, fresh context, against BC-1.18.006 v1.6/story
+v3.0/code `a9611f71`.**
+
+Refs: D-1176, D-1175, S-25.02, BC-1.18.006 v1.6, F-C2-P2-001, F-C2-P2-002, F-C2-P2-003,
+F-C2-P2-004, F-C2-P2-005, F-C2-P2-006, BC-INDEX v5.68, STORY-INDEX v4.449.
+
+### Canonical 6-column row (STATE.md Decisions Log)
+
+| D-1176 | D-1176-S2502-CLUSTER2-PASS2-FAILLOUD-STABLECAP-SPEC-CASCADE | **S-25.02 Phase F4 cluster-2 (roll, BC-1.18.006) LOCAL adversary pass-2 = NOT CLEAN — 6 findings (2 MAJOR F-C2-P2-001/002, 2 MINOR F-C2-P2-003/004, 2 ADVISORY F-C2-P2-005/006), ALL fixed this burst; BC-1.18.006 v1.5→v1.6 resolves the 2 MINOR findings via NEW Invariant 8 (`E-SHD-008` uniform fail-loud backstop-probe disposition) and a Stable-Cap Precondition addendum to Invariant 7; F-C2-P2-003 surfaced and RESOLVED a spec-vs-spec-looking conflict with cluster-1's shipped BC-1.18.005 F-002 test via research + architect assessment + explicit human approval of refined Option A (no BC-1.18.005 amendment)** 2026-09-07 (product-owner + story-writer + code-side content; state-manager index/version-sync + single-commit TD-VSDD-053). F-C2-P2-001/002 (MAJOR, code-side, `feature/S-25.02-roll` @ `a9611f71`, no BC text change): E-SHD-006 sealed-shard read-error swallow fixed to fail loud on non-NotFound errors; catch point (i) made shape-aware (flat-only), closing a cross-mechanism data-corruption path against `frontmatter-changelog-array`-shaped entries. product-owner: BC-1.18.006 v1.5→v1.6 — F-C2-P2-003 Write-arm backstop `stat()`-failure disposition ADJUDICATED fail-open UNSOUND, CORRECTED to fail LOUD via NEW `E-SHD-008`/Invariant 8/EC-019, matching `Edit`/`MultiEdit`; F-C2-P2-004 Invariant 7 Stable-Cap Precondition addendum + NEW EC-020 (spec-only). F-C2-P2-005/006 (ADVISORY): stale PENDING edge-case labels corrected (story-writer); empty-shard backstop-then-trigger double-fire fixed code-side (`a9611f71`), no BC text change. story-writer: S-25.02 v2.9→v3.0 — AC-024/AC-025 EXTENDED (EC-019/EC-020/Invariant 7/Invariant 8; RED-Gate count stays 25 ACs) + EC-040/EC-041. state-manager: **BC-INDEX v5.67→v5.68** (BC-1.18.006 cell v1.5→v1.6; `total_bcs` UNCHANGED 2,006); **STORY-INDEX v4.448→v4.449** (S-25.02 row v3.0/v1.6). error-taxonomy.md v1.2→v1.3 (new `E-SHD-008` row) confirmed — no dedicated supplement-registry index exists to propagate into. Input-hashes reconciled in dependency order: BC-1.18.006.md CONFIRMED CURRENT `d39e2f4`; error-taxonomy.md `b3b214f`→`a002507`; story `ef172c7`→`e7ba028`(intermediate)→`6365adf`(final). Pending VP-NNN row EXTENDED again (not newly allocated) to cover EC-019/EC-020/Invariant 8, still routed to Phase F6 — Blocking Issues row now `[D-1174, EXTENDED D-1175, EXTENDED D-1176]`. No new Drift Item — all 6 findings resolved in-scope. `pipeline:` stays in_progress. No trajectory-tail drift — unchanged →0→1→1→1 LENGTH=4 (LOCAL cluster-2 cascade, not a cycle-level pass). **NEXT = cluster-2 LOCAL adversary pass-3, fresh context.** Refs: D-1176, D-1175, S-25.02, BC-1.18.006 v1.6, F-C2-P2-001, F-C2-P2-002, F-C2-P2-003, F-C2-P2-004, F-C2-P2-005, F-C2-P2-006, BC-INDEX v5.68, STORY-INDEX v4.449. STATE.md v10.01→v10.02. | D-1176 | 2026-09-07 |

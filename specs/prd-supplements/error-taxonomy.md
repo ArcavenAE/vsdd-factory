@@ -1,7 +1,7 @@
 ---
 document_type: prd-supplement-error-taxonomy
 level: L3
-version: "1.2"
+version: "1.3"
 status: draft
 producer: product-owner
 timestamp: 2026-09-05T00:00:00Z
@@ -14,7 +14,7 @@ inputs:
   - .factory/specs/behavioral-contracts/ss-01/BC-1.18.008.md
   - .factory/specs/behavioral-contracts/ss-01/BC-1.18.009.md
   - .factory/specs/behavioral-contracts/ss-01/BC-1.18.011.md
-input-hash: "b3b214f"
+input-hash: "a002507"
 traces_to: .factory/specs/prd.md
 ---
 
@@ -71,6 +71,7 @@ traces_to: .factory/specs/prd.md
 | E-SHD-005 | Shard management errors | broken | `HookResult::Error` / migration abort | `B2 BC-INDEX migration verification failed (content-preservation or independent-census mismatch): <mismatch-detail>; original body left untouched` (BC-1.18.011 Postconditions 2/4, EC-001/EC-004) |
 | E-SHD-006 | Shard management errors | broken (self-healing) | `HookResult::Block` recovery / no `HookResult::Error` | `shard <artifact> seal published but canonical not yet truncated (seq=<N>): resuming from truncate step` (BC-1.18.006 Postcondition 1 step (c) failure after step (b) succeeded; NOT a data-loss condition — the next dispatch attempt self-heals by resuming from the truncate step alone) |
 | E-SHD-007 | Shard management errors | broken (self-healing) | `HookResult::Block` recovery / no `HookResult::Error` | `shard <artifact> canonical truncated but index not yet updated (seq=<N>): reconciling index` (BC-1.18.006 Postcondition 1 step (d) failure after step (c) succeeded; a discoverability-metadata gap only — the next dispatch attempt self-heals by scanning for un-indexed sealed shards and appending the missing entry) |
+| E-SHD-008 | Shard management errors | broken | `HookResult::Error` | `backstop probe stat failure for <artifact>: <io-error>` (BC-1.18.006 EC-019, Postcondition 7 catch point (ii); the dedicated `Write`-arm backstop `stat()` of the canonical file failed with a non-`NotFound` error — fails LOUD, never open, since a dereferencing `stat()` failure and a non-dereferencing `write_atomic` rename onto the same path can fail asymmetrically (e.g. a final-component symlink loop); the `Write` is never applied) |
 
 All dispatcher-level errors except E-CAP and E-PLG exit 0 (non-blocking per NFR-REL-001).
 `E-SHD-NNN` errors are native-gate `HookResult::Error` outcomes (a PreToolUse hook result, not a
@@ -90,6 +91,7 @@ through BC-1.18.011's own Postcondition/Edge-Case tables.
 
 | Version | Date | Author | Change |
 |---------|------|--------|--------|
+| 1.3 | 2026-09-07 | product-owner | Sibling-site sweep accompanying BC-1.18.006 v1.5→v1.6 (S-25.02 cluster-2 LOCAL adversary pass-2, F-C2-P2-003, MINOR): added `E-SHD-008` (backstop probe stat failure) — Postcondition 7 catch point (ii)'s dedicated `Write`-arm `stat()` of the canonical file now fails LOUD (`HookResult::Error`) on any non-`NotFound` error, closing a previously-unadjudicated fail-open disposition that could, for a final-component symlink-loop (`ELOOP`) case, have let a `Write` apply via a non-dereferencing `write_atomic` rename after its own probing `stat()` failed. `NotFound` remains the legitimate first-ever-write case and is unaffected. Input-hash recompute owed to state-manager (BC-1.18.006 input content changed v1.5→v1.6). |
 | 1.2 | 2026-09-05 | product-owner | Fix-burst amendment (adversary pass-3 finding F-P3-003, MEDIUM): corrected `E-SHD-001`'s Message Format from the stale `seal-rename failure for <artifact>: <io-error>` wording to `shard-seal-write failure for <artifact>: <io-error>` — no rename occurs under BC-1.18.006 v1.2's copy-then-atomic-truncate-in-place seal mechanism; the error code and its `HookResult::Error`/canonical-untouched contract are unchanged, only the message wording is corrected to match the actual mechanism. |
 | 1.1 | 2026-09-05 | product-owner | Fix-burst amendment (adversary pass-2 finding F-P2-004, MEDIUM, ADR-051 v1.2 Decision 11): added `E-SHD-006` (shard-seal published, canonical not yet truncated — self-healing resume-from-truncate) and `E-SHD-007` (canonical truncated, index not yet updated — self-healing index reconciliation), closing the two previously-unspecified crash points in BC-1.18.006's staged per-write roll sequence. Both are self-healing (no operator intervention) rather than fail-loud aborts, distinguishing them from the existing broken/fail-loud E-SHD-001..005 codes. Required re-registering the `prd-supplement` artifact type in `plugins/vsdd-factory/config/artifact-path-registry.yaml` (found absent from the live registry despite the v1.0 changelog's claim that it was added in that burst — re-added here as a mechanical prerequisite). |
 | 1.0 | 2026-09-05 | product-owner | Initial materialization of this supplement file (F-S2502-F2-006, MEDIUM). Mirrors `prd.md` §5.1's existing 7 categories (REG/PAY/CAP/PLG/SNK/ACT/HK) verbatim and adds the 8th category, `E-SHD-NNN` (Shard management errors), previously defined only in the S-25.02 F2 PRD-delta doc §4. Includes `E-SHD-001` (seal-rename failure), `E-SHD-002` (missing/corrupt shard-index), `E-SHD-003` (backfill-split content-preservation failure), `E-SHD-004` (`rotate_changelog` invocation failure), and NEW `E-SHD-005` (B2 BC-INDEX migration verification failure — content-preservation OR independent-census mismatch, BC-1.18.011). Resolves the pre-existing dangling `prd-supplements/error-taxonomy.md` reference `prd.md` §5.1/§5b have carried since before this file existed (not introduced by S-25.02; flagged by the F2 PRD-delta doc §7, closed here). Companion registry entry `prd-supplement` added to `plugins/vsdd-factory/config/artifact-path-registry.yaml` in the same burst (mechanical prerequisite — the write was blocked `ARTIFACT_PATH_UNREGISTERED` with no prior entry for this path pattern). |
