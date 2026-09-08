@@ -1,7 +1,7 @@
 ---
 document_type: prd-supplement-error-taxonomy
 level: L3
-version: "1.3"
+version: "1.4"
 status: draft
 producer: product-owner
 timestamp: 2026-09-05T00:00:00Z
@@ -14,7 +14,7 @@ inputs:
   - .factory/specs/behavioral-contracts/ss-01/BC-1.18.008.md
   - .factory/specs/behavioral-contracts/ss-01/BC-1.18.009.md
   - .factory/specs/behavioral-contracts/ss-01/BC-1.18.011.md
-input-hash: "a002507"
+input-hash: "9a05eae"
 traces_to: .factory/specs/prd.md
 ---
 
@@ -72,6 +72,7 @@ traces_to: .factory/specs/prd.md
 | E-SHD-006 | Shard management errors | broken (self-healing) | `HookResult::Block` recovery / no `HookResult::Error` | `shard <artifact> seal published but canonical not yet truncated (seq=<N>): resuming from truncate step` (BC-1.18.006 Postcondition 1 step (c) failure after step (b) succeeded; NOT a data-loss condition — the next dispatch attempt self-heals by resuming from the truncate step alone) |
 | E-SHD-007 | Shard management errors | broken (self-healing) | `HookResult::Block` recovery / no `HookResult::Error` | `shard <artifact> canonical truncated but index not yet updated (seq=<N>): reconciling index` (BC-1.18.006 Postcondition 1 step (d) failure after step (c) succeeded; a discoverability-metadata gap only — the next dispatch attempt self-heals by scanning for un-indexed sealed shards and appending the missing entry) |
 | E-SHD-008 | Shard management errors | broken | `HookResult::Error` | `backstop probe stat failure for <artifact>: <io-error>` (BC-1.18.006 EC-019, Postcondition 7 catch point (ii); the dedicated `Write`-arm backstop `stat()` of the canonical file failed with a non-`NotFound` error — fails LOUD, never open, since a dereferencing `stat()` failure and a non-dereferencing `write_atomic` rename onto the same path can fail asymmetrically (e.g. a final-component symlink loop); the `Write` is never applied) |
+| E-SHD-009 | Shard management errors | broken | `HookResult::Error` | `sealed-shard immutability violation: refusing to overwrite an existing seal at <path>` (BC-1.18.006 EC-024, Postcondition 8; `publish_sealed_shard` is write-once — before every seal-publish `rename(temp, <stem>.<seq:04>.md)`, it MUST verify the destination does not already exist; found existing, it refuses the rename and fails LOUD rather than silently overwriting durable, append-only-sealed history. Defense-in-depth for the F-C2-P4-001 data-loss counterexample — an unreconciled index colliding `next_seal_seq` against an already-occupied `seq` — closed at the root by BC-1.18.006's corrected Invariant 10/Postcondition 7 catch point (i) self-heal-first sequencing; this code is the second, independent fail-safe layer, converting any residual collision into a loud error instead of a silent overwrite. Neither the seal, the truncate, nor the index publish are applied for the refused attempt) |
 
 All dispatcher-level errors except E-CAP and E-PLG exit 0 (non-blocking per NFR-REL-001).
 `E-SHD-NNN` errors are native-gate `HookResult::Error` outcomes (a PreToolUse hook result, not a
@@ -91,6 +92,7 @@ through BC-1.18.011's own Postcondition/Edge-Case tables.
 
 | Version | Date | Author | Change |
 |---------|------|--------|--------|
+| 1.4 | 2026-09-08 | product-owner | Sibling-site sweep accompanying BC-1.18.006 v1.7→v1.8 (S-25.02 cluster-2 LOCAL adversary pass-4, F-C2-P4-002, MINOR): added `E-SHD-009` (sealed-shard immutability violation) — `publish_sealed_shard` is now write-once (BC-1.18.006 NEW Postcondition 8) and MUST refuse to overwrite an existing destination at a computed `seq` path, failing LOUD (`HookResult::Error`) rather than silently overwriting durable, append-only-sealed history. This is the defense-in-depth backstop for the F-C2-P4-001 data-loss finding (a fresh-context counterexample showing catch point (i) could, without a self-heal pre-pass, compute `next_seal_seq` against an unreconciled index and collide with — and silently overwrite — an already-sealed `E-SHD-006` orphan); the root-cause fix is BC-1.18.006's corrected Invariant 10/Postcondition 7 catch point (i) self-heal-first sequencing, which this code path backstops for any residual collision. See BC-1.18.006 EC-024. Input-hash recompute owed to state-manager (BC-1.18.006 input content changed v1.7→v1.8). |
 | 1.3 | 2026-09-07 | product-owner | Sibling-site sweep accompanying BC-1.18.006 v1.5→v1.6 (S-25.02 cluster-2 LOCAL adversary pass-2, F-C2-P2-003, MINOR): added `E-SHD-008` (backstop probe stat failure) — Postcondition 7 catch point (ii)'s dedicated `Write`-arm `stat()` of the canonical file now fails LOUD (`HookResult::Error`) on any non-`NotFound` error, closing a previously-unadjudicated fail-open disposition that could, for a final-component symlink-loop (`ELOOP`) case, have let a `Write` apply via a non-dereferencing `write_atomic` rename after its own probing `stat()` failed. `NotFound` remains the legitimate first-ever-write case and is unaffected. Input-hash recompute owed to state-manager (BC-1.18.006 input content changed v1.5→v1.6). |
 | 1.2 | 2026-09-05 | product-owner | Fix-burst amendment (adversary pass-3 finding F-P3-003, MEDIUM): corrected `E-SHD-001`'s Message Format from the stale `seal-rename failure for <artifact>: <io-error>` wording to `shard-seal-write failure for <artifact>: <io-error>` — no rename occurs under BC-1.18.006 v1.2's copy-then-atomic-truncate-in-place seal mechanism; the error code and its `HookResult::Error`/canonical-untouched contract are unchanged, only the message wording is corrected to match the actual mechanism. |
 | 1.1 | 2026-09-05 | product-owner | Fix-burst amendment (adversary pass-2 finding F-P2-004, MEDIUM, ADR-051 v1.2 Decision 11): added `E-SHD-006` (shard-seal published, canonical not yet truncated — self-healing resume-from-truncate) and `E-SHD-007` (canonical truncated, index not yet updated — self-healing index reconciliation), closing the two previously-unspecified crash points in BC-1.18.006's staged per-write roll sequence. Both are self-healing (no operator intervention) rather than fail-loud aborts, distinguishing them from the existing broken/fail-loud E-SHD-001..005 codes. Required re-registering the `prd-supplement` artifact type in `plugins/vsdd-factory/config/artifact-path-registry.yaml` (found absent from the live registry despite the v1.0 changelog's claim that it was added in that burst — re-added here as a mechanical prerequisite). |

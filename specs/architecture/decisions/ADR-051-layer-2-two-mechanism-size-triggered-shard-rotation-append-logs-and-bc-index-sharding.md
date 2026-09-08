@@ -1407,6 +1407,97 @@ points as extending `shard_manager.rs` with no new `HookResult` variant and no n
 `hooks-registry.toml` entry — this Decision supplies the ADR-level grounding that citation assumed
 but that Decision 1's literal PreToolUse-only, signaling-only text did not yet state.
 
+### Decision 16 — Catch Point (i) Self-Heal-First Call Order, and Sealed-Shard Write-Once Immutability as Defense-in-Depth (addendum, closing a BC-1.18.006 v1.7 Invariant 10 falsification and adding a new Postcondition 8 durability guarantee)
+
+**Why this addendum exists.** BC-1.18.006 v1.7 (S-25.02 cluster-2 LOCAL adversary pass-3,
+originally observation O-C2-P3-001, ADVISORY) asserted that Postcondition 7 catch point (i) —
+Decision 15's PostToolUse reconciliation leg — is safe to invoke `execute_roll` WITHOUT first
+running the self-heal reconciliation pass, "by construction," on the theory that neither an
+`E-SHD-006` nor an `E-SHD-007` orphan could corrupt catch point (i)'s own `stat()`-based over/
+under-cap determination. Decision 15 as written (§2-§3 above) is silent on self-heal ordering
+entirely — it describes catch point (i)'s retroactive reuse of Postcondition 1's four-step roll
+sequence but never states whether a self-heal pass precedes it. Cluster-2 LOCAL adversary pass-4
+(F-C2-P4-001, MAJOR, BC-1.18.006 v1.8) found this silence was load-bearing and the v1.7 theory
+FALSE: the theory examined only catch point (i)'s over/under-cap DETERMINATION (correctly
+unaffected by an unreconciled orphan) but never its own SEAL-PUBLISH step, whose `next_seal_seq` is
+computed from the shard-index — and an unreconciled index can be missing an orphan's entry
+entirely, causing a subsequent seal to collide with, and OVERWRITE, a prior durably-sealed shard.
+BC-1.18.006 v1.8 WITHDREW the v1.7 Invariant 10 and replaced it with the corrected requirement
+below; this addendum supplies the missing ADR-level call-order specification Decision 15 never
+stated, exactly as Decision 15 itself supplied the ADR-level grounding BC-1.18.006 v1.4's
+Traceability section had assumed but Decision 1 never stated.
+
+**1. Corrected call order — self-heal reconciliation MUST run BEFORE `execute_roll` at catch point
+(i).** Decision 15's PostToolUse leg is amended: before re-invoking Postcondition 1's four-step
+staged roll sequence, catch point (i) MUST first run the self-heal reconciliation pass
+(`run_self_heal_if_plausible` — the SAME pass the PreToolUse Flat arm already runs per BC-1.18.005
+Precondition 1). This is now a REQUIRED symmetry between catch point (i) and the PreToolUse Flat
+arm, not an intentional asymmetry to preserve. **A reachable counterexample under the withdrawn
+call order (BC-1.18.006 v1.8, F-C2-P4-001):** a prospective roll crashes as `E-SHD-006`
+(`decision-log.0001.md` holds durable content X; canonical also still holds X, untruncated; the
+shard-index remains empty, since `E-SHD-006` crashes strictly before step (d)). The next matched
+dispatch is a `replace_all: true` `Edit` whose already-applied edit changes the canonical's content
+from X to X′ (X′ > `shard_cap_bytes`, X′ ≠ X). Catch point (i) fires, `stat()`s the over-cap
+canonical, and — without a self-heal pre-pass — calls `execute_roll` directly: `next_seal_seq`
+derives ONLY from the still-empty index, yielding `seq=1`, and the seal-publish step OVERWRITES the
+durably-sealed `decision-log.0001.md` (X) with X′, permanently destroying the sealed history.
+Running self-heal first indexes the `E-SHD-006` (and, symmetrically, any `E-SHD-007`) orphan before
+`next_seal_seq` is computed, so `next_seal_seq` correctly advances past it (`seq=2`), and the prior
+seal is preserved. Catch point (ii) is UNAFFECTED by this correction — it already executes within
+the same PreToolUse handling path, after `run_self_heal_if_plausible` has already run per
+BC-1.18.005 Precondition 1, so it already inherits this protection; this correction closes the gap
+ONLY for catch point (i)'s separate PostToolUse entry point. No new call site, no new module, no new
+`hooks-registry.toml` entry — this is a call-ORDER correction inside the existing `shard_manager.rs`
+extension Decision 15 already places, not a new mechanism.
+
+**2. New Postcondition 8 — `publish_sealed_shard` is write-once; a `seq` collision is a loud error,
+never a silent overwrite (BC-1.18.006 v1.8, F-C2-P4-002, MINOR, defense-in-depth).** Independently
+of item 1's root-cause ordering fix, `publish_sealed_shard` (the seal-publish sub-step Postcondition
+1 step (b) and both of Postcondition 7's catch points reuse) gains a write-once guard: before every
+`write_atomic` `rename(temp, <stem>.<seq:04>.md)` call, the gate MUST first verify the destination
+path does not already exist. If it does, the gate MUST NOT perform the rename — it returns
+`HookResult::Error` (NEW `E-SHD-009`, "sealed-shard immutability violation: refusing to overwrite an
+existing seal at `<path>`") and applies NEITHER the seal nor any of the roll's other steps (no
+truncate, no index publish) for this attempt; the pre-existing destination file is left completely
+untouched. **This is explicitly the SECOND, independent layer, not the primary fix:** item 1's
+self-heal-first ordering is the ROOT-CAUSE fix — under it, a well-formed dispatch should never
+attempt to publish at a colliding `seq` in the first place. This write-once guard converts any
+RESIDUAL seq-collision — a self-heal reconciliation bug, an external actor placing a same-named file
+on disk, or a future code path this ADR has not yet anticipated — into a loud, actionable, fail-safe
+error rather than a silent overwrite of durably-sealed history, consistent with this codebase's
+existing "no version of this check may silently proceed past a condition it cannot verify safe"
+posture (BC-1.18.006 Invariant 1). The exact existence-check primitive is an implementation detail
+this ADR does not mandate (an atomic exclusive-create primitive, e.g.
+`std::fs::OpenOptions::new().create_new(true)` or an equivalent platform-appropriate exclusive-rename
+primitive, is preferred to avoid a TOCTOU race between the check and the rename), but the
+OBSERVABLE guarantee — no overwrite, ever — is mandatory, applying to EVERY caller of
+`publish_sealed_shard`: Postcondition 1's prospective roll, and both of Postcondition 7's catch
+points when they execute the same step retroactively.
+
+**3. Why this is an addendum to Decision 15, not a new freestanding ADR or a revision of Decision
+15's own text.** Both corrections extend the SAME native, non-WASM, dispatcher-internal
+`shard_manager.rs` call site Decision 15 already grounds — no new crate, no `HOST_ABI_VERSION` bump,
+no new `hooks-registry.toml` entry, no new `HookResult` variant beyond the existing `Error` arm this
+ADR's error-taxonomy pattern already uses for `E-SHD-001`/`E-SHD-006`/`E-SHD-007`/`E-SHD-008`. This
+ADR's own Decisions 11-15 already establish "fix/extension addenda to the SAME ADR" as this
+project's convention for closing gaps a subsequent review discovers against an already-accepted
+design, rather than spawning a new ADR per gap. Decision 15's own body text (§1-§5 above) is left
+UNCHANGED by this addendum — it correctly describes catch point (i)'s existence, native-vs-WASM
+rationale, no-`HookResult`-signaling behavior, and retroactive-roll reuse; it was silent, not wrong,
+on call order relative to self-heal, and this Decision supplies the missing specification rather
+than correcting a false claim IN Decision 15 itself (the false claim being corrected — v1.7's
+Invariant 10 — lived in BC-1.18.006, not in this ADR).
+
+**4. Test obligation (closing the "by-construction, no test needed" gap the withdrawn BC-1.18.006
+Invariant 10 left).** This is no longer a bare design-time construction argument: BC-1.18.006's
+EC-023 and its matching Canonical Test Vector discharge item 1 with a concrete fault-injection test
+reproducing the exact `E-SHD-006`-then-content-changing-`replace_all` sequence above, asserting the
+prior seal survives byte-identical and the new content seals to the correctly-advanced `seq`;
+EC-024 and its matching Canonical Test Vector discharge item 2, asserting a pre-existing destination
+file is never overwritten and `E-SHD-009`/`HookResult::Error` is returned instead. A future call-
+order change to catch point (i) MUST re-run the EC-023 fault-injection test before removing the
+self-heal-first requirement.
+
 ---
 
 ## Rationale
@@ -1423,6 +1514,29 @@ security or sandboxing benefit. `block_if_marker_check`'s existing native-check 
 (`Continue`/`Block`/`Error`) is a hard SDK constraint, not a design preference this ADR could
 relax without an SDK/ABI change. A `Redirect` variant was considered and rejected — see
 Alternatives Considered.
+
+**Why catch point (i) needs a self-heal pre-pass while catch point (ii) never did (Decision 16):**
+catch point (ii) runs INSIDE the PreToolUse handling path, strictly after
+`run_self_heal_if_plausible` has already executed per BC-1.18.005 Precondition 1 — it inherits a
+reconciled index for free. Catch point (i) is a SEPARATE PostToolUse entry point (Decision 15) with
+no such preceding self-heal call in its own path; treating its `stat()`-based over/under-cap
+determination as the only correctness-relevant read (the withdrawn BC-1.18.006 v1.7 theory) missed
+that its seal-publish step's `next_seal_seq` computation is a SECOND, independent read of the same
+index, one an unreconciled orphan CAN corrupt into a collision. The fix costs one reconciliation
+scan on catch point (i)'s own, already-rare firing path (it only runs when BC-1.18.005's
+single-occurrence pre-write estimate under-projected a `replace_all`), not on every write.
+
+**Why write-once immutability (Decision 16, Postcondition 8) is added ON TOP OF the self-heal-first
+ordering fix, not instead of it:** the ordering fix closes the one reachable root cause this ADR has
+identified, but a `[[shard]]`-eligible seal path is a single-writer-assumed filesystem location this
+ADR's design has never otherwise defended with an existence check — the SAME "no version of this
+check may silently proceed past a condition it cannot verify safe" posture Decision 11's
+self-healing partial-failure codes already apply to truncate/index-publish failures extends naturally
+to the seal-publish step itself. Layering an independent existence check costs one `stat()`-adjacent
+primitive per seal-publish call (already a roll-only, not per-write, cost) and converts every
+UNANTICIPATED future collision path into a loud, diagnosable `HookResult::Error` rather than a
+silent, forensically invisible overwrite — the same fail-loud-over-fail-silent bias this ADR already
+applies via `E-SHD-001`/`E-SHD-006`/`E-SHD-007`/`E-SHD-008`.
 
 **Why reuse `rotate_changelog` for B1 instead of new logic:** ADR-049 already built, tested, and
 shipped a correct changelog-rotation primitive for exactly this shape of problem
@@ -1525,6 +1639,13 @@ preserves both callers' correctness.
     writes instead of being paid on every single write to `BC-INDEX.md` after the first rotation —
     closing the steady-state-retrigger defect F-P3-005 identified, with zero new logic in
     `rotate_changelog` (Decision 14 reuses its already-free `keep_recent` parameter).
+14. **(addendum, Decision 16)** Catch point (i) and the PreToolUse Flat arm now share an IDENTICAL
+    self-heal-first call order — one fewer asymmetric code path for implementer and formal-verifier
+    to reason about, and a fault-injection test (EC-023) rather than a bare design-time argument
+    discharges the safety claim. Sealed-shard immutability (Postcondition 8, `E-SHD-009`) gives every
+    seal-publish call site — prospective and both retroactive catch points — a SHARED, independently
+    testable durability guarantee, closing the one place this ADR's roll mechanism previously relied
+    on "the index is always correct" without a structural backstop.
 
 ### Negative / Trade-offs
 
@@ -1580,7 +1701,7 @@ preserves both callers' correctness.
     per-event archive-write payload, traded against a `(N - low_water_mark)`-times reduction in how
     often that payload is written at all (Decision 14's amortization analysis).
 
-### Status as of 2026-09-05 (v1.0) through the POLICY 22 status flip 2026-09-06 (v1.8)
+### Status as of 2026-09-05 (v1.0) through the Decision 16 addendum 2026-09-07 (v1.10)
 
 **Accepted — Human-Ratified 2026-09-06 (D-1167, POLICY 22).** Frontmatter `status: accepted`.
 The Decision 2 calibration constants remain explicitly provisional and are NOT to be treated as
@@ -1708,6 +1829,30 @@ the owner of the calibration-harness run, the backfill migrations, and (implicit
 to a named, concrete future story (S-25.02 F4), not an unattached defer under CLAUDE.md's Canonical
 Principle Rule 3. Not a design-content change — no Decision text is altered by this status flip.
 
+**v1.9 (addendum — see the Changelog table below for full text):** new §Decision 15 (PostToolUse
+native reconciliation leg for BC-1.18.006 Postcondition 7 catch point (i); no `HookResult`
+signaling; retroactive four-step-roll reuse), closing an ADR-citation gap BC-1.18.006 v1.4's
+Traceability section had assumed. Not a POLICY 22 design-direction reversal.
+
+**v1.10 (this addendum — Decision 16, catch point (i) self-heal-first ordering + sealed-shard
+write-once immutability):** resolves BC-1.18.006 v1.8's cluster-2 LOCAL adversary pass-4 findings
+(F-C2-P4-001, MAJOR; F-C2-P4-002, MINOR) at the ADR level. F-C2-P4-001 falsified BC-1.18.006 v1.7's
+Invariant 10 (originally cluster-2 LOCAL adversary pass-3 observation O-C2-P3-001, ADVISORY),
+which had claimed catch point (i) is safe to invoke `execute_roll` without a preceding self-heal
+reconciliation pass "by construction" — a reachable counterexample (an `E-SHD-006` orphan followed
+by a content-changing `replace_all` `Edit`) shows an unreconciled shard-index can cause a subsequent
+seal to collide with, and silently overwrite, a prior durably-sealed shard. NEW §Decision 16
+corrects Decision 15's silence on self-heal ordering: catch point (i) MUST run
+`run_self_heal_if_plausible` BEFORE `execute_roll`, matching the PreToolUse Flat arm exactly.
+F-C2-P4-002 adds a second, independent defense-in-depth layer: `publish_sealed_shard` becomes
+write-once, refusing to overwrite an existing destination and returning `HookResult::Error`
+(NEW `E-SHD-009`) on any residual `seq` collision. Not a POLICY 22 design-direction reversal — no
+existing Decision's content is altered (Decision 15's body text is unchanged; it was silent on
+ordering, not wrong); this is a net-new addendum closing a call-order gap and adding a new
+durability guarantee, both already adjudicated at the BC level (BC-1.18.006 v1.8) and supplied here
+with the ADR-level mechanism specification BC-1.18.006's own scope does not cover. Refs:
+BC-1.18.006 v1.8, ADR-051 v1.10.
+
 ## Alternatives Considered
 
 - **Option: extend `HookResult` with a `Redirect { new_path }` variant so PreToolUse could
@@ -1747,6 +1892,24 @@ Principle Rule 3. Not a design-content change — no Decision text is altered by
   forbids leaving a genuinely-identified partial-failure surface undocumented merely because the
   one-time migrations already received more rigorous treatment — Decision 11 closes the gap with
   bounded, reused-primitive machinery, not a new atomicity mechanism.
+- **(addendum, Decision 16) Option: rely on the write-once existence-check guard (Postcondition 8)
+  alone, without also correcting catch point (i)'s call order.** Rejected: the write-once guard is
+  necessarily reactive — it converts a collision into a loud error but does not prevent the
+  collision from being ATTEMPTED, meaning a well-formed dispatch would routinely hit `E-SHD-009` on
+  the exact reachable counterexample this addendum identifies, failing a legitimate roll rather than
+  completing it correctly. The self-heal-first ordering fix is the only option that lets a
+  legitimate roll SUCCEED (advancing to the correct `seq`) rather than merely fail safely; the
+  write-once guard is retained anyway as a second, independent layer (item 2 of Decision 16), not a
+  substitute for item 1.
+- **(addendum, Decision 16) Option: correct catch point (i)'s ordering only, treating the write-once
+  guard as unnecessary once the root cause is fixed.** Rejected: the ordering fix depends on
+  `run_self_heal_if_plausible` itself being invoked correctly on every future code path that reaches
+  catch point (i) — a dependency this ADR has no independent structural check on today beyond code
+  review. A write-once guard at the seal-publish primitive itself is a cheap, structurally-enforced
+  backstop against exactly that class of future regression (a call-order change, a refactor that
+  drops the self-heal call, a new retroactive-roll call site this ADR has not yet anticipated),
+  consistent with CLAUDE.md's production-grade default of not leaving a single-layer defense where a
+  second, near-zero-cost layer is available.
 
 ## Source / Origin
 
@@ -1819,11 +1982,21 @@ Principle Rule 3. Not a design-content change — no Decision text is altered by
   content-preservation guarantees. This ADR's own Decision 13 (v1.2 text) was re-inspected in the
   same pass to find and correct the `keep_recent = N` cold-start-backfill target, which would have
   reintroduced Decision 14's just-closed pathology from the first post-migration write.
+- **Addendum (Decision 16) grounding (2026-09-07):** `.factory/specs/behavioral-contracts/
+  ss-01/BC-1.18.006.md` v1.8 (cluster-2 LOCAL adversary pass-4, F-C2-P4-001/002) — direct inspection
+  of the WITHDRAWN v1.7 Invariant 10 text, the F-C2-P4-001 reachable counterexample (an `E-SHD-006`
+  orphan followed by a content-changing `replace_all` `Edit`), the corrected Invariant 10, the new
+  Postcondition 8/`E-SHD-009` write-once contract, EC-023/EC-024, and their matching Canonical Test
+  Vectors — grounding this addendum's item 1 (self-heal-first call order) and item 2 (write-once
+  immutability) verbatim against the BC's own already-adjudicated text; no independent architect
+  design judgment was required beyond supplying the ADR-level call-order and mechanism-placement
+  specification BC-1.18.006's own scope (BC content, not dispatcher architecture) does not cover.
 
 ## Changelog
 
 | Version | Date | Author | Summary |
 |---|---|---|---|
+| 1.10 | 2026-09-07 | architect | Addendum (S-25.02 cluster-2, closing the ADR-level gap BC-1.18.006 v1.8's cluster-2 LOCAL adversary pass-4 fix-burst flagged): NEW §Decision 16, resolving F-C2-P4-001 (MAJOR) and F-C2-P4-002 (MINOR) at the ADR level. **F-C2-P4-001** falsified BC-1.18.006 v1.7's Invariant 10 (originally cluster-2 LOCAL adversary pass-3 observation O-C2-P3-001, ADVISORY), which had claimed Postcondition 7 catch point (i) — §Decision 15's PostToolUse reconciliation leg — is safe to invoke `execute_roll` WITHOUT a preceding self-heal reconciliation pass "by construction." A reachable counterexample (a prior roll crashes as `E-SHD-006`, leaving `decision-log.0001.md` sealed with content X, canonical still holding X untruncated, and the shard-index EMPTY; the next matched dispatch is a `replace_all: true` `Edit` that changes the canonical's content to X′ over cap) shows catch point (i)'s seal-publish step computes `next_seal_seq` from the UNRECONCILED index (`seq=1`) and OVERWRITES the durably-sealed `decision-log.0001.md`, permanently destroying it — the withdrawn theory examined only catch point (i)'s over/under-cap determination, never its own seal-publish read of the index. §Decision 16 item 1 corrects §Decision 15's silence on call order (§Decision 15's own body text is unchanged — it never stated an ordering, and is not itself being reversed): catch point (i) MUST run `run_self_heal_if_plausible` BEFORE calling `execute_roll`, matching the PreToolUse Flat arm's existing call order exactly; this is now a REQUIRED symmetry, not an intentional asymmetry. Catch point (ii) is unaffected (already self-heal-protected via the PreToolUse Flat-arm path). **F-C2-P4-002** adds §Decision 16 item 2: `publish_sealed_shard` becomes write-once — before every `rename(temp, <stem>.<seq:04>.md)` call, the gate verifies the destination does not already exist; on collision it returns `HookResult::Error` (NEW `E-SHD-009`, "sealed-shard immutability violation") and applies neither the seal nor any subsequent roll step, leaving the pre-existing file byte-identical. This is explicit defense-in-depth, layered ON TOP OF item 1's root-cause ordering fix, not a substitute for it (see item 1's Alternatives Considered rejection of "write-once guard alone"). No new crate, no `HOST_ABI_VERSION` bump, no new `hooks-registry.toml` entry, no new `HookResult` variant beyond the existing `Error` arm this ADR's `E-SHD-*` taxonomy already uses. Added Rationale bullets (why catch point (i) needs self-heal while catch point (ii) never did; why write-once layers on top of, not instead of, the ordering fix), a Consequences/Positive item 14, two Alternatives Considered entries, a Source/Origin grounding bullet (direct citation of BC-1.18.006 v1.8's already-adjudicated EC-023/EC-024/Postcondition 8/corrected-Invariant-10 text), and a v1.10 Status-section paragraph (also backfilling a brief pointer for the previously-unlogged v1.9 Status narrative, whose Decision-15 content was already recorded in this Changelog table but not yet reflected in the Status-section prose above). Not a POLICY 22 design-direction reversal — no existing Decision's content is altered; a net-new addendum, mirroring §Decision 15's own precedent for closing an ADR-level citation/specification gap a BC-level fix-burst surfaces. Downstream: this addendum performs no BC/story/code/test edits itself (out of architect's and this burst's scope, per the assigning task) — BC-1.18.006 v1.8 already carries the corresponding Invariant 10/Postcondition 8/EC-023/EC-024 text; `verification-architecture.md`/`verification-coverage-matrix.md`/VP-INDEX.md propagation of the extended VP-119 write-once facet and the pending VP-NNN's EC-023 facet is a separate, concurrent architect task (POLICY 9). Refs: S-25.02, BC-1.18.006 v1.8, F-C2-P4-001, F-C2-P4-002, ADR-051 v1.10. |
 | 1.9 | 2026-09-07 | architect | Addendum (ARCH-citation-gap closure, S-25.02 cluster-2): NEW §Decision 15 documents the PostToolUse-side native reconciliation leg BC-1.18.006 v1.4's Postcondition 7 catch point (i) requires, closing an overclaim in BC-1.18.006's own Traceability section ("No NEW ADR decision was required... contained within ADR-051's existing native-check... pattern") — Decision 1 as originally written scopes its native-check pattern strictly to the top of the dispatcher's PreToolUse handling and to a Continue/Block/Error-signaling check; it has no PostToolUse leg and no provision for a silent, non-signaling check. Decision 15 extends Decision 1's pattern to a PostToolUse call site (catch point (i)); establishes that this leg emits NO `HookResult` (a pure filesystem seal+truncate side effect, per BC-1.18.006 EC-016), contrasting with Decision 1's own signaling PreToolUse leg; specifies retroactive reuse of Postcondition 1's/Decision 11's existing four-step roll sequence against already-on-disk content (no new roll logic, no new error code); and states a placement caveat — the check must be an unconditional native call inside `factory_dispatcher::main::run` BEFORE its `sync_tiers.is_empty() && partition.async_group.is_empty()` early-return guard, mirroring Decision 1's own "before the registry-driven plugin loop" rule, so the leg cannot silently stop firing if the registered PostToolUse plugin set changes — grounded against `write_indeterminate_marker` (`indeterminate_marker.rs`, invoked from `executor.rs`) and the `git_context` injection (`inject_git_context_if_qualifying`, ADR-029 §Decision 1-3) as existing native-call-in-`run` precedents. Not a POLICY 22 design-direction reversal — no existing Decision's content is altered; this is a net-new addendum closing a citation gap identified during architect review of BC-1.18.006 v1.4. Product-owner's corresponding BC-1.18.006 Traceability-row fix (citing "ADR-051 §Decision 15") is a follow-on burst, not performed by this addendum. Refs: BC-1.18.006 v1.4, ADR-051 v1.9. |
 | 1.8 | 2026-09-06 | architect | POLICY 22 STATUS FLIP (D-1167; S-25.02 Phase F2 CLOSE): frontmatter `status: proposed` -> `accepted`. Human REVIEWED the full F2 spec delta (this ADR's two-mechanism design plus the simpler/validator-fix alternatives considered) and RATIFIED the current design as-is on 2026-09-06. ADJUDICATED the top-of-file BROWNFIELD template note ("cite implementation evidence before this ADR can be accepted") against this ADR's forward-design posture: `shard_manager.rs` and the `rotate_changelog` `archive_path` extension are F4-implementer scope, not yet built, so no crates/ file:line exists for the NEW code — but this ADR already cites file:line evidence for every REUSED primitive (`write_atomic`, `write_indeterminate_marker`/`block_if_marker_check`, `HookResult`, `rotate_changelog`/`resolve_archive_path`), satisfying the note's evidentiary intent for the design's grounded portions. Followed this project's own established precedent for identically-postured forward-design ADRs carrying the SAME BROWNFIELD comment: ADR-048 and ADR-049 (both `status: accepted`, comment still present, new-code evidence delivered downstream of acceptance) and the platform-wide POLICY 22 pattern of ADR-050 (D-1158 — "ci.yml implementation routed to devops-engineer" AFTER the accept flip) and ADR-039's AMD-001/AMD-002/AMD-003 sub-decisions (each ratified purely on human sign-off of the design, ahead of Phase 3/4 implementation) — POLICY 22 gates on human ratification of the DESIGN, not on crates/ evidence for not-yet-built code. New-module implementation evidence deferred to F4 (named future story S-25.02 F4), per §Decision 2/4/7/11/13's own F4-ownership language — not an unattached defer. Added a v1.8 Status-section paragraph and updated the Status header/opening paragraph to ACCEPTED; also folded in the untracked v1.6 (F-P6-001) and v1.7 (adversary pass-7 F-P7-001) fix-bursts' Status-section coverage, which had not yet been backfilled into the narrative Status paragraphs (Changelog rows below already documented both). No Decision content altered by this row.|
 | 1.7 | 2026-09-06 | architect | S-25.02 F2 sibling-sweep micro-burst (adversary pass-7 F-P7-001 closure, product-owner-flagged architect stragglers): Decision 7's block-and-retry sequence (the "PURE TRIM" grounding bullet, and steps 3-4 of the corrected single-actor contract) and Decision 11's staged-roll-sequence heading both still described B1's rotation TARGET as a literal `N-1`, contradicting Decision 14 (v1.3+), which replaced the fixed `N-1` eviction target with the configured `low_water_mark` (default `floor(N/2)`) precisely to close the every-write rotation-churn pathology Decision 14 documents. Corrected all four LIVE occurrences (Decision 7's pure-trim descriptor; Decision 7 step 3's rotation-target citation and step 4's post-retry item-count math; Decision 11's "truncate-to-N-1-items" heading clause; the Rationale section's "Why B1's gate performs ONLY the trim" pure-trim descriptor) to cite `low_water_mark`/`keep_recent` generically, each with an explicit "NEVER a fixed `N-1`" cross-reference to Decision 14. No decision content changed — Decision 14 already establishes `low_water_mark` as the authoritative target; this burst brings Decision 7/11/Rationale's own exposition into agreement with the Decision they predate. Full grep-verified: every remaining `N-1` occurrence in this ADR is now either an explicit negation ("NEVER `N-1`", "distinct from `N-1`"), a legal-but-poor-boundary-value discussion (Decision 14's own F-P4-001 adjudication, which correctly treats `N-1` as an admitted-but-suboptimal value, not the design target), a superseded-version attribution (Decision 14's "Problem" paragraph, explicitly citing "`BC-1.18.009` **v1.2**'s rotation step"), or a Changelog/Status-narrative historical row (POLICY-1 append-only exempt). Reviewed the companion `S-25.02-f2-architecture-delta.md`'s §4a/§4b per-pass BC-authorship-input tables for the same staleness: LEFT UNCHANGED — those sections are explicitly labeled by adversary-pass number ("adversary pass-1"/"adversary pass-2, architect-routed findings"), and §4c/§4d already perform the identical `N-1`→`low_water_mark` correction one/two passes later in the SAME append-only document, so §4a/§4b's `N-1` content is a genuinely historical record of what THAT pass's ADR version (v1.1/v1.2) instructed, superseded in-document rather than in need of retroactive rewrite. Status remains PROPOSED — not a POLICY 22 reversal; corrects this ADR's own exposition to agree with its own already-adopted Decision 14, no decision content altered. Companion `S-25.02-f2-architecture-delta.md` UNCHANGED this burst.|
