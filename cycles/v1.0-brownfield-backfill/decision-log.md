@@ -8075,3 +8075,145 @@ F-C2-P2-004, F-C2-P2-005, F-C2-P2-006, BC-INDEX v5.68, STORY-INDEX v4.449.
 ### Canonical 6-column row (STATE.md Decisions Log)
 
 | D-1176 | D-1176-S2502-CLUSTER2-PASS2-FAILLOUD-STABLECAP-SPEC-CASCADE | **S-25.02 Phase F4 cluster-2 (roll, BC-1.18.006) LOCAL adversary pass-2 = NOT CLEAN — 6 findings (2 MAJOR F-C2-P2-001/002, 2 MINOR F-C2-P2-003/004, 2 ADVISORY F-C2-P2-005/006), ALL fixed this burst; BC-1.18.006 v1.5→v1.6 resolves the 2 MINOR findings via NEW Invariant 8 (`E-SHD-008` uniform fail-loud backstop-probe disposition) and a Stable-Cap Precondition addendum to Invariant 7; F-C2-P2-003 surfaced and RESOLVED a spec-vs-spec-looking conflict with cluster-1's shipped BC-1.18.005 F-002 test via research + architect assessment + explicit human approval of refined Option A (no BC-1.18.005 amendment)** 2026-09-07 (product-owner + story-writer + code-side content; state-manager index/version-sync + single-commit TD-VSDD-053). F-C2-P2-001/002 (MAJOR, code-side, `feature/S-25.02-roll` @ `a9611f71`, no BC text change): E-SHD-006 sealed-shard read-error swallow fixed to fail loud on non-NotFound errors; catch point (i) made shape-aware (flat-only), closing a cross-mechanism data-corruption path against `frontmatter-changelog-array`-shaped entries. product-owner: BC-1.18.006 v1.5→v1.6 — F-C2-P2-003 Write-arm backstop `stat()`-failure disposition ADJUDICATED fail-open UNSOUND, CORRECTED to fail LOUD via NEW `E-SHD-008`/Invariant 8/EC-019, matching `Edit`/`MultiEdit`; F-C2-P2-004 Invariant 7 Stable-Cap Precondition addendum + NEW EC-020 (spec-only). F-C2-P2-005/006 (ADVISORY): stale PENDING edge-case labels corrected (story-writer); empty-shard backstop-then-trigger double-fire fixed code-side (`a9611f71`), no BC text change. story-writer: S-25.02 v2.9→v3.0 — AC-024/AC-025 EXTENDED (EC-019/EC-020/Invariant 7/Invariant 8; RED-Gate count stays 25 ACs) + EC-040/EC-041. state-manager: **BC-INDEX v5.67→v5.68** (BC-1.18.006 cell v1.5→v1.6; `total_bcs` UNCHANGED 2,006); **STORY-INDEX v4.448→v4.449** (S-25.02 row v3.0/v1.6). error-taxonomy.md v1.2→v1.3 (new `E-SHD-008` row) confirmed — no dedicated supplement-registry index exists to propagate into. Input-hashes reconciled in dependency order: BC-1.18.006.md CONFIRMED CURRENT `d39e2f4`; error-taxonomy.md `b3b214f`→`a002507`; story `ef172c7`→`e7ba028`(intermediate)→`6365adf`(final). Pending VP-NNN row EXTENDED again (not newly allocated) to cover EC-019/EC-020/Invariant 8, still routed to Phase F6 — Blocking Issues row now `[D-1174, EXTENDED D-1175, EXTENDED D-1176]`. No new Drift Item — all 6 findings resolved in-scope. `pipeline:` stays in_progress. No trajectory-tail drift — unchanged →0→1→1→1 LENGTH=4 (LOCAL cluster-2 cascade, not a cycle-level pass). **NEXT = cluster-2 LOCAL adversary pass-3, fresh context.** Refs: D-1176, D-1175, S-25.02, BC-1.18.006 v1.6, F-C2-P2-001, F-C2-P2-002, F-C2-P2-003, F-C2-P2-004, F-C2-P2-005, F-C2-P2-006, BC-INDEX v5.68, STORY-INDEX v4.449. STATE.md v10.01→v10.02. | D-1176 | 2026-09-07 |
+
+## D-1181
+
+**D-1181-S2502-CLUSTER2-PASS7-MISSINGCANONICAL-BLOCK-FIX-ATTRIBUTION-RESOLVED**
+
+Allocated as the next GLOBAL D-NNN per POLICY 16: max D-NNN across all cycle decision-logs was
+D-1180 (recorded only in STATE.md's Decisions Log table — decision-log.md backfill owed
+alongside D-1173/D-1177/D-1178/D-1179, per the STATE.md `## Decisions Log` header note). D-1181
+allocated cleanly above the true max.
+
+**Summary:** S-25.02 Phase F4 cluster-2 (roll, BC-1.18.006) **LOCAL adversary pass-7 = NOT
+CLEAN** 2026-09-08 (implementer + test-writer code-side content; state-manager bookkeeping +
+single-commit TD-VSDD-053) — 1 MAJOR (F-C2-P7-001), 2 MINOR (F-C2-P7-002, F-C2-P7-003), 1
+ADVISORY (F-C2-P7-004), ALL fixed this burst, all CODE-ONLY (no BC/story/VP/index content
+change — BC-1.18.006 stays v1.8, S-25.02 story stays v3.2, all 4 indexes UNCHANGED).
+BC-5.39.001 cluster-2 LOCAL streak **STAYS 0/3** (pass-7 not clean — now **7 consecutive
+not-clean passes**; pass-8 next, fresh context; cycle-level 3/3 CONVERGED streak UNCHANGED,
+separate track). Cluster-1 LOCAL BC-5.39.001 stays 3/3 CLOSED, unaffected. This burst also
+RESOLVES the standing OWED commit-attribution conflict recorded at Session Resume Checkpoint
+§4 item 1 (see the dedicated subsection below).
+
+**F-C2-P7-001 (MAJOR — missing-canonical first-ever over-cap `Write` wrongly returned
+`E-SHD-001` Error instead of the sanctioned empty-canonical `Block`; BC-1.18.006 v1.8 unchanged
+— code-only fix, spec was already correct per CLAUDE.md precedence rule 12).**
+`read_canonical_content`'s `NotFound` arm propagated straight into `execute_roll`'s
+`E-SHD-001`/`SealWriteFailed` mapping, so the FIRST-EVER `Write` against a config-matched entry
+whose canonical file does not yet exist on disk — and whose own payload alone exceeds the
+shard cap — returned a hard `HookResult::Error` instead of the sanctioned
+`Postcondition 1` empty-canonical `Ok(None)` short-circuit (the same code path Postcondition 2's
+"Empty-canonical retry template" `Block` message already covers for an EXTANT 0-byte
+canonical). This violated BC-1.18.006 v1.8's own **Invariant 1** ("no `Write`/`Edit`/`MultiEdit`
+call against a canonical MAY EVER return `HookResult::Error` for a normal over-cap condition —
+only `Block` or a successful roll") and **Precondition 2** ("a MISSING canonical file MUST be
+treated identically to a zero-byte current shard for cap-comparison purposes," mirroring
+BC-1.18.005 EC-004's flat-shape missing-file precedent). A pre-existing enshrined test,
+`test_BC_1_18_006_P1a_read_canonical_content_missing_file_is_io_error`, had CODIFIED the wrong
+behavior with a plausible-sounding rationale (a comment reading Precondition 2 as governing
+only the byte-COUNT comparison, not the READ-RESULT itself) — masking the defect across passes
+5 and 6, both of which certified the "correctness surface CLEAN." **Root cause:** two adjacent,
+textually-similar contracts (Precondition 2's zero-byte-equivalence rule vs. `E-SHD-001`'s
+general seal-write-failure taxonomy) were never reconciled at the one call site where they
+actually interact — a missing file IS an I/O condition (so it is easy to route it through the
+generic I/O-error-to-`E-SHD-001` mapping) AND it IS a zero-byte-equivalent canonical (so
+Precondition 2 requires the empty-canonical `Block` path instead). **Fix** (code-only,
+`feature/S-25.02-roll` @ `2cd64967`, Red Gate @ `44a90262`): `read_canonical_content`'s
+`NotFound` arm now returns `Ok(vec![])` (matching a genuine zero-byte canonical) instead of
+propagating the error; every OTHER `io::Error` kind still propagates and still maps to
+`E-SHD-001` (the fix is scoped exactly to `NotFound`, not a blanket swallow — SOUL.md #4
+silent-failure discipline preserved). This routes a missing canonical through the SAME
+Postcondition-1 empty-canonical short-circuit an extant 0-byte canonical already takes.
+Test-writer WITHDREW the wrong-behavior-enshrining test and replaced it with:
+(1) a `read_canonical_content`-level test asserting `Ok(vec![])` for a `NotFound` path, (2) an
+`execute_roll`-level test asserting the empty-canonical `Ok(None)` short-circuit fires for a
+missing canonical exactly as it does for an extant 0-byte one, (3) a `run_roll_gate`
+integration test proving a first-ever over-cap `Write` against a MISSING canonical yields the
+verbatim empty-canonical `Block` with **no file created** on disk, and (4) a distinct pair of
+tests pinning that a genuine NON-`NotFound` I/O failure (e.g. permission-denied) still fails
+loud as `E-SHD-001`, so the fix could not be mistaken for a blanket read-error swallow. All four
+tests were Red-Gate-verified failing against pre-fix code before the fix landed; no pre-existing
+test regressed. Owner: implementer + test-writer, per this burst's explicit dispatch scoping —
+state-manager performs bookkeeping only, no BC/story/index edit (spec was already correct).
+
+**F-C2-P7-002 (MINOR — stale `///` doc comment on `self_heal_recovery_plausible`; code-doc-only,
+no BC/story change).** The function's doc comment still claimed a "SINGLE `stat()`/existence
+check... no directory listing," contradicting the shipped v1.9 behavior (a `read_dir` scan
+introduced by an earlier cluster-2 pass, consistent with the adjacent F-C2-P6-003 fix's own
+note). Fixed by rewriting the doc comment to describe the actual directory-scan behavior,
+landing alongside F-C2-P7-001 on `feature/S-25.02-roll` @ `2cd64967`.
+
+**F-C2-P7-003 (MINOR — stale comment in `executor.rs`'s shard-gate match arm; code-comment-only,
+no BC/story change).** The comment above the `ShardShape::Flat` trigger-fire branch still
+claimed it "returns `Continue` for a fired trigger" — true of the item-count/`frontmatter-
+changelog-array` shape (BC-1.18.009, out of cluster-2's scope) but FALSE of the flat shape as of
+cluster-2: the flat branch now returns a real `HookResult::Block`/`Error` via `execute_roll`.
+Fixed by rescoping the comment to name the item-count shape explicitly, landing alongside
+F-C2-P7-001/002 on `feature/S-25.02-roll` @ `2cd64967`.
+
+**F-C2-P7-004 (ADVISORY — `self_heal_recovery_plausible` never skipped a persistent 0-byte
+orphan, causing a permanent no-op self-heal probe + per-dispatch directory scan; code-only, no
+BC/story change).** A 0-byte candidate file that is never reconciled (e.g. an external actor
+creates and leaves a permanently-empty file matching the sealed-shard naming shape) would keep
+`self_heal_recovery_plausible` reporting "plausible" on every dispatch indefinitely, since
+nothing in the probe excluded a 0-byte candidate — each dispatch paid the cost of a directory
+scan for a self-heal that could never actually resolve anything (a 0-byte "sealed" shard is
+never a legitimate self-heal target under Invariant 9, which already forbids any `[[shard]]`
+index entry from ever having `bytes_at_seal = 0`). **Fix** (code-only, `feature/S-25.02-roll` @
+`2cd64967`, Red Gate @ `44a90262`): the probe now skips any unindexed candidate whose on-disk
+size is 0 bytes, consistent with the Invariant 9 guard both downstream self-heal functions
+(`self_heal_reconcile_missing_index_entries`, `self_heal_resume_from_truncate`) already apply —
+closing the reachability gap so the probe correctly reports "not plausible" once every candidate
+is either reconciled or is a permanent 0-byte non-candidate. A dedicated test asserts the skip.
+
+**Headline lesson (test-rationale masking a MAJOR contract violation across 2 passes;
+convergence-economics evidence — see `lessons.md` for the codified entry).** Passes 5 AND 6 both
+independently re-derived the ENTIRE data-loss/correctness surface CLEAN and explicitly certified
+"only text-consistency + test-quality findings remained, NOT correctness." Pass-7 falsified that
+certification by finding a MAJOR correctness/contract violation (F-C2-P7-001) on a path neither
+pass 5 nor pass 6 exercised — the missing-canonical branch of the over-cap `Write` path — masked
+specifically because a pre-existing test had ENSHRINED the wrong behavior under a plausible-
+sounding misreading of Precondition 2. This is direct evidence that "N consecutive clean passes
+verifying a surface" is NOT proof that surface is actually correct when an enshrined test can
+mask the very defect a fresh adversary pass would otherwise catch — it validates the BC-5.39.001
+3-CLEAN protocol's insistence on FRESH-CONTEXT passes over trusting a prior pass's certification,
+and extends TD-VSDD-059 (paper-fix detection) one layer earlier: adversary review of a test's
+*rationale*, not merely its presence or pass/fail status, is required to catch a wrong-behavior-
+enshrining test.
+
+### Commit-Attribution Conflict Resolution (OWED §4.1 — RESOLVED)
+
+Session Resume Checkpoint §4 item 1 (carried since at least D-1176) recorded a live, unresolved
+policy conflict: a session-level instruction to append a `Claude-Session:` commit trailer vs.
+CLAUDE.md's explicit "NEVER add AI attribution to commits — no `Co-Authored-By: Claude`, no
+robot emojis. The user has explicitly directed this for vsdd-factory" rule (Git Workflow §
+Non-negotiable git rules). `git -C .factory log` confirmed every recent `factory-artifacts`
+commit through D-1180 (`671637b9`, `be92d9fc`, `833f1267`, and earlier) carried the
+`Claude-Session:` trailer — the session-level instruction had in practice been followed, NOT
+CLAUDE.md's rule. **The human has now explicitly resolved this conflict for this and every
+future `.factory/` commit: CLAUDE.md governs — NO `Claude-Session:` trailer, no
+`Co-Authored-By: Claude`, no emoji, on any `.factory/` commit going forward.** This burst's own
+commit is the first to apply the resolution. Session Resume Checkpoint §4 item 1 is CLOSED —
+RESOLVED, governing rule = CLAUDE.md no-attribution — and removed from the OWED list; see the
+`lessons.md` entry for the going-forward discipline this resolution establishes.
+
+### Cluster-2 Convergence Status
+
+BC-5.39.001 cluster-2 LOCAL streak: **0/3** (pass-7 NOT CLEAN — 7 consecutive not-clean passes;
+streak has not yet started accumulating). Cycle-level BC-5.39.001 streak: **3/3 CONVERGED**,
+UNCHANGED (separate track — this is a LOCAL cluster cascade, not a cycle-level adversary pass).
+Cluster-1 LOCAL BC-5.39.001 stays 3/3 CONVERGED — CLOSED, fully retired, unaffected. No
+trajectory-tail drift — unchanged `→0→1→1→1` LENGTH=4.
+
+### Next Steps
+
+**NEXT = cluster-2 LOCAL adversary pass-8, fresh context, against BC-1.18.006 v1.8/story
+v3.2/code `feature/S-25.02-roll` @ `2cd64967`.**
+
+Refs: D-1181, D-1180, S-25.02, BC-1.18.006 v1.8, F-C2-P7-001, F-C2-P7-002, F-C2-P7-003,
+F-C2-P7-004.
+
+### Canonical 6-column row (STATE.md Decisions Log)
+
+| D-1181 | D-1181-S2502-CLUSTER2-PASS7-MISSINGCANONICAL-BLOCK-FIX-ATTRIBUTION-RESOLVED | **S-25.02 Phase F4 cluster-2 (roll, BC-1.18.006) LOCAL adversary pass-7 = NOT CLEAN — 1 MAJOR (F-C2-P7-001), 2 MINOR (F-C2-P7-002/003), 1 ADVISORY (F-C2-P7-004), ALL fixed this burst, all CODE-ONLY (BC-1.18.006 stays v1.8, story stays v3.2, all 4 indexes UNCHANGED); also RESOLVES the standing OWED commit-attribution conflict (Session Resume Checkpoint §4 item 1) — CLAUDE.md governs, NO `Claude-Session:` trailer on any `.factory/` commit going forward** 2026-09-08 (implementer + test-writer code-side content; state-manager bookkeeping + single-commit TD-VSDD-053). F-C2-P7-001 (MAJOR): a first-ever over-cap `Write` against a MISSING canonical wrongly returned `E-SHD-001` Error instead of the sanctioned empty-canonical `Block`, violating Invariant 1 (no Error for normal over-cap) + Precondition 2 (missing-canonical treated as zero-byte, per BC-1.18.005 EC-004 precedent); a pre-existing test (`test_BC_1_18_006_P1a_..._missing_file_is_io_error`) had ENSHRINED the wrong behavior under a plausible misreading of Precondition 2, masking the defect across passes 5-6's "correctness surface CLEAN" certifications. Fixed (`feature/S-25.02-roll` @ `2cd64967`, Red Gate @ `44a90262`): `read_canonical_content`'s `NotFound` arm now returns `Ok(vec![])` (other io errors still propagate to `E-SHD-001`), routing through Postcondition 1's empty-canonical short-circuit; enshrining test WITHDRAWN and replaced with 4 new/replaced tests (read-level, roll-level, integration-level empty-canonical Block-with-no-file-created, and a genuine-I/O-failure-still-fails-loud pair). F-C2-P7-002 (MINOR): stale `self_heal_recovery_plausible` doc comment (claimed "no directory listing," contradicting the shipped v1.9 `read_dir` scan) fixed. F-C2-P7-003 (MINOR): stale `executor.rs` shard-gate comment (claimed the flat branch "returns Continue for a fired trigger," false as of cluster-2) fixed. F-C2-P7-004 (ADVISORY): `self_heal_recovery_plausible` now skips a persistent 0-byte orphan candidate (Invariant-9-consistent), closing a permanent no-op self-heal + per-dispatch dir-scan reachability gap. **Headline lesson:** passes 5 AND 6 both certified the correctness surface CLEAN; pass-7 falsified that via a MAJOR finding masked by a wrong-behavior-enshrining test — direct evidence "N consecutive clean passes" is not proof of correctness, validating the BC-5.39.001 3-CLEAN fresh-context protocol and extending TD-VSDD-059 to test-rationale review. BC-5.39.001 cluster-2 LOCAL streak stays **0/3** (7 consecutive not-clean passes; pass-8 next, fresh context; cycle-level 3/3 CONVERGED streak UNCHANGED). No trajectory-tail drift — unchanged →0→1→1→1 LENGTH=4 (LOCAL cluster-2 cascade, not a cycle-level pass). Code branch `feature/S-25.02-roll` @ `2cd64967` is 2 commits AHEAD of `origin/feature/S-25.02-roll` — NOT YET PUSHED (state-manager does not push code; that is a later per-story-delivery step). Full code gate GREEN: fmt clean, clippy clean, `cargo test --workspace --all-targets` = 3072 passed / 0 failed (4 pass-7 tests + negative-I/O-path pair all green). `pipeline:` stays in_progress. **NEXT = cluster-2 LOCAL adversary pass-8, fresh context.** Refs: D-1181, D-1180, S-25.02, BC-1.18.006 v1.8, F-C2-P7-001, F-C2-P7-002, F-C2-P7-003, F-C2-P7-004. STATE.md v10.06→v10.07. | D-1181 | 2026-09-08 |
