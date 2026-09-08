@@ -1,286 +1,201 @@
-# PR #818 — Fresh-Eyes Review (cycle 4, closing convergence check)
+# PR #824 — Fresh-Eyes Review (S-25.02 cluster-2 "roll", BC-1.18.006 v1.11)
 
-**PR:** #818 — `feat(S-25.02): cluster 1 — cap formula + native shard-cap trigger (BC-1.18.005)`
-**Branch:** `feature/S-25.02-cap-trigger` → `develop`
-**Head reviewed:** `f870af0b099efdaa4bf6f9612c6cb91d90602236`
-**Verdict:** **APPROVE** — 0 BLOCKING, 1 SUGGESTION, 3 NIT
+**PR:** #824 — `S-25.02 cluster-2: artifact-sharding roll (BC-1.18.006 v1.11)`
+**Branch:** `feature/S-25.02-roll` → `develop`
+**Head reviewed:** `8d17ffc44f155763832d3afec142f8b0df0c7a44` (merge-base `fff5e4cc`)
+**Verdict:** **REQUEST_CHANGES** — 1 BLOCKING (external), 1 MAJOR, 5 MINOR, 2 NIT
 
-> Prior cycles (superseded; full text in this file's git history on `factory-artifacts`):
-> cycle 1 — REQUEST_CHANGES (4 blocking); cycle 2 — REQUEST_CHANGES (2 blocking B-1/B-2,
-> 2 major M-1/M-2); cycle 3 — APPROVE (0 blocking, 2 suggestion, 3 NIT). Cycle 3's S-2
-> (`./`-prefix path-normalization) and S-3 (stale M-2 test comment) are verified closed below.
+> Supersedes the cluster-1 (PR #818) review previously at this path; that review's full text is
+> preserved in this file's git history on `factory-artifacts` (commit `97e3c872`), matching the
+> per-story pr-review.md convention cluster-1 itself established. This review is for cluster-2
+> (PR #824), a distinct PR under the same story S-25.02.
 
-Reviewed against the actual current diff at the head SHA (`gh pr diff 818`, `git show <sha>:<path>`),
-not against the fix-burst narrative or any prior review's claims. Finding severity has decayed
-monotonically across four passes (4 blocking → 2 blocking + 2 major → 0 blocking + 2 suggestion →
-0 blocking + 1 suggestion), consistent with a genuinely converging review.
+Reviewed against the actual current diff at the head SHA (`gh pr diff 824`, `git show <sha>:<path>`),
+including the 6 post-PR security-fix commits (`e67eb7ad`..`8d17ffc4`) — not against the fix-burst
+narrative or any prior review's claims. Finding #2 was reproduced empirically with throwaway probes
+(added, run, reverted; working tree confirmed clean). Posted to GitHub as a COMMENTED review plus a
+test-coverage addendum, because GitHub refuses `--request-changes` on the author's own PR ("Can not
+request changes on your own pull request"); the REQUEST_CHANGES verdict is stated in the body and
+needs a human/second account to convert into a formal blocking review if branch protection is to
+enforce it.
 
-**Scope reviewed:** 22 files, +5,949/−1. Source: `Cargo.toml` / `Cargo.lock`, `executor.rs`,
-`lib.rs`, new `crates/factory-dispatcher/src/shard_manager.rs` (4,135 lines incl. tests), new
-`crates/factory-dispatcher/tests/bc_1_18_005_shard_cap_trigger_test.rs` (1,131 lines). Remainder is
-demo evidence under `docs/demo-evidence/S-25.02/cluster-1-cap-trigger/`.
-
-**CI:** all 17 checks pass (cargo-host ×2, bats-full-suite, bats-wave-handoff, bats-darwin-leg,
-build-dispatcher ×5, SAST/Semgrep, deny-advisories, attestation-gate-non-vacuity-controls,
-platforms-drift, policy-15-attestation-location, validate). `mergeStateStatus: CLEAN`.
-
----
-
-## 1. Cycle-3 findings — both CONFIRMED CLOSED
-
-### S-2 (`./`-prefix path normalization) — CLOSED, verified mechanically
-
-`shard_manager.rs:782` `path_falls_under_or_equals` now filters `Component::CurDir` out of **both**
-operand component vectors before the suffix/prefix comparison. Verified against the head commit's
-own diff (`git show f870af0b`): the production change is exactly the two
-`.filter(|c| *c != std::path::Component::CurDir)` insertions and nothing else.
-
-The fix introduces no new defect in its own mechanism:
-
-- Filtering **both** sides means normalization works whether the `./` appears on the registered
-  path or on the target path — not just the operator-facing case the commit message describes.
-- The `registered.len() <= target.len()` (suffix) and `registered.len() < target.len()` (prefix)
-  guards still short-circuit ahead of the slice indexing, so the shorter post-filter vectors
-  cannot produce an out-of-range panic.
-- It does not regress the cycle-2 B-1 stem-vs-path tests: filtering is a no-op on any path with no
-  `CurDir` component, which is every fixture in the B-1 suite
-  (`/registered/dir/decision-log.md`, `/registered/dir`).
-
-**The regression test is load-bearing, not vacuous.** `shard_manager.rs:1981`
-`test_BC_1_18_005_B1_path_falls_under_or_equals_curdir_prefix_matches_same_as_without` asserts both
-the equality-with-baseline **and** a standalone
-`assert!(path_falls_under_or_equals(target, with_curdir_prefix))`. A mutually-broken baseline
-(both spellings matching nothing) cannot make it pass.
-
-### S-3 (stale M-2 test comment) — CLOSED
-
-The comment on `test_BC_1_18_005_B2_read_changelog_item_count_oversized_file_fails_loud` no longer
-describes the removed `stat()`-only rejection path; it now correctly names the M-2 bounded
-`Read::take(MAX_CHANGELOG_TARGET_READ_BYTES + 1)` mechanism on an already-open handle.
+**Scope reviewed:** 6 code/config files + 16 demo-evidence files. `crates/factory-dispatcher/`:
+`shard_manager.rs` (+6,012/−2,222; ~1,693 new production lines), `invoke.rs` (+227), `main.rs`
+(+86/−21), `executor.rs` (+23/−10), `Cargo.toml` (+10), new `tests/bc_1_18_006_roll_test.rs`
+(+2,108), plus `Cargo.lock` (+1). Test-to-production ratio ≈ 3:1.
 
 ---
 
-## 2. New findings
+## Summary
 
-### F-1 — [SUGGESTION] `artifact_path` values normalizing to an empty component list become stem-only wildcards; S-2 newly widened this set
+| # | Severity | Category | Finding |
+|---|---|---|---|
+| 1 | BLOCKING | dependency / CI | `cargo-host` red on both runners — merge gate unmet (root cause outside this diff) |
+| 2 | MAJOR | correctness | `write_exclusive` temp-path collision misreported as `E-SHD-009`; destroys a reclaimable 0-byte destination |
+| 3 | MAJOR | correctness / coverage | E-SHD-010 symlink guard absent AND untested on the Edit (~L1678) and MultiEdit (~L1748) arms |
+| 4 | MINOR | correctness | `reclaim_identity_still_safe`'s `File::open` can block indefinitely on a FIFO |
+| 5 | MINOR | description | PR body cites an orphaned commit SHA (`6cccf3a3`) not in HEAD (real one is `0ea79c2c`) |
+| 6 | MINOR | description | Demo README's 0-byte-reclaim prose is stale after SEC-001 + FIX-MED-1 |
+| 7 | MINOR | missing | `E-SHD-010` ships without an `error-taxonomy.md` entry and without a story anchor for the deferral |
+| 8 | MINOR | coverage | FIX-MED-1 TOCTOU re-check tested only at helper level, never through `publish_sealed_shard` |
+| 9 | NIT | correctness | `next_seal_seq`'s `max + 1` can overflow `u32` |
+| 10 | NIT | size | 8,847 / 2,253 diff, far over the 500-line guideline (mitigated by 3:1 test ratio) |
 
-| Field | Value |
-|-------|-------|
-| Severity | suggestion |
-| Category | coherence |
-| File | `crates/factory-dispatcher/src/shard_manager.rs:782` (`path_falls_under_or_equals`) |
+---
 
-When `registered` is empty after `CurDir` filtering, `suffix_match` evaluates
-`target[target.len()..] == []` → **unconditionally true**, so the entry matches *every* file
-sharing its `artifact_stem`.
+## 1. [BLOCKING] CI is red on both runners — the PR's own "CI green" gate is unmet
 
-That is precisely the stem-only blast radius the cycle-2 B-1 finding was raised to close. The
-field's own doc at `shard_manager.rs:125-153` states the case explicitly: `artifact_path` is
-required, never `#[serde(default)]`, because "this repository alone has 426 files sharing the
-`STATE` stem, 99 sharing `lessons`, 98 sharing `burst-log`…" — a stem-only entry would route every
-one of those through the matched entry's `validate_entry` / cap gate.
+`gh pr checks 824` reports `cargo-host (ubuntu-latest)` and `cargo-host (macos-latest)` both **fail**,
+same step (`cargo test (workspace, all targets)`), same two tests:
 
-`artifact_path = ""` already hit this before S-2 (`Path::new("")` yields zero components), so the
-underlying hole is **pre-existing**, not introduced here. What S-2 changes is that `"."` and `"./"`
-now join it: pre-S-2 they yielded `[CurDir]`, which could never suffix-match a real target (so
-those entries matched **nothing**); post-S-2 they normalize to empty and match **everything** with
-the stem. The direction flipped from fail-closed to fail-open, which is the less-safe direction
-under this module's own blast-radius doctrine.
-
-`validate_entry` never inspects `artifact_path` at all, and could not help here regardless — under
-the v1.12 MATCH-FIRST restructure it runs only *after* a match has already been resolved.
-
-**Suggestion.** One-line close, either:
-
-```rust
-// in path_falls_under_or_equals, after filtering:
-if registered.is_empty() {
-    return false; // a degenerate artifact_path is never a wildcard match
-}
+```
+panicked at crates/hook-plugins/validate-state-structure/src/lib.rs:2557:9:
+assertion `left == right` failed: real STATE.md banner claims 386 lines but actual count is 395
 ```
 
-or a structural non-empty `artifact_path` check surfaced as a new `ShardConfigError` variant at
-match time, consistent with the module's fail-loud-on-config-defect posture everywhere else.
+**Not caused by this PR's diff.** Verified: locally on this branch `cargo test --workspace
+--all-targets` is 3091 passed / 0 failed (the two failing tests read the CI-mounted `.factory/`
+worktree, absent in my checkout). `develop`'s CI has been red for the last 5 consecutive runs
+(2026-09-05 → 2026-09-07), including at merge-base `fff5e4cc`. Root cause: `validate-state-structure`
+asserts against the live `.factory/STATE.md` banner `wc -l`, which is stale (386 vs 395).
 
-**Why not blocking.** No `[[shard]]` config file is committed anywhere in the repository, so
-`shard_cap_precheck`'s `Path::exists()` probe short-circuits every dispatch and the gate is inert
-in production today. Reaching this requires an operator to author a degenerate `artifact_path` in a
-config that does not yet exist. Cleanly deferrable to the BC-1.18.006 cluster-2 PR, which touches
-this exact function.
+Flagged BLOCKING because the PR's Pre-Merge Checklist lists "CI green" and that gate is objectively
+unmet — not because the author introduced it. Route: `state-manager` (STATE.md banner reconcile on
+`factory-artifacts`). Worth escalating separately: `develop` has merged with a non-functional
+workspace-test gate for 3+ days, and coupling PR CI to a mutable external branch's content makes the
+signal non-hermetic.
 
-### F-2 — [NIT] Stale `ShardRegistry::load()`-time claims contradicted by the file's own section header
+## 2. [MAJOR] `write_exclusive`'s temp-path collision is indistinguishable from a real sealed-shard collision
 
-| Field | Value |
-|-------|-------|
-| Severity | nit |
-| Category | description |
-| File | `crates/factory-dispatcher/tests/bc_1_18_005_shard_cap_trigger_test.rs:365-366, 392-393, 409-410, 437-438` |
+**File:** `shard_manager.rs`, `write_exclusive` (~L2435) and `publish_sealed_shard` (~L2495).
 
-Four sites still assert that EC-009 / EC-011 fail loud "at `ShardRegistry::load()` time" / via "the
-`HookResult::Error` `ShardRegistry::load` returns":
+`write_exclusive` creates its temp file at a fully deterministic path `.{basename}.tmp-{pid}` with
+`create_new(true)` (O_EXCL). It returns a bare `io::Result<()>`, so `publish_sealed_shard` cannot
+tell "the temp path was occupied" from "the sealed destination was occupied" — and it assumes the
+latter, routing any `AlreadyExists` into the destination-collision / 0-byte-reclaim path.
 
-- L365-366 inline comment (`fail-loud MissingShape at ShardRegistry::load() time`)
-- L392-393 assertion message
-- L409-410 inline comment (`fail-loud InvalidLowWaterMark at ShardRegistry::load() time`)
-- L437-438 assertion message
+Reproduced with two throwaway probes (reverted; tree clean):
 
-The section header 40 lines above (L313-323) already states the post-v1.12 truth correctly:
-`ShardRegistry::load` is structural-TOML-parse-only, both fields are `Option`-typed and deserialize
-fine, and fail-loud enforcement happens in `validate_entry` at entry-match time. The inline
-comments contradict the header directly above them.
+- **Probe A** — stale/planted temp file, no sealed shard on disk → `E-SHD-009: ... this seq already
+  has durable content on disk`, while `sealed exists = false`. Factually false, and self-perpetuating
+  (nothing removes the temp file).
+- **Probe B** — legitimately reclaimable 0-byte destination + stale temp file → the reclaim path
+  lstat'd the destination, passed `reclaim_identity_still_safe`, **unlinked the destination**, retried
+  `write_exclusive`, hit the same temp file, and failed. A failed op that nonetheless deleted a file —
+  contradicting the function's own "leave it byte-identical and untouched" contract.
 
-Same de-stale class as commits `df948674`, `93f93a81`, `b2b3a947` already on this branch.
+No attacker required: `write_exclusive`'s cleanup line sits after two `?` operators
+(`write_all`/`sync_all`), so any `ENOSPC`/`EIO` leaks the temp file permanently. **Fix:** random
+nonce in the temp path (crate already uses `tempfile` in tests) and/or a typed error distinguishing
+temp-path-occupied from destination-exists; scope-guard the temp file so it is removed on every
+early return.
 
-### F-3 — [NIT] Two broken cross-references in the m5 test; stale guard count in the module header
+## 3. [MAJOR] E-SHD-010 symlink guard absent AND untested on the Edit/MultiEdit arms
 
-| Field | Value |
-|-------|-------|
-| Severity | nit |
-| Category | description |
-| File | `crates/factory-dispatcher/tests/bc_1_18_005_shard_cap_trigger_test.rs:8-24, 714` |
+**File:** `shard_manager.rs`, `shard_cap_gate_check`.
 
-- **L714:** "Same EC-013 malformed config as the AC-023 test above" — no test in this file is named
-  AC-023 (`grep 'AC-023'` returns this comment and nothing else). The intended referent is
-  `test_BC_1_18_005_P2001_cap_exceeds_ceiling_block_reason_names_artifact_stem_and_failure_kind`
-  at L582. The config is also **not** the same: m5 uses stem/path `decision-log`, P2001 uses
-  `over-cap-log`.
-- **L8-24 module header:** "It applies two cheap, real guards" and "The two negative-control
-  tests" — there are **three** guards (`event_name`/`EventType` classification at
-  `executor.rs`, then tool-name, then config-presence) and **three** negative controls; the
-  PostToolUse control at L820 landed after the header was written.
+The PR body says FIX-MED-2 was applied "at all 4 sites" — confirmed four `reject_canonical_symlink`
+callsites (Write ~L1645, `execute_roll` ~L2731, `self_heal_resume_from_truncate` ~L3061,
+`reconcile_post_write_replace_all_overcap` ~L3325). But the **Edit** arm (~L1678) and **MultiEdit**
+arm (~L1748) call `current_shard_bytes_flat(target_path)` — which uses `std::fs::metadata` (follows
+symlinks) — with no preceding guard. So two of three mutation-tool arms `stat()` through a symlinked
+canonical while only Write is guarded. `read_changelog_item_count`'s `File::open` (~L1244) is likewise
+unguarded and reads content.
 
-### F-4 — [NIT] EC-019 "missing required non-Option field" fixture does not isolate the field it names
+This path has **zero test coverage**: `test_FIXMED2_..._e_shd_010` (~L7846) exercises only the
+Write-arm backstop; there is no Edit or MultiEdit variant, so the asymmetry would not regress-fail.
+This is the missed-sibling-callsite pattern TD-VSDD-060 exists to catch, shipped without a pinning
+test — hence MAJOR rather than MINOR.
 
-| Field | Value |
-|-------|-------|
-| Severity | nit |
-| Category | coverage |
-| File | `crates/factory-dispatcher/tests/bc_1_18_005_shard_cap_trigger_test.rs:1087-1093, 1094-1102, 1121` |
+Impact is bounded (if the leaked size trips the trigger, `execute_roll`'s guard at ~L2731 refuses
+loud, so no symlink-target bytes are ever sealed) — residual is info-exposure + guard asymmetry, not
+data loss. **Route:** implementer adds `reject_canonical_symlink` at ~L1678/~L1748 (or hoist it above
+the `match tool_kind` so all three arms inherit it); test-writer adds Edit + MultiEdit variants of
+the ~L7846 test.
 
-The fixture omits **`artifact_path` as well as `shard_cap_bytes`**. Both are non-`Option` with no
-`#[serde(default)]` (`shard_manager.rs:153` and `:170`), and `artifact_path` is declared first in
-the struct, so the `toml::de::Error` surfaced is almost certainly about `artifact_path` — while
-the comment (L1087-1093) and the assertion message (L1121) both name `shard_cap_bytes` as the
-field under test.
+## 4. [MINOR] `reclaim_identity_still_safe` can block indefinitely on a FIFO
 
-The assertion remains load-bearing for EC-019's actual contract (a structural parse failure blocks
-regardless of match); only the field attribution is imprecise. Dropping the `shard_cap_bytes` line
-alone, keeping `artifact_path`, would make the fixture match its own description.
+**File:** `shard_manager.rs` (~L2633). `std::fs::File::open(path)` on a FIFO with no writer blocks
+forever, hanging the PreToolUse gate. Window is narrow (swap a FIFO between the `symlink_metadata`
+probe and this call), but the consequence is a stalled dispatch. **Fix:** on Unix, open with
+`O_NONBLOCK | O_NOFOLLOW` via `OpenOptionsExt::custom_flags` — also closes the residual symlink case
+the doc comment currently documents as unclosable. No new dependency.
 
-### F-5 — [NIT] Three `reaches_native_gate` assertion messages state arithmetic no assertion can verify
+## 5. [MINOR] PR body cites a commit not in this PR
 
-| Field | Value |
-|-------|-------|
-| Severity | nit |
-| Category | coverage |
-| File | `crates/factory-dispatcher/tests/bc_1_18_005_shard_cap_trigger_test.rs:121-226` |
+"Deferred to F6" cites `6cccf3a3` as "this PR's own FIX-MED-1 commit"; it is **not an ancestor of
+HEAD** (`git merge-base --is-ancestor` → NO; parent `f874cd1e`). The in-HEAD FIX-MED-1 is `0ea79c2c`
+(parent `0f56530d`), identical subject line — `6cccf3a3` is an orphaned artifact of a discarded
+branch state. The Security Review table cites the correct SHA; the deferrals section should too.
 
-The messages cite specific cap comparisons — "5,000 <= 49,152" (L152), "45,004 <= 49,152"
-(L181/185), "48,000 <= 49,152" (L219/223) — but `shard_cap_gate_check`'s Flat arm emits
-`tracing::warn!` and falls through to `HookResult::Continue` on a fired trigger
-(`shard_manager.rs:1512-1532`); it never constructs `Block` in this cluster. So `exit_code == 0`
-holds identically for an over-cap payload, and no assertion in these three tests can fail on the
-arithmetic its message describes. What they genuinely pin is "the dispatch reaches the gate and
-the matched entry passes `validate_entry`" — which is exactly what their *names* say.
+## 6. [MINOR] Demo README describes pre-security-fix behavior
 
-The scope boundary itself is legitimate and openly disclosed: `shard_manager.rs:1613-1621` states
-plainly that no test asserts an outcome for the trigger-FIRES branch at gate level, because
-BC-1.18.006 / BC-1.18.009 own that observable outcome. The trigger *decision* is genuinely covered
-at the `size_trigger_fires` / `item_count_trigger_fires` unit level. Only the message text
-overclaims — the same narrative-attestation-vs-mechanical-evidence smell the project polices under
-D-449(a) / META-LEVEL-24. Trimming the arithmetic from the three messages closes it.
+`docs/demo-evidence/S-25.02/cluster-2-roll/README.md`, EC-025 row, says the reclaim `"stat()`s
+once"`. As of SEC-001 the probe is `lstat` (non-dereferencing) and FIX-MED-1 adds an open-handle
+re-check before unlink. The recording is still valid (test unchanged, still passes); the prose
+describes the pre-fix mechanism. One-line update.
 
----
+## 7. [MINOR] `E-SHD-010` ships without a taxonomy entry or a deferral anchor
 
-## 3. Already-closed per prior adjudication — deliberately NOT re-flagged
+Correctly routed to product-owner per the Agent Routing Table, but recorded as "flagged for a
+follow-up documentary pass" with **no story/wave anchor** — Canonical Principle Rule 3 requires a
+named future story so the deferral cannot get lost. Attach a real story ID, or have product-owner add
+the single table row in-scope.
 
-| Item | Disposition |
-|------|-------------|
-| **B3** — `replace_all` multiplicity in the projected-size formula | Deferred to BC-1.18.006 per product-owner spec ruling |
-| **m1** — `effective_shard_cap_bytes` has no live caller in `shard_cap_gate_check` | Intentional config-time / F4-harness helper per BC-1.18.005 v1.10 adjudication (finding F-C1-P4-003, "Reading (A) CONFIG-TIME/HARNESS-HELPER adjudicated over Reading (B) RUNTIME"); rationale recorded inline at `shard_manager.rs:857-871` |
-| **m5** — `plugins_run` counts the synthesized shard-gate outcome | Consistent with the three sibling native/sentinel outcome sites (`spawn_blocking` join-error, `payload serialize`, `plugin load failed`); rationale recorded in `shard_gate_block_outcome`'s doc comment |
+## 8. [MINOR] FIX-MED-1 TOCTOU re-check tested only at helper level
 
----
+Both tests (~L7973, ~L8008) call `reclaim_identity_still_safe` directly; no test drives the
+probe → concurrent-write → re-check → unlink path through `publish_sealed_shard` itself. The
+integration guarantee rests on inspection of the callsite (~L2564), not a test. This intersects
+Finding #2 — an integration-level test through `publish_sealed_shard` would likely have surfaced the
+temp-path-collision misattribution.
 
-## 4. Verified clean — what this pass actually checked
+## 9. [NIT] `next_seal_seq` arithmetic can overflow
 
-Recorded explicitly per the no-rubber-stamping requirement.
+`...max().unwrap_or(0) + 1` on `seq: u32` panics in debug / wraps in release at `u32::MAX`.
+Practically unreachable; `checked_add(1)` → fail-loud error is one line and matches the module's
+discipline.
 
-**Diff coherence (checklist 1).** Every changed file traces to BC-1.18.005. The two new
-dependencies are both justified inline in `Cargo.toml` (`serde_norway` for the frontmatter
-`changelog:` count with a precedent cite to `last-amended-migrate/src/yaml_guard.rs`;
-`vsdd-hook-sdk` to reuse the canonical three-variant `HookResult` rather than invent a parallel
-result type) and are reflected in `Cargo.lock` with no other lock churn. `vsdd-hook-sdk` as a
-path-only dep with no `version` key differs from the sibling entries in the same file, but
-`factory-dispatcher` is `publish = false`, and path-only is the dominant convention for this
-crate elsewhere in the workspace — **not a finding**.
+## 10. [NIT] Diff size
 
-**Description accuracy (checklist 2).** The PR body's corrected latency accounting (finding B4)
-matches the module doc at `shard_manager.rs:22-45` and the actual code: `Path::exists()` probe is
-O(1), but a committed config means one bounded whole-file TOML parse per Edit/Write/MultiEdit
-dispatch even for non-matching targets. The body does not overclaim zero-cost.
-
-**Executor wiring.** The gate runs before the registry-driven tier loop (Invariant 1). Both
-`HookResult::Error` and `HookResult::Block` flip `block_intent` **and** push a synthesized
-`PluginOutcome` into `all_outcomes`, so `main.rs::extract_block_info`'s scan over
-`per_plugin_results` has something to find (the F-C1-P2-001 fix). `Continue` is a genuine no-op.
-
-**Error handling.** No `unwrap()` / `expect()` on any production path. Named `thiserror` variants
-throughout; every fail-loud message carries `artifact_stem` plus an EC marker. Both `Option`
-destructures that follow `validate_entry` (`entry.shape` at L1368, `entry.n` at L1557) use
-fail-loud `let`-`else` rather than assuming the just-validated invariant — correct defensive
-posture for a future refactor.
-
-**Arithmetic safety.** `compute_shard_cap_bytes` saturates on both subtractions;
-`projected_size_edit` branches on delta sign to avoid unsigned underflow;
-`validate_low_water_mark` widens to `i128` at the `>= N` boundary; `item_count_trigger_fires` uses
-`saturating_add`. The EC-015 (non-finite / non-positive divisor) and EC-017 (tiny-positive divisor
-saturating the raw pre-cast division) guards both run *before* the cap-vs-formula comparison, so
-neither divisor-door can defeat it.
-
-**Bounded read.** `read_changelog_item_count` uses a single `take(MAX + 1)` on an already-open
-handle, closing both the TOCTOU window and the non-regular-file (FIFO reporting `len() == 0`) gap
-that a `stat()`-then-`read_to_string` shape would leave. The closing-fence scan is line-anchored
-and correctly rejects `----`, `---foo`, and in-block-scalar lines beginning `---`.
-
-**Test coverage (checklist 3).** 17 integration tests drive the real `execute_tiers` →
-`shard_cap_precheck` → `ShardRegistry::load` → `shard_cap_gate_check` stack, including
-block-reason surfacing (P2001 ×3), EC-018 sibling-scoping ×2, EC-019 ×2, the B-2 missing-
-`file_path` fail-loud, the m5 `plugin_version` propagation, and a PostToolUse negative control.
-Independently verified as **non-vacuous** (contrary to one delegated reading): the
-`PC1_non_mutating_tool_name_bypasses_native_gate` control at L268 passes `tool_input: {}`, so
-removing the tool-name guard would reach the B-2 missing-`file_path` fail-loud and yield
-`exit_code == 2` — the assertion genuinely constrains the guard it names. Cap arithmetic in the
-fixtures independently recomputed: `8_000_000 / 106.36 → 75_216`, `− 16_384 − 8_192 = 50_640`, so
-`shard_cap_bytes = 49_152` correctly passes and `100_000` correctly trips EC-013.
-
-**Demo evidence (checklist 4).** `docs/demo-evidence/S-25.02/cluster-1-cap-trigger/` contains 5
-`.gif` + 5 `.webm` + 5 `.tape` sources + `README.md` with a full AC/EC → clip mapping. Recordings
-drive real `cargo test` runs against unmodified source (no hand-typed output). The README is
-candid about the one thing it cannot show — the `tracing::warn!` advisory — because no
-`tracing_subscriber` is wired anywhere in the workspace; it substitutes the real call site plus the
-passing boolean-decision test. Honest evidence, not a `.txt` placeholder.
-
-**Commit quality (checklist 5).** Conventional Commits format with story ID throughout
-(`fix(S-25.02):`, `test(shard-manager):`, `docs(demo):`). No AI attribution in any commit message.
-
-**Diff size (checklist 6).** Exceeds the 500-line flag threshold, but the excess is one new module
-plus its test suite for a single BC cluster whose boundary is spec-recorded (BC-1.18.005 only;
-BC-1.18.006 / BC-1.18.009 / BC-1.18.012 explicitly out of scope). Not a finding.
-
-**Missing changes (checklist 7).** All six ACs claimed in the PR body (AC-001..AC-005, AC-023) have
-corresponding implementation and tests. The interim `warn!` + `Continue` hand-off for a fired
-trigger is disclosed in the PR body, the module header, and both trigger branches — an honest
-cluster boundary, not silent swallowing.
-
-**Dependency status (checklist 8).** ADR-051 merged; BC-1.18.004 active. No unmerged upstream PR
-gates this one.
+8,847 / 2,253 far over the 500-line guideline, but ≈3:1 test-to-production on a data-integrity path
+is the right trade. Noted so size is not mistaken for scope creep.
 
 ---
 
-## 5. Recommendation
+## Verified clean (no rubber-stamp)
 
-**Merge.** The suggestion and three NITs are all cleanly deferrable to the BC-1.18.006 cluster-2 PR,
-which touches this exact module. None affects runtime behavior while no `[[shard]]` config is
-committed. If the team prefers them closed here, F-1 is a one-line guard plus one test, and F-2
-through F-5 are comment-text edits.
+- **Diff coherence:** every changed file within `crates/factory-dispatcher/`,
+  `docs/demo-evidence/S-25.02/`, or `Cargo.lock`. No unrelated changes.
+- **Commit quality:** all 42 commits Conventional-Commits format, all carry the story ID, **no AI
+  attribution** in any commit body.
+- **Forbidden patterns:** no `println!`/`eprintln!`/`dbg!` in production code; no
+  `unwrap`/`expect`/`panic!`/`todo!`/`unimplemented!` in the non-test half of `shard_manager.rs`
+  (matches are inside comments only).
+- **Dependencies:** single new dep `last-amended-migrate` is workspace-internal, path-pinned,
+  justified inline vs ADR-051 §8 acyclicity. `Cargo.lock` gains one line, no new third-party packages.
+- **`main.rs` refactor:** `resolve_project_cwd` is a faithful extract of the pre-existing
+  `base_host_ctx.cwd` logic (same env var, empty-filter, canonicalize-with-fallback, `current_dir`
+  fallback); `SEC-004 TOCTOU ACCEPTED` rationale preserved. No behavior change for other plugins.
+- **Path resolution:** `invoke.rs` uses raw `file_path` for target + `cwd` join for config —
+  consistent with `executor.rs` and the harness's absolute-`file_path` invariant. Not a bug.
+- **Catch-point (i) disposition:** `reconcile_replace_all_overcap_if_qualifying` only
+  `tracing::warn!`s on failure — correct for a PostToolUse janitor that cannot block; catch point (ii)
+  fails loud on the next dispatch, so the condition is recoverable, not swallowed.
+- **Demo evidence:** 5 `.gif` + 5 `.webm` + 5 `.tape` + README, ≥1 per AC (AC-006 ×3, AC-007 ×2),
+  success and error paths both recorded, each `.tape` invokes a real `cargo test ... --exact
+  --nocapture`, all five named tests exist. Genuine recordings, not `.txt` placeholders.
+- **Security-fix coverage:** FIX-HIGH-1 → ~L7909, SEC-001 → ~L6645, SEC-002 → ~L3949/~L3982,
+  SEC-003 → ~L3809/~L3827, FIX-MED-2's four guarded sites → ~L7846/~L8026/~L8070/~L8104. No
+  `#[ignore]`, no `should_panic`, no tautological/over-mocked tests.
+- **Dependency PR:** cluster-1 (BC-1.18.005, PR #818) merged to develop, as claimed.
+
+---
+
+## Verdict
+
+**REQUEST_CHANGES.** Finding #2 (reproducible false `E-SHD-009` + destination deletion on a failed
+op) and Finding #3 (unguarded, untested symlink `stat()` on Edit/MultiEdit) are the substantive
+ones and should be fixed in-scope per the production-grade default. Finding #1 blocks merge
+mechanically but belongs to `state-manager`, independent of this branch. #4–#8 are worth closing
+in-scope; #9–#10 optional.

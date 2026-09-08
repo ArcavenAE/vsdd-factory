@@ -1,1 +1,1 @@
-{"status":"pass","timestamp":"2026-09-08T18:53:20Z","command":"cd /Users/zious/Documents/GITHUB/vsdd-factory && cargo test -p validate-cross-site-correspondence test_BC_corpus_version_sync_all_indexed_bcs_match_frontmatter 2>&1 | grep -E \"test result|test tests::\""}
+{"status":"pass","timestamp":"2026-09-08T21:01:38Z","command":"cargo test -p factory-dispatcher --lib shard_manager::bc_1_18_006_roll_tests::test_BC_1_18_006_EC025_FC2P8_002_execute_roll_reclaims_zero_byte_destination_and_succeeds -- --exact --nocapture 2>&1 | tail -60"}
