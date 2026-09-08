@@ -7759,3 +7759,109 @@ BC-1.18.006 v1.4, ADR-051 v1.9, BC-INDEX v5.66, STORY-INDEX v4.447, ARCH-INDEX v
 ### Canonical 6-column row (STATE.md Decisions Log)
 
 | D-1174 | D-1174-S2502-CLUSTER2-F2F3-SPEC-EVOLUTION-FINALIZED | **S-25.02 Phase F4 cluster-2 (roll, BC-1.18.006) F2 (spec-evolution) + F3 (incremental stories) FINALIZED — BC-1.18.006 v1.3→v1.4 closes BC-1.18.005 v1.11 Postcondition 3's deferred `replace_all: true` occurrence-multiplicity gap via a post-write `stat()` safety net (actual post-apply size, NOT occurrence-counting, is the closure mechanism — BC-1.18.005's PreToolUse trigger stays a bounded approximation, BC-1.18.006's new post-write net catches the consequence)** 2026-09-07 (product-owner + architect + story-writer content; state-manager index/version-sync + single-commit TD-VSDD-053). product-owner: BC-1.18.006 v1.4 — new Precondition 4 (closure scope), new Postcondition 7 (bounded post-write reconciliation, 2 redundant catch points, bounded-window guarantee), new Invariant 6 (canonical zero-bytes-after-roll unconditional; only the retroactively-sealed shard's per-shard cap relaxed), Postcondition-5 `sealed_retroactively` field, EC-014/EC-015/EC-016 + 3 test vectors, 1 pending VP row routed to Phase F6 (NOT self-allocated); `status` STAYS `draft` (cluster-2 not shipped, POL-14 deferred to future merge). architect: same-burst self-correction — NEW **ADR-051 §Decision 15** (**v1.8→v1.9**) supplies the PostToolUse native-check-leg grounding BC-1.18.006's initial Traceability draft had overclaimed as already-covered by §Decision 1 (which is PreToolUse-only, signaling-only); documents catch point (i) as a silent no-`HookResult` filesystem side effect, retroactive four-step-roll reuse, and a load-bearing placement caveat (unconditional native call in `factory_dispatcher::main::run` BEFORE the `sync_tiers.is_empty() && partition.async_group.is_empty()` early-return guard). story-writer: S-25.02 v2.7→v2.8 — NEW pending AC-024/AC-025 (genuinely unimplemented, will be TDD'd from scratch) + EC-035/EC-036/EC-037 + new task T-13 inserted ahead of renumbered T-14 (23→25 ACs); BC-table cell v1.3→v1.4; Token Budget line 4,500→6,000 (~78,600 total, ~39%). state-manager: **BC-INDEX v5.65→v5.66** (BC-1.18.006 cell v1.3→v1.4; `total_bcs` UNCHANGED 2,006; `status` stays `draft`); **STORY-INDEX v4.446→v4.447** (S-25.02 row v2.8/v1.4); **ARCH-INDEX v4.23** (ADR-051 pointer v1.8→v1.9 + Decision 15 summary). Input-hashes reconciled via `compute-input-hash --update` run AFTER content finalized: BC-1.18.006.md `a2945e7`→`d39e2f4`; S-25.02 story `b006363`(drifted `b159469`)→`d159583`. `pipeline:` stays in_progress. No trajectory-tail drift — unchanged →0→1→1→1 LENGTH=4 (spec-finalization burst, no adversary pass ran; cluster-2's own fresh LOCAL cascade not yet started, 0/3). **NEXT = cluster-2 Phase F4 (TDD-implementation): stub-architect (Red Gate for T-13/T-14) → test-writer (AC-024/AC-025 failing tests) → implementer. TDD worktree MUST rebase onto `origin/develop` @ `fff5e4cc` (local `develop` stale at `54fa985f`). Carried implementer caveat (ADR-051 §Decision 15): catch point (i) wired as an unconditional native call BEFORE `main::run`'s early-return guard.** Refs: D-1174, D-1173, S-25.02, BC-1.18.006 v1.4, ADR-051 v1.9, BC-INDEX v5.66, STORY-INDEX v4.447, ARCH-INDEX v4.23. STATE.md v9.99→v10.00. | D-1174 | 2026-09-07 |
+
+## D-1175
+
+**D-1175-S2502-CLUSTER2-PASS1-SEALEDRETRO-WRITEARM-SPEC-CASCADE**
+
+Allocated as the next GLOBAL D-NNN per POLICY 16: max D-NNN across all cycle decision-logs was
+D-1174 (this file's own immediately-preceding entry, above). D-1175 allocated cleanly above the
+true max.
+
+**Summary:** S-25.02 Phase F4 cluster-2 (roll, BC-1.18.006) **LOCAL adversary pass-1 = NOT CLEAN**
+2026-09-07 (product-owner + story-writer content; state-manager index/version-sync + single-commit
+TD-VSDD-053) — 6 findings (4 MAJOR F-C2-P1-001/002/003/004, 2 MINOR F-C2-P1-005/006), ALL fixed
+this burst.
+
+**F-C2-P1-001 (MAJOR — `sealed_retroactively` mislabeled on a crashed retroactive roll).** If a
+RETROACTIVE roll (Postcondition 7 catch point (i) or (ii)) crashes between its own step (c)
+(canonical truncated to empty) and step (d) (index publish), `E-SHD-007`'s self-heal reconciliation
+(scanning the filesystem for un-indexed sealed shards, with no other in-memory context about which
+roll produced the file) would otherwise hardcode the recovered entry's `sealed_retroactively` to
+`false`, mislabeling a genuinely over-cap shard as cap-guaranteed — the exact ambiguity
+`sealed_retroactively` (Postcondition 5) exists to prevent. product-owner ADDED NEW **Invariant 7**:
+`bytes_at_seal > shard_cap_bytes ⇒ sealed_retroactively = true`, deterministically inferrable
+because a PROSPECTIVE roll (Postcondition 1) can never seal over-cap content (Postcondition 3's
+unconditional per-shard cap guarantee) — `bytes_at_seal > shard_cap_bytes` occurring at all is
+proof-by-construction of retroactivity. `E-SHD-007` self-heal reconciliation MUST apply this
+inference rather than default to `false`. Cross-referenced from Postcondition 1's `E-SHD-007`
+recovery text and Postcondition 5's `sealed_retroactively` field description. NEW EC-018 + 1
+matching Canonical Test Vector.
+
+**F-C2-P1-002 (MAJOR — catch point (ii) internal contradiction + real data-loss path).** Catch
+point (ii)'s v1.4 wording claimed it uniformly reuses "the same `stat()` BC-1.18.005 Postcondition
+2 already performs" for EVERY subsequent `Edit`/`Write`/`MultiEdit`. This was TRUE for
+`Edit`/`MultiEdit` (whose Postcondition 3 formula, `projected_size = current_shard_bytes +
+net_delta_bytes`, already `stat()`-reads `current_shard_bytes`) but WRONG for `Write` (whose
+Postcondition 3 formula is `projected_size = len(content)` alone, with NO `stat()` of the canonical
+file anywhere in BC-1.18.005's own `Write` trigger path). Left uncorrected, this was a real
+DATA-LOSS gap, not merely a wording inaccuracy: after a dispatcher crash leaves the canonical file
+over-cap and un-sealed (EC-015), a subsequent `Write` whose own `content` is under-cap would apply
+directly against the canonical file — REPLACING, and permanently DESTROYING, the un-sealed over-cap
+history, since no roll was ever attempted for self-heal to catch. ADJUDICATED under CLAUDE.md's
+production-grade default (no version of this gate may lose history): catch point (ii) now performs
+its OWN dedicated, bounded `stat()` of the canonical file specifically for the `Write` arm
+(BC-1.18.005's stat-free `Write` trigger formula is UNCHANGED — this is an additional backstop
+probe, not a change to the trigger); `Edit`/`MultiEdit` remain cost-free (reuse the existing stat).
+Corrected the contradictory wording in catch point (ii) and in Postcondition 7's "Scope" paragraph
+(which had over-generalized catch point (i)'s `replace_all`-only scope to imply `Write` pays zero
+cost anywhere in Postcondition 7). NEW EC-017 + 1 matching Canonical Test Vector.
+
+**F-C2-P1-004 (stale Canonical Test Vector, POLICY 12).** The first CTV row's numeric example
+(`Write`, current shard 45,000 bytes, `content` length 5,000 bytes, cap 49,152 → `Block`) was a
+stale carry-over from the WITHDRAWN `current + payload` formula and was inconsistent with the
+corrected `projected_size = len(content)` `Write` formula (5,000 <= 49,152 would `Continue`, not
+`Block`). REPLACED with a self-consistent example (`content` length 50,000 bytes, cap 49,152) that
+actually triggers the roll under the current formula, clarifying that the sealed shard's size is
+always the pre-roll canonical content (45,000 bytes), never the blocked `Write`'s own `content`.
+
+**F-C2-P1-003, F-C2-P1-005, F-C2-P1-006 (code-side only, no BC text change).** These 3 findings
+(1 MAJOR + 2 MINOR) are dispositioned entirely on `feature/S-25.02-roll` @ `d0514e14` — no BC-1.18.006
+postcondition, invariant, edge case, or test vector text change follows from them; out of this
+decision's spec-side scope (see `code-delivery/S-25.02/` for the code-side disposition record).
+
+product-owner: BC-1.18.006 v1.4→v1.5 — the three text-changing findings above; extended the pending
+VP-NNN row (not newly allocated) to cover EC-017/EC-018/Invariant 7, still routed to
+architect/formal-verifier at Phase F6 targeted-hardening; `status` remains `draft` (cluster-2 has
+NOT shipped).
+
+story-writer: S-25.02 v2.8→v2.9 — **AC-024** EXTENDED (trace header gained invariant 7/EC-018; body
+gained the self-heal-recovery-via-Invariant-7 paragraph); **AC-025** EXTENDED (trace header gained
+EC-017; body gained the corrected per-tool cost-split paragraph, retitled to name the `Write`-arm
+data-loss guard). Verified AC-006 already covers the self-heal-on-next-dispatch wiring for
+`E-SHD-006`/`E-SHD-007` — no new AC added for that facet. Neither AC-024 nor AC-025 is a NEW AC this
+burst (both already existed, PENDING, from v2.8) — RED-Gate/stub-coverage count stays 25 ACs (T-14
+unchanged); T-13's task description corrected to name the per-tool cost split and the Invariant 7
+self-heal rule. ADDED §Edge Cases rows EC-038/EC-039; §Behavioral Contracts table BC-1.18.006 cell
+v1.4→v1.5; §Token Budget line 6,000→6,500 tokens (~78,600→~79,100 total, ~39%→~40%). No VP allocated
+this burst — extends the existing Postcondition-7 VP-NNN (pending) deferral to Phase F6; this
+story's `verification_properties:` frontmatter stays VP-116..VP-141 (26 VPs), unchanged.
+
+state-manager this burst: **BC-INDEX v5.66→v5.67** (BC-1.18.006 cell v1.4→v1.5; `total_bcs`
+UNCHANGED 2,006; `status` stays `draft`; also BACKFILLED a missing v5.66 changelog: array entry the
+D-1174 burst had omitted — `last_amended` had advanced to v5.66 with no corresponding array item,
+backfilled verbatim here per this file's own POLICY-9-style same-burst propagation discipline).
+**STORY-INDEX v4.447→v4.448** (S-25.02 row → v2.9/v1.5; also BACKFILLED a missing v4.447 changelog:
+array entry + reconciled a stale pass-6 `9f2b782` blockquote input-hash and POLICY-18-parity cite,
+left un-swept across the D-1173/D-1174 bursts, to the current `ef172c7`). Input-hashes reconciled
+via `compute-input-hash --update`: BC-1.18.006.md CONFIRMED CURRENT at `d39e2f4` (its own declared
+`inputs:` unchanged — correctly stable across the BC's own v1.4→v1.5 self-content bump); S-25.02
+story `d159583`→`ef172c7`; `--check` CLEAN on both. New Drift Item recorded: `.factory/policies.yaml`
+fails strict YAML parse (an unescaped literal pipe character inside a double-quoted scalar near
+line ~425, plus an early `---` making it parse as multi-document) — lint hooks read this file per
+CLAUDE.md, so a strict parser there could silently fail policy loading; NOT fixed this burst (out
+of scope per explicit orchestrator instruction), anchored next maintenance sweep. `pipeline:` stays
+in_progress. BC-5.39.001 cluster-2 LOCAL streak stays **0/3** (pass-1 not clean, all 6 findings
+fixed; pass-2 next, fresh context — cycle-level 3/3 CONVERGED streak UNCHANGED, separate track). No
+trajectory-tail drift — unchanged →0→1→1→1 LENGTH=4 (LOCAL cluster-2 cascade, not a cycle-level
+adversary pass).
+
+**NEXT = cluster-2 LOCAL adversary pass-2, fresh context, against BC-1.18.006 v1.5/story
+v2.9/code `d0514e14`.**
+
+Refs: D-1175, D-1174, S-25.02, BC-1.18.006 v1.5, F-C2-P1-001, F-C2-P1-002, F-C2-P1-004,
+BC-INDEX v5.67, STORY-INDEX v4.448.
+
+### Canonical 6-column row (STATE.md Decisions Log)
+
+| D-1175 | D-1175-S2502-CLUSTER2-PASS1-SEALEDRETRO-WRITEARM-SPEC-CASCADE | **S-25.02 Phase F4 cluster-2 (roll, BC-1.18.006) LOCAL adversary pass-1 = NOT CLEAN — 6 findings (4 MAJOR F-C2-P1-001/002/003/004, 2 MINOR F-C2-P1-005/006), ALL fixed this burst; BC-1.18.006 v1.4→v1.5 resolves 3 of the 4 MAJOR findings via NEW Invariant 7 (`sealed_retroactively` recovery-by-inference) and catch point (ii)'s corrected per-tool `stat()` cost split (`Write` gets its own dedicated probe, closing a real data-loss path)** 2026-09-07 (product-owner + story-writer content; state-manager index/version-sync + single-commit TD-VSDD-053). product-owner: BC-1.18.006 v1.4→v1.5 — F-C2-P1-001 NEW Invariant 7 (`bytes_at_seal > shard_cap_bytes ⇒ sealed_retroactively = true`) + NEW EC-018, requiring `E-SHD-007` self-heal reconciliation to INFER `sealed_retroactively` rather than hardcode `false`; F-C2-P1-002 catch point (ii)'s per-tool `stat()` cost split corrected — `Write` now performs its OWN dedicated, bounded `stat()`, closing a real data-loss path — NEW EC-017; F-C2-P1-004 stale first Canonical Test Vector REPLACED. F-C2-P1-003/005/006 are code-side-only, no BC text change, on `feature/S-25.02-roll` @ `d0514e14`. story-writer: S-25.02 v2.8→v2.9 — AC-024/AC-025 EXTENDED (not newly added; RED-Gate count stays 25 ACs) + EC-038/EC-039. state-manager: **BC-INDEX v5.66→v5.67** (BC-1.18.006 cell v1.4→v1.5; `total_bcs` UNCHANGED 2,006; also backfilled a missing v5.66 changelog entry); **STORY-INDEX v4.447→v4.448** (S-25.02 row v2.9/v1.5; also backfilled a missing v4.447 changelog entry + reconciled a stale blockquote/POLICY-18-parity cite). Input-hashes reconciled: BC-1.18.006.md CONFIRMED CURRENT `d39e2f4`; story `d159583`→`ef172c7`. Pending VP-NNN row EXTENDED (not newly allocated) to cover EC-017/EC-018/Invariant 7, still routed to Phase F6. New Drift Item: `.factory/policies.yaml` fails strict YAML parse (unescaped literal pipe character in a double-quoted scalar + an early `---`) — NOT fixed this burst, anchored next maintenance sweep. `pipeline:` stays in_progress. No trajectory-tail drift — unchanged →0→1→1→1 LENGTH=4 (LOCAL cluster-2 cascade, not a cycle-level pass). **NEXT = cluster-2 LOCAL adversary pass-2, fresh context.** Refs: D-1175, D-1174, S-25.02, BC-1.18.006 v1.5, F-C2-P1-001, F-C2-P1-002, F-C2-P1-004, BC-INDEX v5.67, STORY-INDEX v4.448. STATE.md v10.00→v10.01. | D-1175 | 2026-09-07 |
