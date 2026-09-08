@@ -12759,6 +12759,43 @@ $ cargo test -p validate-cross-site-correspondence test_BC_corpus_version_sync_a
 test tests::test_BC_corpus_version_sync_all_indexed_bcs_match_frontmatter ... ok
 ```
 
+## S-25.02 Cluster-2 Pass-9 Fix-Burst (D-1183, 2026-09-08)
+
+**Parent-commit:** `be98c00e4b8fcf90f768382acc74e20a747e6b16` (factory-artifacts HEAD at burst start; pass-8's own resulting commit). Code parent: `feature/S-25.02-roll` @ `b775ad62` (pass-8 HEAD).
+
+**Adversary verdict:** LOCAL cluster-2 adversary pass-9 = **NOT CLEAN**. 0 BLOCKER/MAJOR/MEDIUM, 3 MINOR (F-C2-P9-001, F-C2-P9-002, F-C2-P9-003). Full Part A finding narrative persisted in `decision-log.md` D-1183 (cluster-2 LOCAL-pass file location per the established passes 1-8 convention — Part A lives in the D-NNN decision-log.md block, not a standalone `adv-*.md` report file). **NOTABLE: the correctness surface was certified CLEAN by the fresh adversary for the first time this 9-pass cascade** — all 3 findings are documentation/text-drift or test-coverage, zero functional defects. BC-5.39.001 cluster-2 LOCAL streak **STAYS 0/3** — 9 consecutive not-clean passes; pass-10 next, fresh context. Cycle-level BC-5.39.001 streak 3/3 CONVERGED UNCHANGED (separate track); cluster-1 LOCAL 3/3 CLOSED, unaffected.
+
+**Files touched (code, `feature/S-25.02-roll`, committed pre-burst by implementer/test-writer — NOT committed by this state-manager burst):**
+- `crates/factory-dispatcher/src/shard_manager.rs` — `self_heal_resume_from_truncate` stale doc-comment correction (F-C2-P9-001, "no-op if reissued" claim withdrawn to match v1.9 write-once/fail-loud semantics).
+- `crates/factory-dispatcher/tests/bc_1_18_006_roll_test.rs` — verbatim-pin `Display` assertions for `E-SHD-008`/`E-SHD-009` (F-C2-P9-002) + a new deterministic EC-025 unlink-failure-reclaim-arm test using a macOS-scoped `chflags uchg` fixture, CI-gated to `macos-latest` (F-C2-P9-003).
+- Commit `03888966` (doc-comment fix) then `39369cc6` (test, Red-Gate-verified failing pre-fix for the verbatim-pin + unlink-failure assertions) — both landed BEFORE this state-manager dispatch; this burst does not itself edit code.
+- `.factory/` (this burst): `specs/behavioral-contracts/ss-01/BC-1.18.006.md` (v1.9→v1.10, product-owner content, committed here), `specs/prd-supplements/error-taxonomy.md` (v1.6→v1.7, product-owner content, committed here), `specs/behavioral-contracts/BC-INDEX.md` (v5.71→v5.72), `cycles/v1.0-brownfield-backfill/decision-log.md` (D-1183 block appended), `cycles/v1.0-brownfield-backfill/burst-log.md` (this entry), `cycles/v1.0-brownfield-backfill/lessons.md` (new L-BB-D1183-* entries), `cycles/v1.0-brownfield-backfill/INDEX.md` (pass-9 row + Convergence Status advance), `STATE.md` (frontmatter, Project Metadata Last-Updated/Current-Phase refresh, Phase Progress/Concurrent-Cycles head refresh, Current Phase Steps row + eviction, Decisions Log D-1183 row, new Drift Item, Session Resume Checkpoint full replacement). STORY-INDEX.md and the S-25.02 story file are UNCHANGED this burst (no AC/content edit — story stays v3.3).
+
+**Codifications:** `lessons.md` gains 2 new entries this burst — `L-BB-D1183-weak-substring-error-assertion-recurring-3x-process-gap` (the weak-substring error-message assertion anti-pattern has now recurred THREE times in this cluster — F-C2-P5-002, F-C2-P8-003, F-C2-P9-002 — triggering the Cycle-Closing Checklist's 3+-recurrence process-level-fix rule; anchored to the E-12 Engine Governance follow-up story, no ID allocated yet, per the same anchor convention already established at D-1172/D-1167 for this cluster's other codified process-gaps, since this is a cross-cutting testing-discipline defect class, not specific to BC-1.18.006) and `L-BB-D1183-first-clean-correctness-surface-convergence-signal` (pass-9 is the first pass in this 9-pass cascade with a CLEAN correctness surface — the remaining defect surface has shifted entirely to doc/text/test-coverage classes; a convergence-trajectory signal, though the streak itself stays 0/3 since pass-9 carried 3 non-zero MINOR findings). 2 carry-forward notes recorded in the Drift Items table (Postcondition 7 catch point (ii)'s abbreviated glosses left untouched; EC-025 concurrent-race arm documented-not-tested). No BC-INDEX-structure/STORY-INDEX/VP-INDEX content codification beyond the version bumps recorded above (BC-1.18.006 v1.10, error-taxonomy.md v1.7, BC-INDEX v5.72; STORY-INDEX/VP-INDEX CONFIRMED UNCHANGED — re-verified post-burst via `grep '^version:' .factory/stories/STORY-INDEX.md` → `version: "4.452"` and `grep '^version:' .factory/specs/verification-properties/VP-INDEX.md` → `version: "3.09"`, both matching pre-burst values).
+
+**Dim-2/5/6/7 Attestations:** This cycle (`v1.0-brownfield-backfill`) does not run the engine-discipline cycle's D-444(a)/D-446(a)/D-448(a) mechanical diff-gates — cluster-2's own convention (established passes 1-8) uses content-parity + git-state checks instead. Literal-shell evidence, captured stdout:
+```
+$ git -C .worktrees/S-25.02-roll log --oneline -2
+39369cc6 test(S-25.02): pass-9 — verbatim-pin E-SHD-008/009 Display + EC-025 unlink-failure fail-loud coverage (F-C2-P9-002/003)
+03888966 docs(S-25.02): pass-9 — correct stale self_heal_resume_from_truncate idempotency rationale (F-C2-P9-001, BC-1.18.006 v1.9)
+$ git -C .worktrees/S-25.02-roll status --short
+(clean)
+$ grep '^version:' .factory/specs/behavioral-contracts/ss-01/BC-1.18.006.md
+version: "1.10"
+$ grep '^version:' .factory/stories/S-25.02-artifact-sharding-layer2.md
+version: "3.3"
+$ grep '^version:' .factory/specs/prd-supplements/error-taxonomy.md
+version: "1.7"
+$ cargo test -p validate-cross-site-correspondence test_BC_corpus_version_sync_all_indexed_bcs_match_frontmatter
+test tests::test_BC_corpus_version_sync_all_indexed_bcs_match_frontmatter ... ok
+```
+
+**Closes:** F-C2-P9-001 (MINOR), F-C2-P9-002 (MINOR), F-C2-P9-003 (MINOR) — all 3 CLOSED this burst (code/spec fixed + Red-Gate-verified tests landed pre-burst on `feature/S-25.02-roll`).
+
+**Factory-artifacts commit:** per TD-VSDD-053 SHA-patch anti-pattern retirement, this burst does not self-cite its own resulting commit SHA — the live value is `git -C .factory log -1`, captured post-push in the commit message itself, never asserted here pre-commit.
+
+Refs: D-1183, D-1182, S-25.02, BC-1.18.006 v1.10, F-C2-P9-001, F-C2-P9-002, F-C2-P9-003. STATE.md v10.08→v10.09.
+
 **Closes:** F-C2-P8-001 (MEDIUM), F-C2-P8-002 (MEDIUM), F-C2-P8-003 (MINOR), F-C2-P8-004 (MINOR) — all 4 CLOSED this burst (code fixed + Red-Gate-verified tests landed pre-burst on `feature/S-25.02-roll`).
 
 **Factory-artifacts commit:** per TD-VSDD-053 SHA-patch anti-pattern retirement, this burst does not self-cite its own resulting commit SHA — the live value is `git -C .factory log -1`, captured post-push in the commit message itself, never asserted here pre-commit.

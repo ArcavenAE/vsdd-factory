@@ -8337,3 +8337,125 @@ F-C2-P8-004.
 ### Canonical 6-column row (STATE.md Decisions Log)
 
 | D-1182 | D-1182-S2502-CLUSTER2-PASS8-SEAL-RECONCILE-ZEROBYTE-RECLAIM-B2-TEMPLATE | **S-25.02 Phase F4 cluster-2 (roll, BC-1.18.006) LOCAL adversary pass-8 = NOT CLEAN — 2 MEDIUM (F-C2-P8-001, F-C2-P8-002), 2 MINOR (F-C2-P8-003, F-C2-P8-004), ALL fixed this burst. F-C2-P8-001 (MEDIUM): Postcondition 1(b)/CORRECTED-note/Invariant 2/E-SHD-006 recovery text reconciled to the already-correct v1.8 Postcondition 8 `write_exclusive` seal mechanism (spec-only, S-7.01 sibling-clause-propagation miss). F-C2-P8-002 (MEDIUM, correctness/liveness): a 0-byte orphan at the next-seal-sequence path could deadlock ALL future rolls — pass-7's self-heal 0-byte skip + pass-4's Postcondition-8 write-once guard interact to produce an unrecoverable `E-SHD-009` loop; FIXED via a bounded 0-byte-destination reclaim path (NEW EC-025), scoped exactly to genuinely-0-byte destinations, single-retry only. F-C2-P8-003 (MINOR, error-taxonomy.md only): E-SHD-006/E-SHD-007 Message-Format `(seq=<N>)` token corrected to the actual emitted text, no BC change. F-C2-P8-004 (MINOR): empty-canonical Block template overclaim on the backstop-then-double-fire path fixed via a NEW Case B2 template (NEW EC-026), Invariant 4 re-scoped to three per-case templates (A/B1/B2). BC-1.18.006 v1.8→v1.9; story v3.2→v3.3; error-taxonomy.md v1.5→v1.6; BC-INDEX v5.70→v5.71; STORY-INDEX v4.451→v4.452. VP-INDEX v3.09 UNCHANGED — EC-025/EC-026 formal verification is F6-owed (OWED §4.4), no VP file edited. **Headline lesson:** F-C2-P8-002 is a second consecutive instance of two independently-correct fixes (pass-4 Postcondition 8 + pass-7 self-heal skip) interacting to produce a NEW defect neither fix's own review exercised — reinforcing that fix-burst review scope must cross-check against recently-added sibling invariants, not just the triggering finding. BC-5.39.001 cluster-2 LOCAL streak stays **0/3** (8 consecutive not-clean passes; pass-9 next, fresh context; cycle-level 3/3 CONVERGED streak UNCHANGED). No trajectory-tail drift — unchanged →0→1→1→1 LENGTH=4 (LOCAL cluster-2 cascade, not a cycle-level pass). Code branch `feature/S-25.02-roll` @ `b775ad62` (Red Gate `6a5040a0`) — 2 commits ahead of `feature/S-25.02-roll` pass-7 base, NOT YET PUSHED (state-manager does not push code). `pipeline:` stays in_progress. **NEXT = cluster-2 LOCAL adversary pass-9, fresh context.** Refs: D-1182, D-1181, S-25.02, BC-1.18.006 v1.9, F-C2-P8-001, F-C2-P8-002, F-C2-P8-003, F-C2-P8-004. STATE.md v10.07→v10.08. | D-1182 | 2026-09-08 |
+
+## D-1183
+
+**D-1183-S2502-CLUSTER2-PASS9-VERBATIM-PIN-E-SHD-009-EC025-UNLINK-COVERAGE**
+
+Allocated as the next GLOBAL D-NNN per POLICY 16: max D-NNN across all cycle decision-logs was
+D-1182 (this cycle's own decision-log.md, previous entry above). D-1183 allocated cleanly above
+the true max.
+
+**Summary:** S-25.02 Phase F4 cluster-2 (roll, BC-1.18.006) **LOCAL adversary pass-9 = NOT
+CLEAN** 2026-09-08 (implementer + test-writer code-side content; product-owner spec-side
+content; state-manager bookkeeping + single-commit TD-VSDD-053) — 0 BLOCKER/MAJOR/MEDIUM,
+3 MINOR (F-C2-P9-001, F-C2-P9-002, F-C2-P9-003), ALL fixed this burst. **NOTABLE: the
+correctness surface was certified CLEAN by the fresh adversary for the first time this
+cascade** — every one of the 3 findings is documentation/text-drift or test-coverage, zero
+functional defects. BC-1.18.006 v1.9→v1.10; error-taxonomy.md v1.6→v1.7; S-25.02 story stays
+v3.3 (no AC/content change this pass). BC-INDEX v5.71→v5.72 (BC-1.18.006 version-chain cell
+v1.9→v1.10; `total_bcs` UNCHANGED 2,006); STORY-INDEX UNCHANGED (no story edit this pass).
+VP-INDEX v3.09 UNCHANGED — no new Postcondition/Invariant/Edge-Case semantics this pass, no VP
+file edited. BC-5.39.001 cluster-2 LOCAL streak **STAYS 0/3** (pass-9 not clean — now **9
+consecutive not-clean passes**; pass-10 next, fresh context; cycle-level 3/3 CONVERGED streak
+UNCHANGED, separate track). Cluster-1 LOCAL BC-5.39.001 stays 3/3 CLOSED, unaffected.
+
+**F-C2-P9-001 (MINOR — stale code doc-comment; code-only, no BC/error-taxonomy text change).**
+`self_heal_resume_from_truncate`'s doc comment claimed step (b)'s `write_atomic` create is
+"a no-op if reissued," contradicting BC v1.9's own withdrawn claim (Postcondition 8's
+write-once `write_exclusive` mechanism, added at v1.8/v1.9, means step (b) is NOT idempotent
+on reissue — it now fails loud with `E-SHD-009` on a second attempt against an already-sealed
+destination, rather than silently no-op'ing). **Fix** (implementer, doc comment only): the
+stale comment corrected to describe the actual write-once/fail-loud semantics. Landed
+`feature/S-25.02-roll` @ `03888966`.
+
+**F-C2-P9-002 (MINOR — doc-vs-code text drift, spanning BC-1.18.006 + error-taxonomy.md;
+BC-1.18.006 v1.9→v1.10, error-taxonomy.md v1.6→v1.7, product-owner).** Postcondition 8's
+quoted `E-SHD-009` message ("sealed-shard immutability violation: refusing to overwrite an
+existing seal at `<path>`") and EC-024's matching Canonical Test Vector diverged from the
+actual emitted `Display` text — the shipped `ShardRollError::SealedShardAlreadyExists`
+(`crates/factory-dispatcher/src/shard_manager.rs`) actually emits `E-SHD-009: refusing to
+overwrite an already-sealed shard at '{sealed_path}' for artifact_stem "{artifact_stem}" —
+sealed shards are write-once/immutable; this seq already has durable content on disk`.
+Similarly, `error-taxonomy.md`'s `E-SHD-008`/`E-SHD-009` Message Format cells carried
+non-matching wording (`E-SHD-008`'s cell read the abbreviated `backstop probe stat failure for
+<artifact>: <io-error>`, which the shipped `BackstopProbeFailed` `Display` never emits either).
+**JUDGMENT: these quotes are DESCRIPTIVE, not pinned hard contracts** — unlike Postcondition
+2's Empty-canonical retry template (F-C2-P4-003, v1.8), which was explicitly ADJUDICATED and
+pinned as "the exact expected message text," Postcondition 8's quote and error-taxonomy.md's
+Message Format column carry no such pinning language; they illustrate behavior inline,
+consistent with the F-C2-P8-003 precedent's treatment of `E-SHD-006`/`E-SHD-007`'s wording as
+descriptive. Reconciling BOTH artifacts to the actual emitted text (rather than flagging for
+human authorization) is therefore the correct treatment. **Fix** (product-owner): CORRECTED
+Postcondition 8's quoted `E-SHD-009` text and EC-024's matching Canonical Test Vector row to
+reproduce the actual emitted text verbatim (BC-1.18.006 v1.10); CORRECTED `error-taxonomy.md`'s
+`E-SHD-008`/`E-SHD-009` Message Format cells to reproduce the actual emitted text verbatim
+(error-taxonomy.md v1.7), and RETRACTED the v1.6 changelog's false attestation that "all
+already read their actual emitted text" for rows 001-005/008/009 — that attestation was
+verified true only for the narrow `seq=<N>` mischaracterization it was scoped to check; it was
+FALSE as a general claim, since `E-SHD-008`/`E-SHD-009` themselves carried unverified,
+non-matching wording. Postcondition 7 catch point (ii)'s abbreviated `E-SHD-008` gloss
+("backstop probe stat failure") and EC-019's matching CTV gloss are left UNCHANGED — short
+mechanism labels, not literal quoted `Display` text, and out of this finding's scope; flagged
+as a carry-forward for a future pass' consideration. test-writer (test-writer) ADDED verbatim-pin
+`Display` assertions for `E-SHD-008`/`E-SHD-009` (replacing any prior weak/partial assertions),
+closing the exact defect class this finding demonstrates. No code change — only the spec text
+and taxonomy table were wrong; the shipped `Display` impls were already correct. Landed
+`feature/S-25.02-roll` @ `39369cc6`.
+
+**F-C2-P9-003 (MINOR — test-coverage gap, TD-VSDD-059; code+test-only, no BC/error-taxonomy
+text change; test-writer).** EC-025's reclaim fail-loud arm (a 0-byte-destination reclaim whose
+`unlink` call itself fails) was UNTESTED — only the happy-path reclaim-succeeds arm and the
+concurrent-race retry-collision arm (already documented-not-tested, no injection seam) had
+coverage. **Fix**: a deterministic test added asserting the unlink-failure arm fails loud with
+`E-SHD-009` rather than silently retrying or panicking, using a macOS-scoped `chflags uchg`
+immutable-flag fixture to deterministically force `unlink` to fail (documented as macOS-only,
+gated to run in CI's `macos-latest` leg). The concurrent-race retry-collision arm remains
+honestly documented as non-deterministic (no injection seam exists to force the race
+window) rather than faked with a misleading pseudo-deterministic test — consistent with
+SOUL.md #4 silent-failure/no-fake-coverage discipline. Landed `feature/S-25.02-roll` @
+`39369cc6`.
+
+**Headline lesson (RECURRING DEFECT CLASS — 3+ occurrences, process-gap trigger; see
+`lessons.md` for the codified entry).** The weak-substring error-message assertion anti-pattern
+has now recurred THREE times in this cluster: F-C2-P5-002 (pass-5, template-message
+substring-only assertion masked a MAJOR spec-vs-code divergence for a full pass), F-C2-P8-003
+(pass-8, `E-SHD-006`/`E-SHD-007` Message-Format token drift), F-C2-P9-002 (this pass,
+`E-SHD-008`/`E-SHD-009`). Per the Cycle-Closing Checklist's "same defect recurs 3+ times" rule,
+this now warrants a PROCESS-LEVEL fix, not a third individual test-strengthening fix alone —
+codified as a `[process-gap]` lesson with a concrete anchor (see `lessons.md`
+`L-BB-D1183-weak-substring-error-assertion-recurring-3x-process-gap`).
+
+**Secondary signal.** Pass-9 is the FIRST pass in this 9-pass cascade with a CLEAN correctness
+surface — the entire remaining defect surface has shifted to doc/text/test-coverage classes,
+zero functional/data-loss/liveness findings. Useful convergence-trajectory signal (see
+`lessons.md` `L-BB-D1183-first-clean-correctness-surface-convergence-signal`), though the
+BC-5.39.001 streak stays 0/3 since pass-9 itself was NOT CLEAN (3 MINOR findings, non-zero).
+
+**Carry-forward notes (flagged this pass, not fixed — minor, anchored so not lost).**
+1. product-owner intentionally left Postcondition 7 catch point (ii)'s abbreviated `E-SHD-008`
+   gloss and EC-019's matching CTV gloss untouched (short mechanism labels, not verbatim
+   quotes — analogous to the accepted `E-SHD-006`/`E-SHD-007` mechanism-label precedent);
+   flagged in the BC/taxonomy changelogs for a future pass.
+2. The EC-025 concurrent-race retry-collision arm remains documented-not-tested (no injection
+   seam) — a known coverage limitation, candidate for F6 hardening or a test-only injection seam.
+
+### Cluster-2 Convergence Status
+
+BC-5.39.001 cluster-2 LOCAL streak: **0/3** (pass-9 NOT CLEAN — 9 consecutive not-clean passes;
+streak has not yet started accumulating, though the correctness surface itself is now CLEAN).
+Cycle-level BC-5.39.001 streak: **3/3 CONVERGED**, UNCHANGED (separate track — this is a LOCAL
+cluster cascade, not a cycle-level adversary pass). Cluster-1 LOCAL BC-5.39.001 stays 3/3
+CONVERGED — CLOSED, fully retired, unaffected. No trajectory-tail drift — unchanged
+`→0→1→1→1` LENGTH=4.
+
+### Next Steps
+
+**NEXT = cluster-2 LOCAL adversary pass-10, fresh context, against BC-1.18.006 v1.10/story
+v3.3/code `feature/S-25.02-roll` @ `39369cc6`.**
+
+Refs: D-1183, D-1182, S-25.02, BC-1.18.006 v1.10, F-C2-P9-001, F-C2-P9-002, F-C2-P9-003.
+
+### Canonical 6-column row (STATE.md Decisions Log)
+
+| D-1183 | D-1183-S2502-CLUSTER2-PASS9-VERBATIM-PIN-E-SHD-009-EC025-UNLINK-COVERAGE | **S-25.02 Phase F4 cluster-2 (roll, BC-1.18.006) LOCAL adversary pass-9 = NOT CLEAN — 0 BLOCKER/MAJOR/MEDIUM, 3 MINOR (F-C2-P9-001, F-C2-P9-002, F-C2-P9-003), ALL fixed this burst. **NOTABLE: correctness surface CLEAN for the first time this 9-pass cascade** — all findings are doc/text-drift or test-coverage, zero functional defects. F-C2-P9-001 (MINOR, code-only): stale `self_heal_resume_from_truncate` doc comment ("no-op if reissued") corrected to match the v1.9 write-once/fail-loud semantics. F-C2-P9-002 (MINOR, doc-vs-code text drift): Postcondition 8's quoted `E-SHD-009` message + EC-024's CTV, and error-taxonomy.md's `E-SHD-008`/`E-SHD-009` Message-Format cells, corrected to the actual emitted `Display` text verbatim; taxonomy's v1.6 false "all already read their actual emitted text" attestation RETRACTED. F-C2-P9-003 (MINOR, code+test-only, TD-VSDD-059): EC-025's unlink-failure reclaim arm was untested; deterministic macOS-scoped (`chflags uchg`) test added; concurrent-race arm honestly left documented-not-tested (no injection seam). BC-1.18.006 v1.9→v1.10; error-taxonomy.md v1.6→v1.7; story stays v3.3 (no AC change); BC-INDEX v5.71→v5.72; STORY-INDEX UNCHANGED. VP-INDEX v3.09 UNCHANGED — no VP file edited. **Headline lesson (RECURRING DEFECT CLASS, process-gap):** the weak-substring error-message assertion anti-pattern has recurred 3× in this cluster (F-C2-P5-002, F-C2-P8-003, F-C2-P9-002) — per the Cycle-Closing Checklist's 3+-recurrence rule, codified as a process-level `[process-gap]` lesson with a concrete anchor, not just a third individual fix. BC-5.39.001 cluster-2 LOCAL streak stays **0/3** (9 consecutive not-clean passes; pass-10 next, fresh context; cycle-level 3/3 CONVERGED streak UNCHANGED). No trajectory-tail drift — unchanged →0→1→1→1 LENGTH=4 (LOCAL cluster-2 cascade, not a cycle-level pass). Code branch `feature/S-25.02-roll` @ `39369cc6` (doc commit `03888966`) — NOT YET PUSHED (state-manager does not push code). `pipeline:` stays in_progress. **NEXT = cluster-2 LOCAL adversary pass-10, fresh context.** Refs: D-1183, D-1182, S-25.02, BC-1.18.006 v1.10, F-C2-P9-001, F-C2-P9-002, F-C2-P9-003. STATE.md v10.08→v10.09. | D-1183 | 2026-09-08 |
