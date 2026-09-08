@@ -8217,3 +8217,123 @@ F-C2-P7-004.
 ### Canonical 6-column row (STATE.md Decisions Log)
 
 | D-1181 | D-1181-S2502-CLUSTER2-PASS7-MISSINGCANONICAL-BLOCK-FIX-ATTRIBUTION-RESOLVED | **S-25.02 Phase F4 cluster-2 (roll, BC-1.18.006) LOCAL adversary pass-7 = NOT CLEAN — 1 MAJOR (F-C2-P7-001), 2 MINOR (F-C2-P7-002/003), 1 ADVISORY (F-C2-P7-004), ALL fixed this burst, all CODE-ONLY (BC-1.18.006 stays v1.8, story stays v3.2, all 4 indexes UNCHANGED); also RESOLVES the standing OWED commit-attribution conflict (Session Resume Checkpoint §4 item 1) — CLAUDE.md governs, NO `Claude-Session:` trailer on any `.factory/` commit going forward** 2026-09-08 (implementer + test-writer code-side content; state-manager bookkeeping + single-commit TD-VSDD-053). F-C2-P7-001 (MAJOR): a first-ever over-cap `Write` against a MISSING canonical wrongly returned `E-SHD-001` Error instead of the sanctioned empty-canonical `Block`, violating Invariant 1 (no Error for normal over-cap) + Precondition 2 (missing-canonical treated as zero-byte, per BC-1.18.005 EC-004 precedent); a pre-existing test (`test_BC_1_18_006_P1a_..._missing_file_is_io_error`) had ENSHRINED the wrong behavior under a plausible misreading of Precondition 2, masking the defect across passes 5-6's "correctness surface CLEAN" certifications. Fixed (`feature/S-25.02-roll` @ `2cd64967`, Red Gate @ `44a90262`): `read_canonical_content`'s `NotFound` arm now returns `Ok(vec![])` (other io errors still propagate to `E-SHD-001`), routing through Postcondition 1's empty-canonical short-circuit; enshrining test WITHDRAWN and replaced with 4 new/replaced tests (read-level, roll-level, integration-level empty-canonical Block-with-no-file-created, and a genuine-I/O-failure-still-fails-loud pair). F-C2-P7-002 (MINOR): stale `self_heal_recovery_plausible` doc comment (claimed "no directory listing," contradicting the shipped v1.9 `read_dir` scan) fixed. F-C2-P7-003 (MINOR): stale `executor.rs` shard-gate comment (claimed the flat branch "returns Continue for a fired trigger," false as of cluster-2) fixed. F-C2-P7-004 (ADVISORY): `self_heal_recovery_plausible` now skips a persistent 0-byte orphan candidate (Invariant-9-consistent), closing a permanent no-op self-heal + per-dispatch dir-scan reachability gap. **Headline lesson:** passes 5 AND 6 both certified the correctness surface CLEAN; pass-7 falsified that via a MAJOR finding masked by a wrong-behavior-enshrining test — direct evidence "N consecutive clean passes" is not proof of correctness, validating the BC-5.39.001 3-CLEAN fresh-context protocol and extending TD-VSDD-059 to test-rationale review. BC-5.39.001 cluster-2 LOCAL streak stays **0/3** (7 consecutive not-clean passes; pass-8 next, fresh context; cycle-level 3/3 CONVERGED streak UNCHANGED). No trajectory-tail drift — unchanged →0→1→1→1 LENGTH=4 (LOCAL cluster-2 cascade, not a cycle-level pass). Code branch `feature/S-25.02-roll` @ `2cd64967` is 2 commits AHEAD of `origin/feature/S-25.02-roll` — NOT YET PUSHED (state-manager does not push code; that is a later per-story-delivery step). Full code gate GREEN: fmt clean, clippy clean, `cargo test --workspace --all-targets` = 3072 passed / 0 failed (4 pass-7 tests + negative-I/O-path pair all green). `pipeline:` stays in_progress. **NEXT = cluster-2 LOCAL adversary pass-8, fresh context.** Refs: D-1181, D-1180, S-25.02, BC-1.18.006 v1.8, F-C2-P7-001, F-C2-P7-002, F-C2-P7-003, F-C2-P7-004. STATE.md v10.06→v10.07. | D-1181 | 2026-09-08 |
+
+## D-1182
+
+**D-1182-S2502-CLUSTER2-PASS8-SEAL-RECONCILE-ZEROBYTE-RECLAIM-B2-TEMPLATE**
+
+Allocated as the next GLOBAL D-NNN per POLICY 16: max D-NNN across all cycle decision-logs was
+D-1181 (this cycle's own decision-log.md, previous entry above). D-1182 allocated cleanly above
+the true max.
+
+**Summary:** S-25.02 Phase F4 cluster-2 (roll, BC-1.18.006) **LOCAL adversary pass-8 = NOT
+CLEAN** 2026-09-08 (implementer + test-writer code-side content; product-owner + story-writer
+spec-side content; state-manager bookkeeping + single-commit TD-VSDD-053) — 0 BLOCKER/MAJOR,
+2 MEDIUM (F-C2-P8-001, F-C2-P8-002), 2 MINOR (F-C2-P8-003, F-C2-P8-004), ALL fixed this burst.
+BC-1.18.006 v1.8→v1.9; S-25.02 story v3.2→v3.3; error-taxonomy.md v1.5→v1.6. BC-INDEX v5.70→v5.71
+(BC-1.18.006 version-chain cell v1.8→v1.9; `total_bcs` UNCHANGED 2,006); STORY-INDEX v4.451→v4.452
+(S-25.02 BC-list cell BC-1.18.006 v1.8→v1.9 + story-cell v3.2→v3.3). VP-INDEX v3.09 UNCHANGED —
+NO VP file edited this burst (EC-025/EC-026 formal verification allocation is F6-owed, OWED §4.4;
+VP-119/VP-120 already cover the extended facets per BC-1.18.006's own VP Anchors table).
+BC-5.39.001 cluster-2 LOCAL streak **STAYS 0/3** (pass-8 not clean — now **8 consecutive
+not-clean passes**; pass-9 next, fresh context; cycle-level 3/3 CONVERGED streak UNCHANGED,
+separate track). Cluster-1 LOCAL BC-5.39.001 stays 3/3 CLOSED, unaffected.
+
+**F-C2-P8-001 (MEDIUM — spec-internal contradiction, [process-gap]: seal-mechanism prose
+disagreed with its own more-specific sibling clause; BC-1.18.006 v1.8→v1.9, spec-only, code was
+already correct per CLAUDE.md precedence rule 12).** Postcondition 1(b), the adjacent CORRECTED
+note, Invariant 2, and the `E-SHD-006` self-heal recovery text all still described the seal
+mechanism as a `write_atomic` rename ("no new primitive introduced"), directly contradicting v1.8
+Postcondition 8's write-once exclusive-create mechanism (`write_exclusive`/`std::fs::hard_link`,
+added by the pass-4 fix-burst, D-1178) which the shipped code already implements. **Root cause:**
+Postcondition 8 was ADDED at v1.8 without a same-burst sweep of its sibling clauses (Postcondition
+1(b), the CORRECTED note, Invariant 2, and the `E-SHD-006` recovery narrative) that had previously
+described the OLD rename-based mechanism as canonical — an S-7.01 sibling-clause-propagation miss,
+the BC-internal-clause analogue of the more commonly-cited frontmatter↔body propagation class.
+**Fix** (spec-only, product-owner): all four sites reconciled to describe the seal as
+`write_exclusive`/`hard_link`-based exclusive create, matching Postcondition 8 and the shipped
+`publish_sealed_shard` implementation; no code or test change (the code was already correct).
+Owner: product-owner; state-manager performs bookkeeping only.
+
+**F-C2-P8-002 (MEDIUM — correctness/liveness: a 0-byte orphan at the next-seal-sequence path
+could permanently deadlock ALL future rolls; BC-1.18.006 v1.8→v1.9, NEW EC-025, CODE+TEST
+ROUTED to implementer/test-writer).** A second-order interaction between two independently-correct
+prior fixes: pass-7's F-C2-P7-004 fix made `self_heal_recovery_plausible` SKIP a persistent
+0-byte orphan candidate (correct, per Invariant 9 — a 0-byte "sealed" shard is never a legitimate
+self-heal target). But if such a 0-byte file sits AT the shard's next `next_seal_seq` destination
+path (e.g. an external actor or a prior partial write left it there), self-heal now permanently
+skips it, `next_seal_seq` never advances past it, and every subsequent `publish_sealed_shard`
+attempt collides with the SAME existing (0-byte) destination under Postcondition 8's write-once
+`write_exclusive` guard — returning `E-SHD-009` on every dispatch forever, with no in-band
+recovery path. **Root cause:** Postcondition 8's write-once guard (pass-4, D-1178) and pass-7's
+self-heal 0-byte skip were each independently correct in isolation but interact to produce an
+unrecoverable deadlock neither fix's own review pass exercised — direct evidence that a fix
+proven safe in isolation is not proven safe until re-reviewed against the current, cumulative
+state of the spec (the same class of evidence as pass-4's own Invariant-10 falsification, D-1178).
+**Fix** (product-owner + implementer/test-writer): BC-1.18.006 v1.9 scopes Postcondition 8's
+`E-SHD-009` write-once-violation return to NON-EMPTY existing destinations only, and defines a
+bounded 0-byte-destination reclaim path — a genuinely-0-byte existing destination MAY be
+unlinked and the write retried exactly once (never repeatedly); NEW EC-025 + matching Canonical
+Test Vector. `publish_sealed_shard` (implementer): single `stat()` of the destination on
+`write_exclusive` collision; if the existing file is 0 bytes, `unlink` + one retry of the
+exclusive-create; any OTHER outcome (non-empty destination, unlink failure, retry collision)
+still returns `E-SHD-009` fail-loud — the fix is scoped exactly to the 0-byte case, not a blanket
+retry-on-any-collision (SOUL.md #4 silent-failure discipline preserved). test-writer added a
+dedicated 0-byte-destination-reclaim regression test, Red-Gate-verified failing pre-fix.
+
+**F-C2-P8-003 (MINOR — code-vs-spec text divergence, error-taxonomy.md only, NO BC-1.18.006
+text change; error-taxonomy.md v1.5→v1.6, code-only fix per CLAUDE.md precedence rule 12).**
+`error-taxonomy.md`'s `E-SHD-006`/`E-SHD-007` Message-Format documented a `(seq=<N>)` token
+that the shipped emitter never actually includes in its message text — the code emits
+`sealed shard "<path>"` verbatim, with no parenthetical sequence-number suffix. The SPEC's
+Message-Format table was corrected to the actual emitted text; no code change (the code was
+already correct — this is a documentation-lags-shipped-behavior defect, not a code defect).
+Owner: product-owner.
+
+**F-C2-P8-004 (MINOR — spec overclaim on a compound path; BC-1.18.006 v1.8→v1.9, NEW EC-026,
+CODE+TEST ROUTED to implementer/test-writer).** The existing empty-canonical Block message
+template (Invariant 4, two variants A/B1 as of v1.8) unconditionally asserted "no roll was
+performed, because there is no existing content to rotate away; the shard remains exactly as it
+was before this call" — TRUE for a first-ever empty-canonical over-cap Write, but FALSE on a
+compound path where catch point (ii)'s backstop already performed a real, content-changing roll
+on a PRIOR dispatch, and the CURRENT dispatch's own over-cap condition against the freshly-empty
+(post-roll) canonical then double-fires the SAME empty-canonical short-circuit — in that case a
+roll DID just happen (on the prior dispatch), and the shard is NOT "exactly as it was" before the
+overall sequence began, even though it IS unchanged by THIS particular call. **Fix**
+(product-owner + implementer/test-writer): BC-1.18.006 v1.9 adds a third template, Case B2, for
+the backstop-then-double-fire path, distinguishing "unchanged by this call" from "unchanged since
+before the sequence"; Invariant 4 re-scoped from a two-template (A/B1) to a three-template
+(A/B1/B2) per-over-cap-case determinism property; `build_empty_roll_retry_block_reason` gains a
+new `preceded_by_backstop_roll: bool` parameter selecting the B2 template when set; NEW EC-026 +
+matching Canonical Test Vector, Red-Gate-verified failing pre-fix.
+
+**Headline lesson (second-order interaction between two independently-correct fixes;
+convergence-economics evidence — see `lessons.md` for the codified entry).** F-C2-P8-002 is a
+direct instance of the SAME phenomenon `L-BB-D1181` codified one pass earlier (pass-7's fix
+exposing a defect the two prior "correctness surface CLEAN" passes had certified): pass-7's own
+fix (self-heal 0-byte skip) combined with an EARLIER fix (pass-4's Postcondition 8 write-once
+guard) to produce a NEW deadlock neither fix's own review exercised. This is now the SECOND
+consecutive pass demonstrating that a fix verified safe in isolation is not proven safe against
+the CUMULATIVE, evolving state of the spec — reinforcing that every fix-burst's own review scope
+must include cross-checking against recently-added sibling invariants/postconditions it
+interacts with, not just the finding it was written to close.
+
+### Cluster-2 Convergence Status
+
+BC-5.39.001 cluster-2 LOCAL streak: **0/3** (pass-8 NOT CLEAN — 8 consecutive not-clean passes;
+streak has not yet started accumulating). Cycle-level BC-5.39.001 streak: **3/3 CONVERGED**,
+UNCHANGED (separate track — this is a LOCAL cluster cascade, not a cycle-level adversary pass).
+Cluster-1 LOCAL BC-5.39.001 stays 3/3 CONVERGED — CLOSED, fully retired, unaffected. No
+trajectory-tail drift — unchanged `→0→1→1→1` LENGTH=4.
+
+### Next Steps
+
+**NEXT = cluster-2 LOCAL adversary pass-9, fresh context, against BC-1.18.006 v1.9/story
+v3.3/code `feature/S-25.02-roll` @ `b775ad62`.**
+
+Refs: D-1182, D-1181, S-25.02, BC-1.18.006 v1.9, F-C2-P8-001, F-C2-P8-002, F-C2-P8-003,
+F-C2-P8-004.
+
+### Canonical 6-column row (STATE.md Decisions Log)
+
+| D-1182 | D-1182-S2502-CLUSTER2-PASS8-SEAL-RECONCILE-ZEROBYTE-RECLAIM-B2-TEMPLATE | **S-25.02 Phase F4 cluster-2 (roll, BC-1.18.006) LOCAL adversary pass-8 = NOT CLEAN — 2 MEDIUM (F-C2-P8-001, F-C2-P8-002), 2 MINOR (F-C2-P8-003, F-C2-P8-004), ALL fixed this burst. F-C2-P8-001 (MEDIUM): Postcondition 1(b)/CORRECTED-note/Invariant 2/E-SHD-006 recovery text reconciled to the already-correct v1.8 Postcondition 8 `write_exclusive` seal mechanism (spec-only, S-7.01 sibling-clause-propagation miss). F-C2-P8-002 (MEDIUM, correctness/liveness): a 0-byte orphan at the next-seal-sequence path could deadlock ALL future rolls — pass-7's self-heal 0-byte skip + pass-4's Postcondition-8 write-once guard interact to produce an unrecoverable `E-SHD-009` loop; FIXED via a bounded 0-byte-destination reclaim path (NEW EC-025), scoped exactly to genuinely-0-byte destinations, single-retry only. F-C2-P8-003 (MINOR, error-taxonomy.md only): E-SHD-006/E-SHD-007 Message-Format `(seq=<N>)` token corrected to the actual emitted text, no BC change. F-C2-P8-004 (MINOR): empty-canonical Block template overclaim on the backstop-then-double-fire path fixed via a NEW Case B2 template (NEW EC-026), Invariant 4 re-scoped to three per-case templates (A/B1/B2). BC-1.18.006 v1.8→v1.9; story v3.2→v3.3; error-taxonomy.md v1.5→v1.6; BC-INDEX v5.70→v5.71; STORY-INDEX v4.451→v4.452. VP-INDEX v3.09 UNCHANGED — EC-025/EC-026 formal verification is F6-owed (OWED §4.4), no VP file edited. **Headline lesson:** F-C2-P8-002 is a second consecutive instance of two independently-correct fixes (pass-4 Postcondition 8 + pass-7 self-heal skip) interacting to produce a NEW defect neither fix's own review exercised — reinforcing that fix-burst review scope must cross-check against recently-added sibling invariants, not just the triggering finding. BC-5.39.001 cluster-2 LOCAL streak stays **0/3** (8 consecutive not-clean passes; pass-9 next, fresh context; cycle-level 3/3 CONVERGED streak UNCHANGED). No trajectory-tail drift — unchanged →0→1→1→1 LENGTH=4 (LOCAL cluster-2 cascade, not a cycle-level pass). Code branch `feature/S-25.02-roll` @ `b775ad62` (Red Gate `6a5040a0`) — 2 commits ahead of `feature/S-25.02-roll` pass-7 base, NOT YET PUSHED (state-manager does not push code). `pipeline:` stays in_progress. **NEXT = cluster-2 LOCAL adversary pass-9, fresh context.** Refs: D-1182, D-1181, S-25.02, BC-1.18.006 v1.9, F-C2-P8-001, F-C2-P8-002, F-C2-P8-003, F-C2-P8-004. STATE.md v10.07→v10.08. | D-1182 | 2026-09-08 |

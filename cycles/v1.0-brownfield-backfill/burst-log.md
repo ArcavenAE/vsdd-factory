@@ -12729,3 +12729,38 @@ version: "3.2"
 **Factory-artifacts commit:** per TD-VSDD-053 SHA-patch anti-pattern retirement, this burst does not self-cite its own resulting commit SHA — the live value is `git -C .factory log -1`, captured post-push in the commit message itself, never asserted here pre-commit.
 
 Refs: D-1181, D-1180, S-25.02, BC-1.18.006 v1.8, F-C2-P7-001, F-C2-P7-002, F-C2-P7-003, F-C2-P7-004. STATE.md v10.06→v10.07.
+
+## S-25.02 Cluster-2 Pass-8 Fix-Burst (D-1182, 2026-09-08)
+
+**Parent-commit:** `671637b9` (factory-artifacts HEAD prior to this session's pass-7 burst); pass-7's own resulting commit is the direct parent of this burst's commit. Code parent: `feature/S-25.02-roll` @ `2cd64967` (pass-7 HEAD).
+
+**Adversary verdict:** LOCAL cluster-2 adversary pass-8 = **NOT CLEAN**. 0 BLOCKER/MAJOR, 2 MEDIUM (F-C2-P8-001, F-C2-P8-002), 2 MINOR (F-C2-P8-003, F-C2-P8-004). Full Part A finding narrative persisted in `decision-log.md` D-1182 (cluster-2 LOCAL-pass file location per the established passes 1-7 convention — Part A lives in the D-NNN decision-log.md block, not a standalone `adv-*.md` report file). BC-5.39.001 cluster-2 LOCAL streak **STAYS 0/3** — 8 consecutive not-clean passes; pass-9 next, fresh context. Cycle-level BC-5.39.001 streak 3/3 CONVERGED UNCHANGED (separate track); cluster-1 LOCAL 3/3 CLOSED, unaffected.
+
+**Files touched (code, `feature/S-25.02-roll`, committed pre-burst by implementer/test-writer — NOT committed by this state-manager burst):**
+- `crates/factory-dispatcher/src/shard_manager.rs` — `publish_sealed_shard` gains a single-`stat()`-then-unlink-if-0-byte-then-single-retry reclaim path on `write_exclusive` collision (F-C2-P8-002); `build_empty_roll_retry_block_reason` gains a `preceded_by_backstop_roll: bool` parameter selecting the new Case B2 template (F-C2-P8-004).
+- `crates/factory-dispatcher/tests/bc_1_18_006_roll_test.rs` — new 0-byte-destination-reclaim regression test (F-C2-P8-002) + new Case B2 double-fire template test (F-C2-P8-004) + a non-empty-destination `E-SHD-009` boundary-guard test confirming the reclaim path does NOT fire for a non-empty collision.
+- Commit `6a5040a0` (test, Red-Gate-verified failing pre-fix) then `b775ad62` (fix) — both landed BEFORE this state-manager dispatch; this burst does not itself edit code.
+- `.factory/` (this burst): `specs/behavioral-contracts/ss-01/BC-1.18.006.md` (v1.8→v1.9, product-owner content, committed here), `specs/prd-supplements/error-taxonomy.md` (v1.5→v1.6, product-owner content, committed here), `stories/S-25.02-artifact-sharding-layer2.md` (v3.2→v3.3, story-writer content, committed here), `specs/behavioral-contracts/BC-INDEX.md` (v5.70→v5.71), `stories/STORY-INDEX.md` (v4.451→v4.452), `cycles/v1.0-brownfield-backfill/decision-log.md` (D-1182 block appended), `cycles/v1.0-brownfield-backfill/burst-log.md` (this entry), `cycles/v1.0-brownfield-backfill/lessons.md` (new L-BB-D1182-* entries), `cycles/v1.0-brownfield-backfill/INDEX.md` (pass-8 row + Convergence Status advance), `STATE.md` (frontmatter, Phase Progress row, Current Phase Steps row + eviction, Decisions Log D-1182 row, Session Resume Checkpoint full replacement).
+
+**Codifications:** `lessons.md` gains 2 new entries this burst — `L-BB-D1182-second-order-fix-interaction-post-fix-rereview-load-bearing` (a fix proven safe in isolation is not proven safe against the cumulative, evolving spec state — F-C2-P8-002 is the second consecutive pass demonstrating this, direct evidence the BC-5.39.001 3-CLEAN fresh-context re-review protocol is load-bearing, not redundant) and `L-BB-D1182-sibling-clause-sweep-applies-within-bc-not-only-frontmatter-body` (ratifying a newer, more-specific clause — Postcondition 8 — without sweeping its now-stale sibling clauses — Invariant 2, Postcondition 1(b) — leaves a spec-internal contradiction that survives multiple passes; S-7.01 sibling-clause propagation applies to BC-internal clauses, not only frontmatter↔body). No BC/story/index content codification beyond the version bumps recorded above (BC-1.18.006 v1.9, story v3.3, error-taxonomy v1.6, BC-INDEX v5.71, STORY-INDEX v4.452; VP-INDEX v3.09 CONFIRMED UNCHANGED via `grep '^version:' .factory/specs/verification-properties/VP-INDEX.md` → `version: "3.09"`, re-verified post-burst).
+
+**Dim-2/5/6/7 Attestations:** This cycle (`v1.0-brownfield-backfill`) does not run the engine-discipline cycle's D-444(a)/D-446(a)/D-448(a) mechanical diff-gates — cluster-2's own convention (established passes 1-7) uses content-parity + git-state checks instead. Literal-shell evidence, captured stdout:
+```
+$ git -C .worktrees/S-25.02-roll log --oneline -2
+b775ad62 fix(S-25.02): pass-8 — 0-byte dest reclaim (EC-025) + double-fire Case B2 template (EC-026) (BC-1.18.006 v1.9)
+6a5040a0 test(S-25.02): pass-8 Red Gate — 0-byte dest reclaim (EC-025) + double-fire Case B2 template (EC-026) + non-empty-dest E-SHD-009 boundary guard (BC-1.18.006 v1.9)
+$ git -C .worktrees/S-25.02-roll status --short
+(clean)
+$ grep '^version:' .factory/specs/behavioral-contracts/ss-01/BC-1.18.006.md
+version: "1.9"
+$ grep '^version:' .factory/stories/S-25.02-artifact-sharding-layer2.md
+version: "3.3"
+$ cargo test -p validate-cross-site-correspondence test_BC_corpus_version_sync_all_indexed_bcs_match_frontmatter
+test tests::test_BC_corpus_version_sync_all_indexed_bcs_match_frontmatter ... ok
+```
+
+**Closes:** F-C2-P8-001 (MEDIUM), F-C2-P8-002 (MEDIUM), F-C2-P8-003 (MINOR), F-C2-P8-004 (MINOR) — all 4 CLOSED this burst (code fixed + Red-Gate-verified tests landed pre-burst on `feature/S-25.02-roll`).
+
+**Factory-artifacts commit:** per TD-VSDD-053 SHA-patch anti-pattern retirement, this burst does not self-cite its own resulting commit SHA — the live value is `git -C .factory log -1`, captured post-push in the commit message itself, never asserted here pre-commit.
+
+Refs: D-1182, D-1181, S-25.02, BC-1.18.006 v1.9, F-C2-P8-001, F-C2-P8-002, F-C2-P8-003, F-C2-P8-004. STATE.md v10.07→v10.08.

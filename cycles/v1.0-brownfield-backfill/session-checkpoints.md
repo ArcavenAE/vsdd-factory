@@ -7448,3 +7448,69 @@ BC-4.17.001 v1.29 active. BC-6.28.001 v1.3 active. BC-5.45.001 v1.3 active. BC-1
 ### §8. BC-5.39.001 streak
 
 **Cycle-level streak: 3/3 — CONVERGED, UNCHANGED this burst** (no cycle-level adversary pass ran; this is a LOCAL cluster-2 pass). Cluster-1's OWN LOCAL BC-5.39.001 cascade stays **3/3 CONVERGED — CLOSED** (D-1172/D-1173), fully retired. **Cluster-2's OWN LOCAL BC-5.39.001 cascade: 0/3** — pass-6 NOT CLEAN (0 BLOCKER/MAJOR, 2 MINOR + 1 ADVISORY, all fixed this burst; 6 consecutive not-clean passes; correctness surface CLEAN for the 2nd consecutive pass); pass-7 next, fresh context, against BC-1.18.006 v1.8/story v3.2/code `feature/S-25.02-roll` @ `590bf6cc`.
+
+## Session Resume Checkpoint (2026-09-08 — S2502-CLUSTER2-PASS7-MISSINGCANONICAL-BLOCK-ATTRIBUTION-RESOLVED; develop fff5e4cc (PR #818 merged); main 51023185; merged_count 119; v1.0.0-rc.25 SHIPPED; PIPELINE IN_PROGRESS)
+
+> **SELF-SUFFICIENT RESUME CONTEXT.** S-25.02 cluster-2 (roll, BC-1.18.006) LOCAL adversary pass-7 fix-burst COMPLETE — 1 MAJOR (F-C2-P7-001: missing-canonical over-cap `Write` wrongly returned `E-SHD-001` Error instead of the sanctioned empty-canonical `Block`, masked across passes 5-6 by a wrong-behavior-enshrining test — falsifies both passes' "correctness surface CLEAN" certification), 2 MINOR (F-C2-P7-002/003 stale doc/comment fixes) + 1 ADVISORY (F-C2-P7-004 0-byte self-heal-probe reachability gap), ALL fixed, ALL code-only, all landing on `feature/S-25.02-roll` @ `2cd64967`. BC-5.39.001 cluster-2 LOCAL streak stays 0/3 (7 consecutive not-clean passes; pass-8 next, fresh context). This burst also RESOLVES the standing OWED commit-attribution conflict (former §4 item 1, below): CLAUDE.md governs, no `Claude-Session:` trailer on any `.factory/` commit going forward. `pipeline:` **PAUSED→in_progress** (session resumed).
+> Prior checkpoint (SESSION-WRAP-PAUSE-2026-09-08, D-1180) was already
+> archived verbatim to
+> `cycles/v1.0-brownfield-backfill/session-checkpoints.md`.
+
+### §1. Position (a)
+
+**Brownfield cycle `v1.0-brownfield-backfill`; S-25.02 Feature-Mode Phase F4 (delta-implementation) delivered incrementally by BC-cluster (D-1170).** Cluster 1 (cap+trigger, BC-1.18.005) **MERGED** (PR #818 @ `fff5e4cc`). Cluster 2 (roll, BC-1.18.006) **IN F4 TDD + LOCAL adversary cascade** — pass-7 fix-burst COMPLETE (D-1181), NEXT = cluster-2 LOCAL adversary pass-8, fresh context. Remaining clusters after cluster-2: 3 mech-A backfill (BC-1.18.007+008), 4 B1 rotation (BC-1.18.009), 5 B2 sharding (BC-1.18.010+011), 6 migrations (BC-1.18.012), 7 Cohort-B flip (BC-7.08.001).
+
+### §2. Convergence (b)
+
+BC-5.39.001 cluster-2 LOCAL streak = **0/3** after 7 passes; passes 1-2 found data-loss/corruption bugs, passes 3-4 found a spec-doc gap + a data-loss counterexample (corrected Invariant 10), passes 5-6 certified the correctness surface CLEAN, pass-7 FALSIFIED that certification (a MAJOR missing-canonical contract violation masked by a wrong-behavior-enshrining test). BC v1.8, story v3.2, VP-INDEX v3.09, ADR-051 §Decision 16, error-taxonomy.md v1.5 — all UNCHANGED by pass-7 (code-only burst). Cluster-1 LOCAL BC-5.39.001 = **3/3 CONVERGED — CLOSED** (fully retired). Cycle-level BC-5.39.001 = **3/3 CONVERGED** (separate track, unchanged). No trajectory-tail drift — unchanged `→0→1→1→1` LENGTH=4 (LOCAL cascade, not a cycle-level adversary pass).
+
+### §3. In-flight (c)
+
+Cluster-2 code fully green @ `feature/S-25.02-roll` `2cd64967` (fmt/clippy clean, `cargo test --workspace --all-targets` = 3072 passed / 0 failed). **NOT YET PUSHED** — branch is 2 commits ahead of `origin/feature/S-25.02-roll` (`44a90262` test, `2cd64967` fix); state-manager does not push code, that is a later per-story-delivery step. No cluster-2 PR created yet. No sub-agent abandoned mid-step this burst. **On resume:** run pass-8 adversary, fresh context; if 3 consecutive clean OR converged, proceed to demo-recorder → pr-manager (per-story-delivery, which will push the branch as its first step) → merge → post-merge burst (BC-1.18.006 draft→active POL-14), then cluster-3.
+
+### §4. Pending human decisions / blockers — OWED (d)
+
+This session + carried:
+1. **CONVERGENCE-ECONOMICS** — 7 LOCAL passes, streak 0/3; pass-7 just falsified passes 5-6's correctness-CLEAN certification, direct evidence against converging early on cert-only grounds. Decide on resume whether to continue to 3-CLEAN or converge to PR relying on PR-level review + CI + F6 formal hardening.
+2. **67.8MB dispatcher telemetry log OWED** (gitignore/rotate) — partially addressed.
+3. **F6-owed VPs** for BC-1.18.005 EC-013..EC-022 + PC9, AND BC-1.18.006 Postcondition 7/EC-014..EC-020/EC-023/Invariant 7/Invariant 8/corrected-Invariant-10 (all deferred to Phase F6 targeted-hardening; UNCHANGED this burst — pass-7 added no new EC, code-only).
+4. **BC-1.18.009/cluster-4 carry-forward:** `read_changelog_item_count` closing-fence heuristic robustness (Drift Item D-1172).
+5. **`replace_all` multiplicity gap** — SPEC-SIDE CLOSED at BC-1.18.006/cluster-2 (D-1174); code-side lands at cluster-2's own TDD (AC-006/AC-007/AC-024, EC-023/EC-024/payload_len_bytes/byte-level-I/O the 4 pending obligations, UNCHANGED as of pass-7).
+6. **Branch protection on `develop`** BLOCKED on repo-admin.
+7. **[D-1173] Worktree fragmentation [process-gap]** and **TC-EC001 flaky test [process-gap]** (`tests/precompact-routing.bats:350`) — carried, unchanged. Anchor: next engine-discipline self-improvement cycle / maintenance sweep.
+8. **[D-1175] `.factory/policies.yaml` YAML defect** — carried, not fixed this burst (out of scope). Anchor: next maintenance sweep.
+9. **[D-1177] `validate-factory-path-staging` substring/heredoc false-positive** and **`validate-count-propagation` VP-count scope-mismatch [process-gap]** — both hook false-positives, carried, RECONFIRMED still standing, not re-fixed. Anchor: next maintenance sweep or self-improvement cycle.
+10. **[D-1181] `lessons.md` backfill owed for D-1175..D-1180 (exhaustive)'s own lessons (NEW)** — discovered this burst; STATE.md/burst-log.md narrative had referenced e.g. `L-BB-D1179`/`L-BB-D1180` as codified, but none were ever appended to `lessons.md`. This burst's own 2 lessons WERE correctly appended. Anchor: next maintenance sweep or self-improvement cycle.
+11. **[process-gap] lesson (D-1181, NEW, headline):** passes 5 AND 6 both certified the correctness surface CLEAN; pass-7 falsified that via a MAJOR finding masked by a wrong-behavior-enshrining test — "N consecutive clean passes" is NOT proof of correctness; extends TD-VSDD-059 to test-rationale review, not merely test presence/pass-fail.
+12. **[process-gap] lesson (D-1180, carried):** `error-taxonomy.md`'s E-SHD-006/007 Resolution-column text overreached for 2 pass-6 cycles undetected — spec-text drift against a shipped, correct code path can persist across passes when no test pins the taxonomy doc's own prose.
+13. **[process-gap] lesson (D-1179, carried):** a routed "pin verbatim" test obligation was silently down-scoped to a weak substring assertion, masking a MAJOR spec-vs-code divergence for a full pass — test obligations that say "verbatim" MUST be implemented verbatim, never as a substring/contains check.
+14. **[process-gap] lesson (D-1178, carried):** pass-3 codified Invariant 10 as a documentary "by-construction" safety claim WITHOUT a discharging test/VP, and pass-4 found it FALSE — never codify such a claim without a discharging test/VP going forward.
+15. **All prior carried OWED items** (Dependabot backlog, ~871 stale input-hashes, decision-log backfill through D-1173/D-1177/D-1178/D-1179/D-1180/D-1165/D-1156..D-1160 (exhaustive), O-P18-001) unchanged.
+
+**COMMIT-ATTRIBUTION CONFLICT (former item 1) — RESOLVED THIS BURST (D-1181).** `git -C .factory log` had confirmed every recent `factory-artifacts` commit through D-1180 carried a `Claude-Session:` trailer contrary to CLAUDE.md's explicit no-AI-attribution rule. Human explicitly directed: **CLAUDE.md governs — NO `Claude-Session:` trailer, no `Co-Authored-By: Claude`, no emoji, on this or any future `.factory/` commit.** This burst's own commit is the first to apply the resolution. See `lessons.md` (`L-BB-D1181-commit-attribution-resolved-claude-md-governs`) and `decision-log.md` D-1181's dedicated subsection for full detail. REMOVED from the OWED numbering above (was item 1; the list now starts at CONVERGENCE-ECONOMICS).
+
+**Full historical long-tail (unchanged, nothing dropped — see archived session-checkpoints.md history):** cargo-deny advisory disposition; VP-079/VP-028 POLICY-9 "ten events" propagation; PG-CI-1/2/3 + F-WG5-001 + PR-MANAGER-MERGE-OVER-RED; ADR-045 v1.3 ratification burst (Wave-7 HELD); E-23 re-scope to frozen-provenance model (STALE); LOW-7 DEFERRED AC-006 events-sink wording; `[process-gap]` registry-comment-lint (E-12 follow-up); spec-hygiene sweep OWED (E-10 follow-up); the 4 D-1164 documentary follow-ups; redundant `git stash@{0}`.
+
+### §5. WIP branches (e)
+
+**Cluster-2:** `feature/S-25.02-roll` @ **`2cd64967`** (2 commits ahead of `origin`, NOT YET PUSHED) — active cluster-2 delivery; pass-7's 1 MAJOR + 2 MINOR + 1 ADVISORY findings' code fixes landed here, verified via `git log`/`git status`. Inert carried (not re-verified): `fix/d999-sentinel-code-migration` @ `bf642fd9`, `feature/S-21.04` @ `323f440f`.
+
+### §6. Resume command (f)
+
+`/vsdd-factory:rehydrate-wave` then `/vsdd-factory:next-step`.
+
+BC-4.17.001 v1.29 active. BC-6.28.001 v1.3 active. BC-5.45.001 v1.3 active. BC-10.13.001 v1.3 active. BC-4.18.001 v1.2 active. BC-1.18.001 v1.7 active. BC-1.18.002 v1.8 active. BC-1.18.003 v1.8 active. BC-1.18.004 v1.4 active. BC-3.08.001 v1.34 active. BC-4.16.002 v1.2 active. BC-5.39.006 v1.9 active. **BC-1.18.005 v1.14 active.** **BC-1.18.006 v1.8** (draft; SS-01; cluster-2 not shipped, UNCHANGED this burst) + BC-1.18.007 v1.2/008 v1.1/009 v1.5/010 v1.2/011 v1.0/012 v1.1 (draft; SS-01) + BC-7.08.001 v1.1 (draft; SS-07) — 9 BCs anchored in S-25.02's frontmatter; cluster-1's BC-1.18.005 remains the only ACTIVE one of the 9. BC-INDEX v5.70 (2,006 BCs, UNCHANGED this burst). VP-INDEX v3.09 (141 VPs, UNCHANGED this burst). STORY-INDEX v4.451 (176 stories; 25 epics; S-25.02 v3.2, UNCHANGED this burst, status ready, cluster-1 DELIVERED/MERGED, cluster-2 pass-7 fixed/pass-8 next; S-25.01 v1.22 merged; S-25.04 v2.0 merged; S-15.03 v1.8 merged; UNCHANGED otherwise). ARCH-INDEX v4.24 (48 ADRs, UNCHANGED this burst). error-taxonomy.md **v1.5** (UNCHANGED this burst).
+
+### §7. HEADs
+
+- `develop`: **`fff5e4cc`** (PR #818 squash-merged, base `54fa985f`). merged_count **119**.
+- `main`: **`51023185`** (origin/main; v1.0.0-rc.25 bundle+retag commit 2026-09-04; immediate parent `101ebb64`, the release PR #808 merge commit). Tag `v1.0.0-rc.25` → `101ebb64`.
+- `factory-artifacts`: **this burst's commit** — per TD-VSDD-053 SHA-patch anti-pattern retirement, this burst does not self-cite its own resulting commit SHA — run `git -C .factory log -1` for the live HEAD.
+- `feature/S-25.02-roll`: **ACTIVE** @ `2cd64967` (2 commits ahead of `origin`, NOT PUSHED) — cluster-2's code branch; pass-7's 1 MAJOR + 2 MINOR + 1 ADVISORY findings' fixes verified landed via `git log`; TDD still in progress (AC-006/AC-007/AC-024 not yet re-verified against `2cd64967`; EC-023/EC-024/payload_len_bytes/byte-level-I/O remain 4 pending obligations).
+- `feature/S-25.02-cap-trigger`: **MERGED+DELETED** — PR #818, `fff5e4cc`. No longer exists.
+- `fix/d999-sentinel-code-migration`: clean+inert @ `bf642fd9` (ADR-041 sentinel).
+- `feature/S-21.04-story-worktree-write-path-discipline`: clean+inert @ `323f440f` (pass-31 pending, no PR).
+
+### §8. BC-5.39.001 streak
+
+**Cycle-level streak: 3/3 — CONVERGED, UNCHANGED this burst** (no cycle-level adversary pass ran; this is a LOCAL cluster-2 pass). Cluster-1's OWN LOCAL BC-5.39.001 cascade stays **3/3 CONVERGED — CLOSED** (D-1172/D-1173), fully retired. **Cluster-2's OWN LOCAL BC-5.39.001 cascade: 0/3** — pass-7 NOT CLEAN (1 MAJOR, 2 MINOR, 1 ADVISORY, all fixed this burst; 7 consecutive not-clean passes; falsifies passes 5-6's correctness-CLEAN certification); pass-8 next, fresh context, against BC-1.18.006 v1.8/story v3.2/code `feature/S-25.02-roll` @ `2cd64967`.

@@ -701,21 +701,23 @@ D-1167. **NEXT: Phase F3 (incremental-stories) — story-writer.**
 | **5** | **NOT CLEAN** | 1 MAJOR + 1 MINOR (F-C2-P5-001/002) | 0/3 | LIGHT/bookkeeping-only — no BC/story/VP/index content change. Empty-canonical Block message diverged from BC v1.8 PC2's verbatim template (code-only fix, spec was correct per CLAUDE.md precedence rule 12); a routed "pin verbatim" test obligation had been silently down-scoped to a weak substring assertion — why P5-001 went undetected at pass-4. Positive result: entire data-loss/correctness surface independently re-derived CLEAN. Fixed same-pass (D-1179). |
 | **6** | **NOT CLEAN** | 0 BLOCKER/MAJOR + 2 MINOR + 1 ADVISORY (F-C2-P6-001..003) | 0/3 | **Correctness surface CLEAN for the 2nd consecutive pass** (passes 5-6). `error-taxonomy.md` `E-SHD-006`/`E-SHD-007` Resolution-column text overreach corrected (v1.4→v1.5); unified-template test strengthened substring→verbatim; seq-width self-heal guard widened + plausibility-probe reachability gap fixed. No BC/story/index content change. Fixed same-pass (D-1180). |
 | **7** | **NOT CLEAN** | 1 MAJOR + 2 MINOR + 1 ADVISORY (F-C2-P7-001..004) | 0/3 | **Falsifies passes 5-6's "correctness surface CLEAN" certification.** First-ever over-cap `Write` against a MISSING canonical wrongly returned `E-SHD-001` Error instead of the sanctioned empty-canonical `Block` (Invariant 1 + Precondition 2 violation) — masked across 2 passes by a pre-existing test that had ENSHRINED the wrong behavior under a plausible misreading. Fixed code-only (spec already correct); enshrining test withdrawn + 4 new/replaced tests. Plus 2 stale-comment MINORs + a 0-byte self-heal-probe reachability ADVISORY, all code-only. Also resolves the standing commit-attribution conflict (CLAUDE.md governs, no trailer going forward). Fixed same-pass (D-1181). |
+| **8** | **NOT CLEAN** | 0 BLOCKER/MAJOR + 2 MEDIUM + 2 MINOR (F-C2-P8-001..004) | 0/3 | **Second-order interaction between two independently-correct prior fixes.** F-C2-P8-002 (MEDIUM, correctness/liveness): pass-4's Postcondition 8 write-once guard + pass-7's self-heal 0-byte skip interact to deadlock ALL future rolls on a 0-byte orphan at the next-seal-sequence path — fixed via a bounded 0-byte-destination reclaim path (NEW EC-025), scoped strictly to genuinely-0-byte destinations, single-retry only. F-C2-P8-001 (MEDIUM): Postcondition 1(b)/CORRECTED-note/Invariant 2/E-SHD-006 recovery text reconciled to the already-correct v1.8 Postcondition 8 `write_exclusive` seal mechanism (S-7.01 sibling-clause-propagation miss, spec-only). F-C2-P8-003 (MINOR, error-taxonomy.md only): `E-SHD-006`/`E-SHD-007` Message-Format `(seq=<N>)` token corrected to the actual emitted text. F-C2-P8-004 (MINOR): empty-canonical Block template overclaim on the backstop-then-double-fire path fixed via a NEW Case B2 template (NEW EC-026), Invariant 4 re-scoped to three per-case templates (A/B1/B2). BC-1.18.006 v1.8→v1.9. EC-025/EC-026 formal verification F6-owed (OWED §4.4); no VP file edited. Fixed same-pass (D-1182). |
 
-**Convergence Status (S-25.02 F4 cluster-2 LOCAL cascade): NOT YET CONVERGED — streak 0/3, 7
-consecutive not-clean passes, pass-8 NEXT (fresh context).** Cycle-level BC-5.39.001 streak stays
+**Convergence Status (S-25.02 F4 cluster-2 LOCAL cascade): NOT YET CONVERGED — streak 0/3, 8
+consecutive not-clean passes, pass-9 NEXT (fresh context).** Cycle-level BC-5.39.001 streak stays
 3/3 CONVERGED, UNCHANGED (separate track — this is a LOCAL cluster cascade, not a cycle-level
 adversary pass). Cluster-1's own LOCAL cascade (BC-1.18.005) reached literal 3-CLEAN convergence
 in 12 passes and is DELIVERED/MERGED — cluster-2 has not yet begun accumulating a clean streak;
-its 5 substantive FINDINGS-then-fixed rounds so far (passes 1-4, 7) plus 2 lighter/bookkeeping-
+its 6 substantive FINDINGS-then-fixed rounds so far (passes 1-4, 7-8) plus 2 lighter/bookkeeping-
 only rounds (5-6, both independently re-deriving the correctness surface CLEAN before pass-7
 falsified that certification) show a still-active cascade, not an asymptotic floor. Frozen delta
-as of pass-7: BC-1.18.006 v1.8 (status `draft` — cluster-2 has not shipped, POL-14 promotion
-deferred to its future PR merge); S-25.02 story v3.2; error-taxonomy.md v1.5; ADR-051 v1.10;
-VP-INDEX v3.09 (141 VPs); BC-INDEX v5.70 (2,006 BCs); STORY-INDEX v4.451; ARCH-INDEX v4.24 — all
-UNCHANGED by pass-7 (code-only burst). Full narrative: `decision-log.md` D-1175..D-1181 (exhaustive). **NEXT:
-cluster-2 LOCAL adversary pass-8, fresh context, against BC-1.18.006 v1.8/story v3.2/code
-`feature/S-25.02-roll` @ `2cd64967`.**
+as of pass-8: BC-1.18.006 v1.9 (status `draft` — cluster-2 has not shipped, POL-14 promotion
+deferred to its future PR merge); S-25.02 story v3.3; error-taxonomy.md v1.6; ADR-051 v1.10;
+VP-INDEX v3.09 (141 VPs); BC-INDEX v5.71 (2,006 BCs); STORY-INDEX v4.452; ARCH-INDEX v4.24 — all
+UNCHANGED by pass-8 except BC-1.18.006/story/error-taxonomy/BC-INDEX/STORY-INDEX as noted. Full
+narrative: `decision-log.md` D-1175..D-1182 (exhaustive). **NEXT:
+cluster-2 LOCAL adversary pass-9, fresh context, against BC-1.18.006 v1.9/story v3.3/code
+`feature/S-25.02-roll` @ `b775ad62`.**
 
 ## Artifact Size Budgets (IP-003 / D-835)
 
