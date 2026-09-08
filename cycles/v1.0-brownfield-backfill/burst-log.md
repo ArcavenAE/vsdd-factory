@@ -12801,3 +12801,40 @@ Refs: D-1183, D-1182, S-25.02, BC-1.18.006 v1.10, F-C2-P9-001, F-C2-P9-002, F-C2
 **Factory-artifacts commit:** per TD-VSDD-053 SHA-patch anti-pattern retirement, this burst does not self-cite its own resulting commit SHA — the live value is `git -C .factory log -1`, captured post-push in the commit message itself, never asserted here pre-commit.
 
 Refs: D-1182, D-1181, S-25.02, BC-1.18.006 v1.9, F-C2-P8-001, F-C2-P8-002, F-C2-P8-003, F-C2-P8-004. STATE.md v10.07→v10.08.
+
+## S-25.02 Cluster-2 Pass-10 Fix-Burst PLUS Human-Authorized Convergence (D-1184, 2026-09-08)
+
+**Parent-commit:** `git -C .factory log -1` on `factory-artifacts` immediately prior to this burst's commit (pass-9's own resulting commit). Code parent: `feature/S-25.02-roll` @ `39369cc6` (pass-9 HEAD; unchanged this burst — spec-text-only pass, no code/test edits).
+
+**Adversary verdict:** LOCAL cluster-2 adversary pass-10 = **NOT CLEAN**. 0 BLOCKER/MAJOR/MEDIUM, 1 MINOR (F-C2-P10-001), 3 ADVISORY (F-C2-P10-002, F-C2-P10-003, F-C2-P10-004). Full Part A finding narrative persisted in `decision-log.md` D-1184 (cluster-2 LOCAL-pass file location per the established passes 1-9 convention — Part A lives in the D-NNN decision-log.md block, not a standalone `adv-*.md` report file). **Correctness surface CLEAN for the 2nd consecutive pass (9 and 10)** — every finding is documentation/text-drift, race-wording-narrowing, test-coverage, or gloss-annotation, zero functional/data-loss/liveness defects. **THIS BURST ALSO RECORDS THE HUMAN-AUTHORIZED CONVERGENCE DECISION CLOSING THE CASCADE:** the human explicitly authorized converging the cluster-2 LOCAL BC-5.39.001 cascade to PR via asymptotic acceptance (D-386 Option C, the same basis CLAUDE.md documents for the cycle-level loop), after 10 not-clean passes with the correctness surface clean for the last 2 and only asymptotic minor/advisory findings remaining. BC-5.39.001 cluster-2 LOCAL streak **CLOSED at 0/3** — did NOT reach literal 3/3, distinct from cluster-1 (BC-1.18.005), which reached literal 3-CONSECUTIVE-CLEAN (D-1172). Cycle-level BC-5.39.001 streak 3/3 CONVERGED UNCHANGED (separate track); cluster-1 LOCAL 3/3 CLOSED, unaffected.
+
+**Files touched (spec-only this burst — no code/test edits; product-owner content committed by this state-manager burst):**
+- `.factory/specs/behavioral-contracts/ss-01/BC-1.18.006.md` (v1.10→v1.11, product-owner content: F-C2-P10-002 Postcondition 8 race-wording narrowing + new/narrowed Canonical Test Vectors; F-C2-P10-004 Postcondition 7 catch point (ii)/EC-019 E-SHD-008 gloss annotation + CTV reconcile; incidental EC-025 CTV table-cell Category-column fix).
+- `.factory/specs/prd-supplements/error-taxonomy.md` (v1.7→v1.8, product-owner content: F-C2-P10-001 `E-SHD-001` cell verbatim correction + exhaustive `E-SHD-001..009` sweep attestation).
+- `.factory/` (this burst): `specs/behavioral-contracts/BC-INDEX.md` (v5.72→v5.73), `cycles/v1.0-brownfield-backfill/decision-log.md` (D-1184 block appended), `cycles/v1.0-brownfield-backfill/burst-log.md` (this entry), `cycles/v1.0-brownfield-backfill/lessons.md` (new `L-BB-D1184-*` entries), `cycles/v1.0-brownfield-backfill/INDEX.md` (pass-10 row + Convergence Status advance to CONVERGED-TO-PR), `STATE.md` (frontmatter, Project Metadata Last-Updated/Current-Phase refresh, Phase Progress row, Current Phase Steps row + eviction, Decisions Log D-1184 row, Session Resume Checkpoint full replacement — §4 item 1 CONVERGENCE-ECONOMICS RESOLVED, 2 new F6-owed items). STORY-INDEX.md and the S-25.02 story file are UNCHANGED this burst (no AC/content edit — story stays v3.3). VP-INDEX.md UNCHANGED (no new Postcondition/Invariant/Edge-Case semantics this pass).
+
+**Codifications:** `lessons.md` gains 2 new entries this burst — `L-BB-D1184-asymptotic-acceptance-is-a-legitimate-human-authorized-convergence-economics-call` (converging a LOCAL adversarial cascade to PR at an asymptotic minor/advisory floor, correctness surface clean 2 consecutive passes, is a legitimate human-authorized economics call under D-386 Option C; records the full 10-pass severity trajectory as the evidence basis and the explicit distinction from cluster-1's literal 3/3) and `L-BB-D1184-exhaustive-sibling-sweep-closes-recurring-message-drift-class` (the E-SHD message-drift class was finally closed by an EXHAUSTIVE sweep across all 9 `E-SHD-NNN` rows rather than one-at-a-time, reinforcing `L-BB-D1183`'s TD-VSDD-060 lesson from the immediately-prior pass). 2 new Blocking-Issues/F6-owed items recorded in STATE.md Session Resume Checkpoint §4 item 3 (P10-002 `O_EXCL` re-create-then-swap reclaim hardening; P10-003 EC-025 concurrent-race fault-injection test), both human-authorized deferrals per CLAUDE.md Canonical Principle Rule 3 (explicit human direction: this burst's converge-to-PR authorization; concrete future dependency: the `O_EXCL` primitive / a fault-injection harness; anchor: Phase F6 targeted-hardening). No BC-INDEX-structure/STORY-INDEX/VP-INDEX content codification beyond the version bumps recorded above (BC-1.18.006 v1.11, error-taxonomy.md v1.8, BC-INDEX v5.73; STORY-INDEX/VP-INDEX CONFIRMED UNCHANGED — re-verified post-burst via `grep '^version:' .factory/stories/STORY-INDEX.md` → `version: "4.452"` and `grep '^version:' .factory/specs/verification-properties/VP-INDEX.md` → `version: "3.09"`, both matching pre-burst values).
+
+**Dim-2/5/6/7 Attestations:** This cycle (`v1.0-brownfield-backfill`) does not run the engine-discipline cycle's D-444(a)/D-446(a)/D-448(a) mechanical diff-gates — cluster-2's own convention (established passes 1-9) uses content-parity + git-state checks instead. Literal-shell evidence, captured stdout:
+```
+$ git -C .worktrees/S-25.02-roll log --oneline -2
+39369cc6 test(S-25.02): pass-9 — verbatim-pin E-SHD-008/009 Display + EC-025 unlink-failure fail-loud coverage (F-C2-P9-002/003)
+03888966 docs(S-25.02): pass-9 — correct stale self_heal_resume_from_truncate idempotency rationale (F-C2-P9-001, BC-1.18.006 v1.9)
+$ git -C .worktrees/S-25.02-roll status --short
+(clean)
+$ grep '^version:' .factory/specs/behavioral-contracts/ss-01/BC-1.18.006.md
+version: "1.11"
+$ grep '^version:' .factory/stories/S-25.02-artifact-sharding-layer2.md
+version: "3.3"
+$ grep '^version:' .factory/specs/prd-supplements/error-taxonomy.md
+version: "1.8"
+$ cargo test -p validate-cross-site-correspondence test_BC_corpus_version_sync_all_indexed_bcs_match_frontmatter
+test tests::test_BC_corpus_version_sync_all_indexed_bcs_match_frontmatter ... ok
+```
+(Code branch HEAD unchanged from pass-9: this burst is spec-text-only, product-owner content committed to `.factory/` only — no `feature/S-25.02-roll` commits landed this burst.)
+
+**Closes:** F-C2-P10-001 (MINOR), F-C2-P10-002 (ADVISORY, narrowed — full `O_EXCL` hardening deferred to F6), F-C2-P10-003 (ADVISORY, [process-gap] — fault-injection test deferred to F6), F-C2-P10-004 (ADVISORY) — all 4 CLOSED-IN-SCOPE this burst (spec text corrected/narrowed/annotated; 2 sub-items human-authorized-deferred to Phase F6 per CLAUDE.md Rule 3, not silently dropped). **Cluster-2 LOCAL BC-5.39.001 cascade CLOSED (D-1184) — 0/3, human-authorized asymptotic acceptance.**
+
+**Factory-artifacts commit:** per TD-VSDD-053 SHA-patch anti-pattern retirement, this burst does not self-cite its own resulting commit SHA — the live value is `git -C .factory log -1`, captured post-push in the commit message itself, never asserted here pre-commit.
+
+Refs: D-1184, D-1183, S-25.02, BC-1.18.006 v1.11, F-C2-P10-001, F-C2-P10-002, F-C2-P10-003, F-C2-P10-004. STATE.md v10.09→v10.10.

@@ -703,26 +703,34 @@ D-1167. **NEXT: Phase F3 (incremental-stories) — story-writer.**
 | **7** | **NOT CLEAN** | 1 MAJOR + 2 MINOR + 1 ADVISORY (F-C2-P7-001..004) | 0/3 | **Falsifies passes 5-6's "correctness surface CLEAN" certification.** First-ever over-cap `Write` against a MISSING canonical wrongly returned `E-SHD-001` Error instead of the sanctioned empty-canonical `Block` (Invariant 1 + Precondition 2 violation) — masked across 2 passes by a pre-existing test that had ENSHRINED the wrong behavior under a plausible misreading. Fixed code-only (spec already correct); enshrining test withdrawn + 4 new/replaced tests. Plus 2 stale-comment MINORs + a 0-byte self-heal-probe reachability ADVISORY, all code-only. Also resolves the standing commit-attribution conflict (CLAUDE.md governs, no trailer going forward). Fixed same-pass (D-1181). |
 | **8** | **NOT CLEAN** | 0 BLOCKER/MAJOR + 2 MEDIUM + 2 MINOR (F-C2-P8-001..004) | 0/3 | **Second-order interaction between two independently-correct prior fixes.** F-C2-P8-002 (MEDIUM, correctness/liveness): pass-4's Postcondition 8 write-once guard + pass-7's self-heal 0-byte skip interact to deadlock ALL future rolls on a 0-byte orphan at the next-seal-sequence path — fixed via a bounded 0-byte-destination reclaim path (NEW EC-025), scoped strictly to genuinely-0-byte destinations, single-retry only. F-C2-P8-001 (MEDIUM): Postcondition 1(b)/CORRECTED-note/Invariant 2/E-SHD-006 recovery text reconciled to the already-correct v1.8 Postcondition 8 `write_exclusive` seal mechanism (S-7.01 sibling-clause-propagation miss, spec-only). F-C2-P8-003 (MINOR, error-taxonomy.md only): `E-SHD-006`/`E-SHD-007` Message-Format `(seq=<N>)` token corrected to the actual emitted text. F-C2-P8-004 (MINOR): empty-canonical Block template overclaim on the backstop-then-double-fire path fixed via a NEW Case B2 template (NEW EC-026), Invariant 4 re-scoped to three per-case templates (A/B1/B2). BC-1.18.006 v1.8→v1.9. EC-025/EC-026 formal verification F6-owed (OWED §4.4); no VP file edited. Fixed same-pass (D-1182). |
 | **9** | **NOT CLEAN** | 0 BLOCKER/MAJOR/MEDIUM + 3 MINOR (F-C2-P9-001..003) | 0/3 | **Correctness surface CLEAN for the first time this 9-pass cascade** — all 3 findings are doc/text-drift or test-coverage, zero functional defects. F-C2-P9-002 (MINOR, doc-vs-code text drift): Postcondition 8's quoted `E-SHD-009` message + EC-024's CTV, and error-taxonomy.md's `E-SHD-008`/`E-SHD-009` Message-Format cells, corrected to the actual emitted `Display` text verbatim; taxonomy's v1.6 false "all already read their actual emitted text" attestation RETRACTED. F-C2-P9-001 (MINOR, code-only): stale `self_heal_resume_from_truncate` doc comment ("no-op if reissued") corrected to match v1.9's write-once/fail-loud semantics. F-C2-P9-003 (MINOR, code+test-only, TD-VSDD-059): EC-025's unlink-failure reclaim arm was untested; deterministic macOS-scoped (`chflags uchg`) test added; concurrent-race arm honestly left documented-not-tested (no injection seam). BC-1.18.006 v1.9→v1.10; error-taxonomy.md v1.6→v1.7. No VP allocated — no new semantics this pass. **RECURRING DEFECT CLASS (3+ occurrences, process-gap):** the weak-substring error-message assertion anti-pattern has now recurred 3× in this cluster (F-C2-P5-002, F-C2-P8-003, F-C2-P9-002) — codified as a process-level `[process-gap]` lesson anchored to the E-12 Engine Governance follow-up story (no ID allocated yet). Fixed same-pass (D-1183). |
+| **10** | **NOT CLEAN** | 0 BLOCKER/MAJOR/MEDIUM + 1 MINOR + 3 ADVISORY (F-C2-P10-001..004) | **0/3 — CASCADE CLOSED via human-authorized asymptotic acceptance** | **Correctness surface CLEAN for the 2nd consecutive pass (9 and 10).** F-C2-P10-001 (MINOR): `error-taxonomy.md`'s `E-SHD-001` Message Format cell drift corrected, plus an EXHAUSTIVE E-SHD-001..009 sweep (all other rows already verbatim-verified) closing the recurring one-at-a-time drift pattern from passes 6-9. F-C2-P10-002 (ADVISORY): Postcondition 8's 0-byte-reclaim race wording NARROWED — the `stat()`→`unlink()`→retry sequence has two distinct sub-windows (`unlink()`-to-retry fails loud `E-SHD-009`; `stat()`-to-`unlink()` is a silent-loss accepted residual risk, previously mischaracterized as uniformly fail-loud); full `O_EXCL` re-create-then-swap hardening OWED to Phase F6 (human-authorized deferral). F-C2-P10-003 (ADVISORY, [process-gap]): EC-025's concurrent-race retry-collision arm remains untested (no injection seam); OWED to Phase F6 alongside F-C2-P10-002. F-C2-P10-004 (ADVISORY): Postcondition 7 catch point (ii)'s abbreviated `E-SHD-008` gloss (deferred at pass-9) RESOLVED via a split treatment — narrative annotated as a mechanism label, CTV reconciled to verbatim emitted text. BC-1.18.006 v1.10→v1.11; error-taxonomy.md v1.7→v1.8. No VP allocated. **HUMAN-AUTHORIZED CONVERGENCE: the cluster-2 LOCAL BC-5.39.001 cascade is CLOSED at 0/3 via asymptotic acceptance (D-386 Option C), NOT literal 3/3** — distinct from cluster-1, which reached literal 3-CLEAN. Fixed same-pass (D-1184). |
 
-**Convergence Status (S-25.02 F4 cluster-2 LOCAL cascade): NOT YET CONVERGED — streak 0/3, 9
-consecutive not-clean passes, pass-10 NEXT (fresh context).** Cycle-level BC-5.39.001 streak stays
-3/3 CONVERGED, UNCHANGED (separate track — this is a LOCAL cluster cascade, not a cycle-level
-adversary pass). Cluster-1's own LOCAL cascade (BC-1.18.005) reached literal 3-CLEAN convergence
-in 12 passes and is DELIVERED/MERGED — cluster-2 has not yet begun accumulating a clean streak;
-its 6 substantive FINDINGS-then-fixed rounds (passes 1-4, 7-8) plus 2 lighter/bookkeeping-only
-rounds (5-6, both independently re-deriving the correctness surface CLEAN before pass-7 falsified
-that certification) plus pass-9 (the first pass whose correctness surface itself was CLEAN, all
-3 findings doc/text/test-coverage only) show a still-active but visibly narrowing cascade — the
-defect surface has shifted from correctness-affecting findings (passes 1-4) toward doc/text/
-test-coverage findings only (passes 5-6 partial, 8-9), a convergence-trajectory signal, not yet
-an asymptotic floor (pass-9 itself was NOT CLEAN — streak stays 0/3). Frozen delta as of pass-9:
-BC-1.18.006 v1.10 (status `draft` — cluster-2 has not shipped, POL-14 promotion deferred to its
-future PR merge); S-25.02 story v3.3 (UNCHANGED this pass); error-taxonomy.md v1.7; ADR-051
-v1.10; VP-INDEX v3.09 (141 VPs); BC-INDEX v5.72 (2,006 BCs); STORY-INDEX v4.452 (UNCHANGED);
-ARCH-INDEX v4.24 — all UNCHANGED by pass-9 except BC-1.18.006/error-taxonomy/BC-INDEX as noted.
-Full narrative: `decision-log.md` D-1175..D-1183 (exhaustive). **NEXT:
-cluster-2 LOCAL adversary pass-10, fresh context, against BC-1.18.006 v1.10/story v3.3/code
-`feature/S-25.02-roll` @ `39369cc6`.**
+**Convergence Status (S-25.02 F4 cluster-2 LOCAL cascade): CONVERGED-TO-PR — CASCADE CLOSED
+2026-09-08 (D-1184) via human-authorized asymptotic acceptance, streak 0/3 (did NOT reach literal
+3/3).** Cycle-level BC-5.39.001 streak stays 3/3 CONVERGED, UNCHANGED (separate track — this is a
+LOCAL cluster cascade, not a cycle-level adversary pass). Cluster-1's own LOCAL cascade
+(BC-1.18.005) reached literal 3-CLEAN convergence in 12 passes and is DELIVERED/MERGED —
+cluster-2's own cascade CLOSED differently: **the human explicitly authorized converging to PR via
+asymptotic acceptance (the same D-386 Option C basis CLAUDE.md documents for the cycle-level loop),
+after 10 not-clean passes with the correctness surface CLEAN for the last 2 consecutive passes (9
+and 10) and only asymptotic minor/advisory findings remaining.** This is DISTINCT from cluster-1
+(literal 3/3) — the audit trail records this unambiguously: cluster-2 CLOSED at streak 0/3, not
+3/3. Trajectory across all 10 passes: 6 substantive FINDINGS-then-fixed rounds (passes 1-4, 7-8)
+plus 2 lighter/bookkeeping-only rounds (5-6, both independently re-deriving the correctness
+surface CLEAN before pass-7 falsified that certification) plus passes 9-10 (correctness surface
+itself CLEAN both times, only doc/text/test-coverage findings remaining) — a clear
+finding-severity trajectory (P7 MAJOR → P8 MEDIUM → P9/P10 MINOR-only), the evidence basis for the
+convergence-economics decision. The PR-LEVEL adversarial review (pr-reviewer within pr-manager's
+9-step) still applies as the next review layer — CI + F6 formal hardening provide the remaining
+review layers for the items explicitly deferred to Phase F6 (P10-002 `O_EXCL` reclaim hardening;
+P10-003 EC-025 concurrent-race fault-injection test). Final frozen delta: BC-1.18.006 v1.11
+(status `draft` — cluster-2 has not shipped, POL-14 promotion deferred to its future PR merge);
+S-25.02 story v3.3 (UNCHANGED this pass); error-taxonomy.md v1.8; ADR-051 v1.10; VP-INDEX v3.09
+(141 VPs); BC-INDEX v5.73 (2,006 BCs); STORY-INDEX v4.452 (UNCHANGED); ARCH-INDEX v4.24 — all
+UNCHANGED by pass-10 except BC-1.18.006/error-taxonomy/BC-INDEX as noted.
+Full narrative: `decision-log.md` D-1175..D-1184 (exhaustive). **NEXT:
+cluster-2 per-story-delivery (demo-recorder per-AC → push → pr-manager 9-step PR → merge →
+post-merge burst, BC-1.18.006 draft→active POL-14), then cluster-3.**
 
 ## Artifact Size Budgets (IP-003 / D-835)
 
