@@ -1498,6 +1498,77 @@ file is never overwritten and `E-SHD-009`/`HookResult::Error` is returned instea
 order change to catch point (i) MUST re-run the EC-023 fault-injection test before removing the
 self-heal-first requirement.
 
+### Decision 17 — PreToolUse Shard-Cap Gate Hoisted Above the Early-Return Guard; Catch Point (i) Gains Entry Validation (addendum, closing PR #824 cycle-3 review findings MAJOR-2 and MAJOR-3 against BC-1.18.006 v1.11's cluster-2 delivery)
+
+**Why this addendum exists.** PR #824's cycle-3 fresh-eyes review traced two structural gaps in the
+native-gate machinery this ADR governs, both surfaced by the SAME `main.rs` placement-rationale
+comment that documents catch point (i)'s (Decision 15) call site: (1) the comment's own
+justification — "mirroring Decision 1's own placement rule... the exact 'silently stop firing if
+the plugin set changes' failure mode Decision 1's own... placement rule already exists to prevent
+for the PreToolUse leg" — is FALSE as shipped: Decision 1's PreToolUse gate
+(`executor::shard_cap_precheck`) is invoked from inside `executor::execute_tiers`, which
+`main::run` only calls when its `sync_tiers.is_empty() && partition.async_group.is_empty()`
+early-return guard does NOT fire — so on any dispatch where the registered PreToolUse
+`Edit`/`Write`/`MultiEdit` plugin set is empty, the guard fires FIRST and the shard-cap gate never
+runs at all — exactly the failure mode Decision 15 §4 claims Decision 1 already prevents. Both the
+false claim and the underlying gap trace to the same root cause: Decision 1's literal placement
+text ("before the registry-driven plugin loop") was implemented as "before `execute_tiers`'s own
+internal loop over `tiers`," not "before the tier-execution subsystem is entered at all." (2)
+Independently, the new PostToolUse catch-point-(i) leg (Decision 15) reaches the destructive
+`shard_manager::execute_roll` via `shard_manager::find_matching_entry` alone, without ever calling
+`shard_manager::validate_entry` — the SAME entry-match-time semantic check
+`shard_manager::shard_cap_gate_check` (Decision 1's own PreToolUse leg) always runs immediately
+after its own `find_matching_entry` call, bypassing EC-022 and the EC-010/011/013/015/017
+cap-sanity family for this leg alone.
+
+**1. Hoist Decision 1's PreToolUse gate above `main::run`'s early-return guard, mirroring catch
+point (i)'s existing placement.** The gate's qualification-and-check logic (currently
+`executor::shard_cap_precheck(inputs: &ExecutorInputs<'_>)`) is decoupled from `ExecutorInputs` to
+take the dispatcher's typed `payload::HookPayload` and the resolved project cwd directly — the
+same two values `invoke::reconcile_replace_all_overcap_if_qualifying` (catch point (i)) already
+receives. `main::run` calls this decoupled check ONCE, at that same call site, alongside catch
+point (i)'s existing call, BEFORE the `sync_tiers.is_empty() && partition.async_group.is_empty()`
+guard; the guard's condition widens to `shard_gate_precheck_result.is_none() &&
+sync_tiers.is_empty() && partition.async_group.is_empty()`. The precomputed `Option<HookResult>` is
+threaded into `execute_tiers` as a new parameter and consumed there — `execute_tiers` MUST NOT
+recompute it, since `shard_cap_gate_check`'s fired-trigger branch is destructive (`execute_roll`)
+and a second evaluation against already-rolled content would corrupt state or double-error. This is
+placement-only: `execute_tiers`'s existing translation of the verdict into
+`all_outcomes`/`block_intent` and every downstream aggregation step are unchanged. Decision 1's own
+body text already stated the INTENT this hoist fulfills ("since a rotation must be resolved before
+any registry plugin risks reading a not-yet-rotated oversized file") — Decision 1's text is
+therefore left UNCHANGED by this addendum, exactly as Decision 15 left it unchanged for the same
+reason (silent/ambiguous, not wrong).
+
+**2. Catch point (i) gains the SAME entry-match-time validation Decision 1's leg already runs.**
+`invoke::detect_replace_all_overcap_candidate` calls `shard_manager::validate_entry(&entry)`
+immediately after `shard_manager::find_matching_entry` resolves a match — the identical order
+`shard_manager::shard_cap_gate_check` already uses. On `Err`, the filter emits `tracing::warn!`
+(naming `artifact_stem` and the validation error) and returns `None` — the same
+fail-open-but-never-silent contract this function's registry-load-failure arm (F-C2-P1-005) already
+established, consistent with Decision 15 point 2's "janitor, not a gate" characterization. No new
+mechanism: this reuses Decision 1's existing validation primitive at a second call site, exactly as
+Decision 15 point 3 already established for the roll primitive itself.
+
+**3. Why this is an addendum, not a new freestanding ADR.** Both corrections reuse existing
+primitives at existing-or-newly-symmetric call sites — no new crate, no `HOST_ABI_VERSION` bump, no
+new `hooks-registry.toml` entry, no new `HookResult` variant. Decisions 11-16 already establish
+"fix/extension addenda to the SAME ADR" as this project's convention for closing gaps a subsequent
+review discovers against an already-accepted design.
+
+**4. Doc-comment correction obligation (implementer, same fix-burst).** `main.rs`'s
+placement-rationale comment and its twin at `invoke.rs` (`detect_replace_all_overcap_candidate`'s
+doc comment) both currently assert the (previously false, now-true-after-item-1) guarantee as an
+ALREADY-EXISTING property of Decision 1. Both MUST be updated to cite this Decision (17) as the
+authority for why the guarantee NOW holds symmetrically for both legs.
+
+**5. Test obligation.** A regression test MUST assert the PreToolUse shard-cap gate still fires
+against an over-cap `Edit`/`Write`/`MultiEdit` when NO registry plugin matches the dispatch's
+event/tool pair — previously impossible to exercise truthfully, and the concrete falsifier for item
+1. A second test MUST assert catch point (i) declines to reconcile (no `execute_roll`,
+`tracing::warn!` emitted) against a `[[shard]]` entry that fails `validate_entry` even when
+`find_matching_entry` would otherwise match it — the falsifier for item 2.
+
 ---
 
 ## Rationale
@@ -1701,7 +1772,7 @@ preserves both callers' correctness.
     per-event archive-write payload, traded against a `(N - low_water_mark)`-times reduction in how
     often that payload is written at all (Decision 14's amortization analysis).
 
-### Status as of 2026-09-05 (v1.0) through the Decision 16 addendum 2026-09-07 (v1.10)
+### Status as of 2026-09-05 (v1.0) through the Decision 17 addendum 2026-09-08 (v1.11)
 
 **Accepted — Human-Ratified 2026-09-06 (D-1167, POLICY 22).** Frontmatter `status: accepted`.
 The Decision 2 calibration constants remain explicitly provisional and are NOT to be treated as
@@ -1852,6 +1923,21 @@ ordering, not wrong); this is a net-new addendum closing a call-order gap and ad
 durability guarantee, both already adjudicated at the BC level (BC-1.18.006 v1.8) and supplied here
 with the ADR-level mechanism specification BC-1.18.006's own scope does not cover. Refs:
 BC-1.18.006 v1.8, ADR-051 v1.10.
+
+**v1.11 (this fix burst) resolves PR #824 cycle-3 fresh-eyes review findings MAJOR-2 and MAJOR-3,
+routed to the architect:** MAJOR-3 (the `main.rs` placement-rationale comment's PreToolUse
+"plugin-set-independence" claim was false, and the underlying gate WAS silently defeasible by an
+empty matched-plugin set) resolved by hoisting `executor::shard_cap_precheck`'s check above
+`main::run`'s early-return guard (Decision 17 item 1); MAJOR-2 (catch point (i) reached the
+destructive `execute_roll` without `shard_manager::validate_entry`, bypassing
+EC-022/EC-010/011/013/015/017) resolved by wiring `validate_entry` into
+`invoke::detect_replace_all_overcap_candidate` immediately after `find_matching_entry` (Decision 17
+item 2). Status remains ACCEPTED — neither is a POLICY 22 design-direction reversal; both correct or
+complete already-accepted design intent (Decision 1's and Decision 15's own text), per this ADR's
+established addendum convention (Decisions 11-16). Downstream: implementer wires both fixes and the
+two regression tests (Decision 17 items 4-5); product-owner reviews BC-1.18.005's Architecture
+Anchors citation and BC-1.18.006's Traceability ADR row for propagation of the new call-site
+location and the Decision 17 citation.
 
 ## Alternatives Considered
 

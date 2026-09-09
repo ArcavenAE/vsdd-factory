@@ -1,1 +1,1 @@
-{"status":"pass","timestamp":"2026-09-09T02:00:23Z","command":"cargo test -p factory-dispatcher --lib 2>&1 | tail -20"}
+{"status":"pass","timestamp":"2026-09-09T04:56:16Z","command":"cargo test -p factory-dispatcher --lib test_MINOR5 2>&1 | tail -10\ngit diff --stat crates/factory-dispatcher/src/invoke.rs"}
