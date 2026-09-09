@@ -1,1 +1,1 @@
-{"status":"pass","timestamp":"2026-09-09T04:56:16Z","command":"cargo test -p factory-dispatcher --lib test_MINOR5 2>&1 | tail -10\ngit diff --stat crates/factory-dispatcher/src/invoke.rs"}
+{"status":"pass","timestamp":"2026-09-09T17:41:57Z","command":"cargo test --workspace --all-targets 2>&1 | tee /tmp/full_test_output.log | grep -E \"FAILED|error\\[|^error:|test result: FAILED\" ; echo \"---SUMMARY---\"; grep \"test result:\" /tmp/full_test_output.log"}

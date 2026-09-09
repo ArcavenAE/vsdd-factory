@@ -2,7 +2,7 @@
 document_type: behavioral-contract
 level: L3
 version: "1.12"
-status: draft
+status: active
 producer: product-owner
 timestamp: 2026-09-07T00:00:00Z
 phase: F2
@@ -11,13 +11,13 @@ inputs:
   - .factory/specs/behavioral-contracts/ss-01/BC-1.18.005.md
   - crates/hook-sdk/src/result.rs
   - .factory/cycles/v1.0-brownfield-backfill/S-25.02-f2-architecture-delta.md
-input-hash: "239ebe8"
+input-hash: "6c41c0d"
 traces_to: .factory/specs/prd.md
 origin: greenfield
 extracted_from: null
 subsystem: "SS-01"
 capability: "CAP-043"
-lifecycle_status: draft
+lifecycle_status: active
 introduced: v1.0-brownfield-backfill
 modified: []
 deprecated: null

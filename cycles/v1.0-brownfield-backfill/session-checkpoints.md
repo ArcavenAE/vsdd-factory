@@ -7647,3 +7647,63 @@ BC-4.17.001 v1.29 active. BC-6.28.001 v1.3 active. BC-5.45.001 v1.3 active. BC-1
 ### §8. BC-5.39.001 streak
 
 **Cycle-level streak: 3/3 — CONVERGED, UNCHANGED this burst** (no cycle-level adversary pass ran; this is a LOCAL cluster-2 pass). Cluster-1's OWN LOCAL BC-5.39.001 cascade stays **3/3 CONVERGED — CLOSED** (D-1172/D-1173), fully retired. **Cluster-2's OWN LOCAL BC-5.39.001 cascade: CLOSED at 0/3** via human-authorized asymptotic acceptance (D-1184) — pass-10 NOT CLEAN (1 MINOR + 3 ADVISORY, all fixed/resolved-in-scope this burst; 10 consecutive not-clean passes; correctness surface itself CLEAN for the 2nd consecutive pass) — did NOT reach literal 3/3, distinct from cluster-1. NEXT = cluster-2 per-story-delivery (no further LOCAL adversary passes), against BC-1.18.006 v1.11/story v3.3/code `feature/S-25.02-roll` @ `39369cc6`.
+
+---
+
+## Archived checkpoint: SESSION-WRAP-PAUSE-2026-09-08 (D-1185) — superseded 2026-09-09 by S2502-CLUSTER2-DELIVERY-MERGE-BURST (D-1186)
+
+## Session Resume Checkpoint (2026-09-08 — SESSION-WRAP-PAUSE-2026-09-08; develop fff5e4cc (PR #818 merged); main 51023185; merged_count 119; v1.0.0-rc.25 SHIPPED; PIPELINE PAUSED)
+
+> **SELF-SUFFICIENT RESUME CONTEXT.** S-25.02 cluster-2 (roll, BC-1.18.006 v1.11) LOCAL BC-5.39.001 cascade CLOSED (asymptotic acceptance, D-1184); cluster-2 now in PER-STORY-DELIVERY — demo evidence recorded (`b27f0a0a`), branch `feature/S-25.02-roll` pushed @ `8d17ffc4`, **PR #824 OPEN** (`feature/S-25.02-roll` → `develop`), NOT merged. pr-reviewer cycle-1 verdict **REQUEST_CHANGES** (10 findings: 1 EXTERNAL BLOCKING CI-red, 2 MAJOR, 5 MINOR, 2 NIT) — none fixed this burst; implementer + demo-recorder sub-agents abandoned mid-step by this wrap. `pipeline:` **PAUSED** for `/vsdd-factory:wrap`.
+> Prior checkpoint (S2502-CLUSTER2-PASS10-CONVERGENCE-TO-PR-ASYMPTOTIC-ACCEPTANCE, D-1184) was already
+> archived verbatim to
+> `cycles/v1.0-brownfield-backfill/session-checkpoints.md`.
+
+### §1. Position (a)
+
+Brownfield cycle `v1.0-brownfield-backfill`. S-25.02 F4 cluster-2 (roll, BC-1.18.006 v1.11) — LOCAL BC-5.39.001 adversarial cascade CLOSED after 10 passes via human-authorized asymptotic acceptance (D-1184). Cluster-2 now in PER-STORY-DELIVERY: demo evidence recorded (`b27f0a0a`), branch pushed, **PR #824 OPEN** (`feature/S-25.02-roll` → `develop`). NEXT on resume = complete the PR #824 review-convergence cycle (fix open pr-reviewer findings → re-review → resolve CI → merge → post-merge BC-1.18.006 draft→active POL-14), then clusters 3–7 (BC-1.18.007+008 mech-A backfill next).
+
+### §2. Convergence (b)
+
+LOCAL cluster-2 BC-5.39.001 = CLOSED 0/3 (asymptotic-accepted, D-1184; distinct from cluster-1's 3/3). NOW in PR-LEVEL review convergence: pr-reviewer cycle-1 verdict = **REQUEST_CHANGES** (10 findings). Cycle-2 pending fixes.
+
+### §3. In-flight (c)
+
+**CRITICAL — several sub-agents abandoned mid-step by the wrap.**
+- PR #824 OPEN, REQUEST_CHANGES, branch `feature/S-25.02-roll` @ **`8d17ffc4`** (PUSHED; origin matches; worktree CLEAN).
+- 6 security/hardening fixes already committed+pushed on the branch: `e67eb7ad` SEC-001 (0-byte reclaim uses `lstat` not `stat`), `002962ce` SEC-002 (reject path-traversal in `artifact_stem`), `5e025366` SEC-003 (reject `ParentDir` components), `0f56530d` FIX-HIGH-1 (`write_exclusive` temp uses `O_EXCL`, no symlink follow), `0ea79c2c` FIX-MED-1 (re-verify 0-byte reclaim via open handle before unlink), `8d17ffc4` FIX-MED-2 (refuse symlinked canonical across roll read sites).
+- **OPEN pr-reviewer findings NOT yet fixed** (implementer abandoned mid-fix — made NO uncommitted edits): **2 MAJOR** — (#2) `write_exclusive` temp-path collision misreported as `E-SHD-009` and deletes a reclaimable 0-byte destination on a failed op (reproduced empirically); (#3) `E-SHD-010` symlink guard missing + untested on the **Edit** and **MultiEdit** arms (only Write guarded). **5 MINOR** — (#4) FIFO hang in `reclaim_identity_still_safe`; (#5) orphaned commit SHA in PR body; (#6) stale demo README prose (0-byte reclaim description now stale post-SEC-001); (#7) missing `E-SHD-010` taxonomy entry + deferral anchor; (#8) FIX-MED-1 tested only at helper level. **2 NIT** — (#9) `next_seal_seq` u32 overflow; (#10) diff size.
+- **1 EXTERNAL BLOCKING (#1):** CI red on both runners — pre-existing STATE.md banner staleness (mechanical merge-gate; state-manager-owned). MUST be resolved before merge.
+- pr-review.md persisted at `.factory/code-delivery/S-25.02/pr-review.md` (committed this burst). Formal review posted to GitHub as **COMMENTED** (GitHub blocked `--request-changes` because the authenticated account is the PR author) — a human/second account must convert to a blocking review for branch-protection enforcement.
+- Sub-agents stopped mid-step by the wrap: implementer `a4e643aa` (was fixing #2/#3, only reading — no edits), demo-recorder `aaa445e0` (was re-recording stale README #6 — no commit). pr-reviewer `a335067` COMPLETED. Two review teammates (wiring-review, test-review) stopped.
+
+### §4. Pending human decisions / blockers — OWED (d)
+
+- CI red (#1) STATE.md banner staleness — resolve before merge.
+- GitHub review is COMMENTED not blocking (bot == PR author) — needs human/second account for branch-protection enforcement.
+- Branch protection on `develop` BLOCKED on repo-admin (carried).
+- Carried: commit-attribution RESOLVED (CLAUDE.md, D-1181); F6-owed race items (P10-002 `O_EXCL` stat→unlink sub-window hardening, P10-003 concurrent-race retry-collision test) anchored to Phase F6; the prior checkpoint's long-tail OWED items (Dependabot backlog, stale input-hashes, decision-log/lessons backfill for D-1175..D-1180 (exhaustive), D-1173/D-1175/D-1177 process-gaps, etc.) unchanged; the E-12-anchored weak-substring-assertion process-gap (D-1183) has no allocated story ID yet.
+
+### §5. WIP branches (e)
+
+`feature/S-25.02-roll` @ `8d17ffc4` (PUSHED, PR #824 OPEN, REQUEST_CHANGES). Inert carried: `fix/d999-sentinel-code-migration` @ `bf642fd9`, `feature/S-21.04` @ `323f440f`.
+
+### §6. Resume command (f)
+
+`/vsdd-factory:rehydrate-wave` then `/vsdd-factory:next-step`.
+
+BC-4.17.001 v1.29 active. BC-6.28.001 v1.3 active. BC-5.45.001 v1.3 active. BC-10.13.001 v1.3 active. BC-4.18.001 v1.2 active. BC-1.18.001 v1.7 active. BC-1.18.002 v1.8 active. BC-1.18.003 v1.8 active. BC-1.18.004 v1.4 active. BC-3.08.001 v1.34 active. BC-4.16.002 v1.2 active. BC-5.39.006 v1.9 active. **BC-1.18.005 v1.14 active.** **BC-1.18.006 v1.11** (draft; SS-01; cluster-2 not shipped, code+PR review in progress — UNCHANGED this burst) + BC-1.18.007 v1.2/008 v1.1/009 v1.5/010 v1.2/011 v1.0/012 v1.1 (draft; SS-01) + BC-7.08.001 v1.1 (draft; SS-07) — 9 BCs anchored in S-25.02's frontmatter; cluster-1's BC-1.18.005 remains the only ACTIVE one of the 9. BC-INDEX v5.73 (2,006 BCs, UNCHANGED this burst). VP-INDEX v3.09 (141 VPs, UNCHANGED this burst). STORY-INDEX v4.452 (176 stories; 25 epics; S-25.02 v3.3, UNCHANGED this burst, status ready, cluster-1 DELIVERED/MERGED, cluster-2 PR #824 OPEN/review-convergence; S-25.01 v1.22 merged; S-25.04 v2.0 merged; S-15.03 v1.8 merged; UNCHANGED otherwise). ARCH-INDEX v4.24 (48 ADRs, UNCHANGED this burst). error-taxonomy.md **v1.8** (UNCHANGED this burst).
+
+### §7. HEADs
+
+- `develop`: **`fff5e4cc`** (PR #818 squash-merged, base `54fa985f`). merged_count **119**. UNCHANGED this burst.
+- `main`: **`51023185`** (origin/main; v1.0.0-rc.25 bundle+retag commit 2026-09-04; immediate parent `101ebb64`, the release PR #808 merge commit). Tag `v1.0.0-rc.25` → `101ebb64`. UNCHANGED this burst.
+- `factory-artifacts`: **this burst's commit** — per TD-VSDD-053 SHA-patch anti-pattern retirement, this burst does not self-cite its own resulting commit SHA — run `git -C .factory log -1` for the live HEAD.
+- `feature/S-25.02-roll`: **ACTIVE** @ `8d17ffc4` (PUSHED, origin matches) — cluster-2's code branch; **PR #824 OPEN**, pr-reviewer REQUEST_CHANGES, NOT merged.
+- `feature/S-25.02-cap-trigger`: **MERGED+DELETED** — PR #818, `fff5e4cc`. No longer exists.
+- `fix/d999-sentinel-code-migration`: clean+inert @ `bf642fd9` (ADR-041 sentinel).
+- `feature/S-21.04-story-worktree-write-path-discipline`: clean+inert @ `323f440f` (pass-31 pending, no PR).
+
+### §8. BC-5.39.001 streak
+
+**Cycle-level streak: 3/3 — CONVERGED, UNCHANGED this burst** (no cycle-level adversary pass ran). Cluster-1's OWN LOCAL BC-5.39.001 cascade stays **3/3 CONVERGED — CLOSED** (D-1172/D-1173), fully retired. **Cluster-2's OWN LOCAL BC-5.39.001 cascade: CLOSED at 0/3** via human-authorized asymptotic acceptance (D-1184) — UNCHANGED this burst, a distinct convergence track from PR #824's own pr-reviewer review-convergence cycle (cycle-1 = REQUEST_CHANGES, 10 findings; cycle-2 pending fixes). NEXT = resume PR #824 review convergence against BC-1.18.006 v1.11/story v3.3/code `feature/S-25.02-roll` @ `8d17ffc4`.
