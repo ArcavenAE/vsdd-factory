@@ -1,20 +1,12 @@
-wave: W1 (E-19)
+wave: S-25.02-F4-C3 (E-25 mechanism-A backfill)
 stories:
-  - id: S-19.01
+  - id: S-25.02
     spec_files:
-      - .factory/stories/S-19.01-pr-manager-hardening.md
-      - .factory/specs/behavioral-contracts/ss-05/BC-5.42.001.md
-  - id: S-19.02
-    spec_files:
-      - .factory/stories/S-19.02-verify-factory-lock-output-too-large.md
-      - .factory/specs/behavioral-contracts/ss-04/BC-4.13.001.md
-  - id: S-19.03
-    spec_files:
-      - .factory/stories/S-19.03-warn-pending-wave-gate-file-not-found.md
-      - .factory/specs/behavioral-contracts/ss-02/BC-2.07.001.md
-      - .factory/specs/behavioral-contracts/ss-02/BC-2.02.011.md
+      - .factory/stories/S-25.02-artifact-sharding-layer2.md
+      - .factory/specs/behavioral-contracts/ss-01/BC-1.18.007.md
+      - .factory/specs/behavioral-contracts/ss-01/BC-1.18.008.md
 arch_files:
-  - .factory/stories/epics/E-19-post-rc22-operator-hardening.md
-  - .factory/specs/architecture/decisions/ADR-030-pr-manager-merge-operation-integrity-enforcement.md
-  - .factory/specs/architecture/decisions/ADR-025-single-writer-factory-locklease-prevent-concurrent-session-races-on-factory-artifacts-orphan-branch.md
+  - .factory/stories/epics/E-25-validation-integrity.md
+  - .factory/specs/architecture/decisions/ADR-051-layer-2-two-mechanism-size-triggered-shard-rotation-append-logs-and-bc-index-sharding.md
+  - .factory/specs/architecture/decisions/ADR-047-indeterminate-outcome-model-durable-mutation-marker-next-advance-gate.md
 state_pointer: .factory/STATE.md

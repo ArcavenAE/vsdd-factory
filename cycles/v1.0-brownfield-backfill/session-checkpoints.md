@@ -7762,3 +7762,54 @@ BC-4.17.001 v1.29 active. BC-6.28.001 v1.3 active. BC-5.45.001 v1.3 active. BC-1
 ### §8. BC-5.39.001 streak
 
 **Cycle-level streak: 3/3 — CONVERGED, UNCHANGED this burst** (no cycle-level adversary pass ran). Cluster-1's OWN LOCAL BC-5.39.001 cascade stays **3/3 CONVERGED — CLOSED** (D-1172/D-1173), fully retired. **Cluster-2's OWN LOCAL BC-5.39.001 cascade: CLOSED at 0/3** via human-authorized asymptotic acceptance (D-1184) — now fully retired following PR #824's merge (D-1186); no further LOCAL passes will run against cluster-2. NEXT = cluster-3's own fresh LOCAL BC-5.39.001 cascade starts at 0/3 once its F2/F3 spec-evolution finalizes and F4 TDD implementation begins.
+
+## Archived checkpoint: SESSION-WRAP-PAUSE-2026-09-09 (D-1187) — superseded 2026-09-09 by RESUME-HOUSEKEEPING-WAVE-STATE-DRIFT-2026-09-09 (D-1188)
+
+## Session Resume Checkpoint (2026-09-09 — SESSION-WRAP-PAUSE-2026-09-09; develop 0959e34b (PR #824 merged); main 51023185; merged_count 120; v1.0.0-rc.25 SHIPPED; PIPELINE PAUSED)
+
+> **SELF-SUFFICIENT RESUME CONTEXT.** S-25.02 cluster-2 (roll, BC-1.18.006 v1.12) **DELIVERED/MERGED** — PR #824 squash-merged into develop as `0959e34b29a41a1b064ff1c7ec62096e94a31c7e` (base `fff5e4cc`); feature branch deleted; BC-1.18.006 draft→active (POL-14, D-1186). Cluster-2 fully closed out — no further LOCAL or PR-level review pending. Human invoked `/vsdd-factory:wrap`. `pipeline:` **PAUSED**. NEXT = cluster-3 (mechanism-A backfill) per D-1170's sequencing.
+> Prior checkpoint (S2502-CLUSTER2-DELIVERY-MERGE-BURST, D-1186) archived verbatim to
+> `cycles/v1.0-brownfield-backfill/session-checkpoints.md`.
+
+### §1. Position (a)
+
+2026-09-09. S-25.02 F4 cluster-2 (roll, BC-1.18.006) **DELIVERED/MERGED** — PR #824 squash-merged into develop @ `0959e34b` (base `fff5e4cc`), feature branch deleted, BC-1.18.006 draft→active (POL-14, D-1186). `develop_head=0959e34b`, `merged_count=120`. NEXT = cluster-3 (mechanism-A backfill) per D-1170's sequencing (remaining clusters: mechanism-A backfill, B1 rotation, B2 sharding, migrations, Cohort-B flip CAPSTONE).
+
+### §2. Convergence (b)
+
+Not in a loop — cluster-2 PR-review cascade CONVERGED over 6 cycles (cycle-1: 10 findings → cycle-2: N-1..N-7 → cycle-3: 3 MAJOR incl. ADR-051 §Decision 17 gate-hoist + 12 MINOR/NIT → cycle-4 APPROVE + MINOR-N1 → cycles 5/6/7 delta APPROVEs) and MERGED. No open streak.
+
+### §3. In-flight (c)
+
+NONE mid-TDD. No sub-agents abandoned mid-step (the D-1186 post-merge burst completed cleanly). Orphaned-but-CLEAN worktree `.worktrees/S-25.02-roll` (branch `feature/S-25.02-roll` [gone]) needs `worktree remove` cleanup at resume (no work at risk).
+
+### §4. Pending human decisions / blockers — OWED (d)
+
+- Cluster-3 start awaits orchestrator dispatch.
+- 3 open Drift Items from D-1186: `pr-manager-completion-guard` SubagentStop hook defect `[process-gap]`; `precompact-routing.bats`/`legacy-bash-adapter` exec_subprocess exit-code flake `[process-gap]`; VP-count drift (= pre-existing D-1138, architect-owned ARCH-INDEX reconcile).
+- OPERATIONAL NOTE for resume: agent-initiated PR merges were blocked by the Claude Code permission classifier this session — merges must be executed by the human (or with an explicit permission grant) via `plugins/vsdd-factory/bin/enforce-merge-strategy.sh` gated by `check-stale-verdict.sh`, NOT a direct `gh pr merge`.
+- Minor governance drift: commit `7c71b193` carried a `Claude-Session:` trailer on a `.factory` commit, a recurrence of the D-1181-forbidden AI-attribution pattern (not rewritten; flag only).
+
+### §5. WIP branches (e)
+
+None (`feature/S-25.02-roll` merged + deleted).
+
+### §6. Resume command (f)
+
+`/vsdd-factory:rehydrate-wave` then `/vsdd-factory:next-step`.
+
+BC-4.17.001 v1.29 active. BC-6.28.001 v1.3 active. BC-5.45.001 v1.3 active. BC-10.13.001 v1.3 active. BC-4.18.001 v1.2 active. BC-1.18.001 v1.7 active. BC-1.18.002 v1.8 active. BC-1.18.003 v1.8 active. BC-1.18.004 v1.4 active. BC-3.08.001 v1.34 active. BC-4.16.002 v1.2 active. BC-5.39.006 v1.9 active. **BC-1.18.005 v1.15 active.** **BC-1.18.006 v1.12 active** (POL-14 promoted at D-1186, UNCHANGED this burst) + BC-1.18.007 v1.2/008 v1.1/009 v1.5/010 v1.2/011 v1.0/012 v1.1 (draft; SS-01) + BC-7.08.001 v1.1 (draft; SS-07) — 9 BCs anchored in S-25.02's frontmatter; cluster-1's BC-1.18.005 and cluster-2's BC-1.18.006 are the 2 ACTIVE ones of the 9 (7 remain draft, clusters 3-7 not yet shipped). BC-INDEX v5.74 (2,006 BCs, UNCHANGED this burst). VP-INDEX v3.09 (141 VPs, UNCHANGED this burst). STORY-INDEX v4.452 (176 stories; 25 epics; S-25.02 v3.3, UNCHANGED this burst, status ready, cluster-1 + cluster-2 DELIVERED/MERGED, cluster-3 not yet started; S-25.01 v1.22 merged; S-25.04 v2.0 merged; S-15.03 v1.8 merged; UNCHANGED otherwise). ARCH-INDEX v4.24 (48 ADRs, UNCHANGED this burst). error-taxonomy.md **v1.8** (UNCHANGED this burst).
+
+### §7. HEADs
+
+- `develop`: **`0959e34b29a41a1b064ff1c7ec62096e94a31c7e`** (PR #824 squash-merged, base `fff5e4cc`). merged_count **120**. UNCHANGED this burst.
+- `main`: **`51023185`** (origin/main; v1.0.0-rc.25 bundle+retag commit 2026-09-04; immediate parent `101ebb64`, the release PR #808 merge commit). Tag `v1.0.0-rc.25` → `101ebb64`. UNCHANGED this burst.
+- `factory-artifacts`: **this burst's commit** — per TD-VSDD-053 SHA-patch anti-pattern retirement, this burst does not self-cite its own resulting commit SHA — run `git -C .factory log -1` for the live HEAD.
+- `feature/S-25.02-roll`: **MERGED+DELETED** — PR #824, `0959e34b`. No longer exists (orphaned local worktree `.worktrees/S-25.02-roll` still present, cleanup OWED — see §4).
+- `feature/S-25.02-cap-trigger`: **MERGED+DELETED** — PR #818, `fff5e4cc`. No longer exists.
+- `fix/d999-sentinel-code-migration`: clean+inert @ `bf642fd9` (ADR-041 sentinel).
+- `feature/S-21.04-story-worktree-write-path-discipline`: clean+inert @ `323f440f` (pass-31 pending, no PR).
+
+### §8. BC-5.39.001 streak
+
+**Cycle-level streak: 3/3 — CONVERGED, UNCHANGED this burst** (no cycle-level adversary pass ran). Cluster-1's OWN LOCAL BC-5.39.001 cascade stays **3/3 CONVERGED — CLOSED** (D-1172/D-1173), fully retired. **Cluster-2's OWN LOCAL BC-5.39.001 cascade: CLOSED at 0/3** via human-authorized asymptotic acceptance (D-1184) — fully retired following PR #824's merge (D-1186), UNCHANGED this burst. NEXT = cluster-3's own fresh LOCAL BC-5.39.001 cascade starts at 0/3 once its F2/F3 spec-evolution finalizes and F4 TDD implementation begins.
