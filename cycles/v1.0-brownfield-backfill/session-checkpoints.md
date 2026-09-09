@@ -7707,3 +7707,58 @@ BC-4.17.001 v1.29 active. BC-6.28.001 v1.3 active. BC-5.45.001 v1.3 active. BC-1
 ### §8. BC-5.39.001 streak
 
 **Cycle-level streak: 3/3 — CONVERGED, UNCHANGED this burst** (no cycle-level adversary pass ran). Cluster-1's OWN LOCAL BC-5.39.001 cascade stays **3/3 CONVERGED — CLOSED** (D-1172/D-1173), fully retired. **Cluster-2's OWN LOCAL BC-5.39.001 cascade: CLOSED at 0/3** via human-authorized asymptotic acceptance (D-1184) — UNCHANGED this burst, a distinct convergence track from PR #824's own pr-reviewer review-convergence cycle (cycle-1 = REQUEST_CHANGES, 10 findings; cycle-2 pending fixes). NEXT = resume PR #824 review convergence against BC-1.18.006 v1.11/story v3.3/code `feature/S-25.02-roll` @ `8d17ffc4`.
+
+---
+
+## Archived checkpoint: S2502-CLUSTER2-DELIVERY-MERGE-BURST (D-1186) — superseded 2026-09-09 by SESSION-WRAP-PAUSE-2026-09-09 (D-1187)
+
+## Session Resume Checkpoint (2026-09-09 — S2502-CLUSTER2-DELIVERY-MERGE-BURST; develop 0959e34b (PR #824 merged); main 51023185; merged_count 120; v1.0.0-rc.25 SHIPPED; PIPELINE in_progress)
+
+> **SELF-SUFFICIENT RESUME CONTEXT.** S-25.02 cluster-2 (roll, BC-1.18.006) **DELIVERED** — PR #824 squash-merged into develop as `0959e34b29a41a1b064ff1c7ec62096e94a31c7e` (base `fff5e4cc`); feature branch `feature/S-25.02-roll` deleted. BC-1.18.006 `status`/`lifecycle_status` draft→active per POL-14. `merged_count` 119→120. VP-INDEX.md pre-existing PriorChainSplit drift (D-1170) RESOLVED. 3 new Drift Items recorded. `pipeline:` **in_progress**. NEXT = cluster-3 (mechanism-A backfill, BC-1.18.007+008) per D-1170's sequencing — F1 delta analysis first.
+> Prior checkpoint (SESSION-WRAP-PAUSE-2026-09-08, D-1185) archived verbatim to
+> `cycles/v1.0-brownfield-backfill/session-checkpoints.md`.
+
+### §1. Position (a)
+
+Brownfield cycle `v1.0-brownfield-backfill`. S-25.02 F4 cluster-2 (roll, BC-1.18.006) is now **DELIVERED/MERGED** (PR #824 @ `0959e34b`, D-1186) — the second of 7 BC-cluster sub-cycles (D-1170 sequencing). Cluster-1 (BC-1.18.005, PR #818 @ `fff5e4cc`, D-1173) and cluster-2 are both complete. **NEXT on resume = cluster-3 (mechanism-A backfill, BC-1.18.007+008): orchestrator dispatches F1 delta analysis, then F2 spec-evolution, F3 incremental stories, F4 TDD implementation, LOCAL adversary cascade, demo, PR, merge.** Remaining clusters after cluster-3: B1 rotation, B2 sharding, migrations, Cohort-B flip (CAPSTONE, gated on cluster-3 merged + calibration harness).
+
+### §2. Convergence (b)
+
+LOCAL cluster-2 BC-5.39.001 cascade: **CLOSED at 0/3** via human-authorized asymptotic acceptance (D-1184) — fully retired, no further LOCAL passes will run against cluster-2. PR #824's own pr-reviewer review-convergence: **CONVERGED TO MERGE** after 6 cycles — cycle-1 REQUEST_CHANGES (10 findings) → cycle-2 fixed 7 → cycle-3 fixed 3 MAJOR (incl. ADR-051 §Decision 17 gate-hoist) + 12 MINOR/NIT → cycle-4 APPROVE + 1 MINOR fixed → cycles 5/6/7 delta APPROVEs, no further findings. Cycle-level BC-5.39.001 streak stays 3/3 CONVERGED, UNCHANGED (separate track, no cycle-level adversary pass ran this burst).
+
+### §3. In-flight (c)
+
+None. PR #824 is merged and closed; `feature/S-25.02-roll` is deleted. Cluster-3 has not yet started — no sub-agents dispatched for it as of this checkpoint. The worktree `.worktrees/S-25.02-roll` (cluster-2's TDD worktree) should be cleaned up by devops-engineer/worktree-manage at the next opportunity if not already gone (state-manager does not manage worktree lifecycle).
+
+### §4. Pending human decisions / blockers — OWED (d)
+
+- Branch protection on `develop` BLOCKED on repo-admin (carried, longstanding — token lacks `drbothen/vsdd-factory` admin permissions).
+- F6-owed race items (P10-002 `O_EXCL` stat→unlink sub-window hardening, P10-003 EC-025 concurrent-race retry-collision fault-injection test) anchored to Phase F6 (targeted-hardening) — human-authorized deferral, carried.
+- 3 `[process-gap]` items anchored to the E-12 Engine Governance follow-up story with **no story ID allocated yet**: (1) weak-substring-error-assertion anti-pattern (D-1183); (2) `pr-manager-completion-guard` SubagentStop hook defect — infinite stop-loop on scoped NON-merge dispatch (D-1186, NEW this burst); (3) `precompact-routing.bats` exec_subprocess-under-CPU-contention exit-code defect (D-1186, NEW this burst, extends the D-1173 flake note with a root cause).
+- VP-count discrepancy (ARCH-INDEX stale `106 VPs`/`1,973 BCs` citing BC-INDEX v3.42) — tracked at `[D-1138]`, RE-CONFIRMED still OPEN this burst (D-1186); architect-owned ARCH-INDEX touch, not state-manager's routing scope.
+- Longstanding carried items unchanged: Dependabot vulnerability backlog (20 on default branch per D-1163), `decision-log.md`/`lessons.md` backfill owed for several ranges (see Decisions Log D-chain note and Drift Items), `.factory/policies.yaml` strict-YAML-parse failure (D-1175).
+- Commit-attribution: RESOLVED (CLAUDE.md governs, D-1181) — this burst's own commit carries NO `Claude-Session:` trailer, no `Co-Authored-By:`, no emoji, per that resolution.
+
+### §5. WIP branches (e)
+
+None active for S-25.02 — `feature/S-25.02-roll` is MERGED+DELETED; cluster-3's branch does not exist yet. Inert carried: `fix/d999-sentinel-code-migration` @ `bf642fd9`, `feature/S-21.04` @ `323f440f`.
+
+### §6. Resume command (f)
+
+`/vsdd-factory:rehydrate-wave` then `/vsdd-factory:next-step`.
+
+BC-4.17.001 v1.29 active. BC-6.28.001 v1.3 active. BC-5.45.001 v1.3 active. BC-10.13.001 v1.3 active. BC-4.18.001 v1.2 active. BC-1.18.001 v1.7 active. BC-1.18.002 v1.8 active. BC-1.18.003 v1.8 active. BC-1.18.004 v1.4 active. BC-3.08.001 v1.34 active. BC-4.16.002 v1.2 active. BC-5.39.006 v1.9 active. **BC-1.18.005 v1.15 active.** **BC-1.18.006 v1.12 active** (POL-14 promoted this burst, D-1186) + BC-1.18.007 v1.2/008 v1.1/009 v1.5/010 v1.2/011 v1.0/012 v1.1 (draft; SS-01) + BC-7.08.001 v1.1 (draft; SS-07) — 9 BCs anchored in S-25.02's frontmatter; cluster-1's BC-1.18.005 and cluster-2's BC-1.18.006 are now the 2 ACTIVE ones of the 9 (7 remain draft, clusters 3-7 not yet shipped). BC-INDEX v5.74 (2,006 BCs, UNCHANGED count this burst — status-cell flip only). VP-INDEX v3.09 (141 VPs; `last_amended`/`changelog` chain-shape SPLIT this burst, version/content UNCHANGED). STORY-INDEX v4.452 (176 stories; 25 epics; S-25.02 v3.3, UNCHANGED this burst, status ready, cluster-1 + cluster-2 DELIVERED/MERGED, cluster-3 not yet started; S-25.01 v1.22 merged; S-25.04 v2.0 merged; S-15.03 v1.8 merged; UNCHANGED otherwise). ARCH-INDEX v4.24 (48 ADRs, UNCHANGED this burst). error-taxonomy.md **v1.8** (UNCHANGED this burst).
+
+### §7. HEADs
+
+- `develop`: **`0959e34b29a41a1b064ff1c7ec62096e94a31c7e`** (PR #824 squash-merged, base `fff5e4cc`). merged_count **120**.
+- `main`: **`51023185`** (origin/main; v1.0.0-rc.25 bundle+retag commit 2026-09-04; immediate parent `101ebb64`, the release PR #808 merge commit). Tag `v1.0.0-rc.25` → `101ebb64`. UNCHANGED this burst.
+- `factory-artifacts`: **this burst's commit** — per TD-VSDD-053 SHA-patch anti-pattern retirement, this burst does not self-cite its own resulting commit SHA — run `git -C .factory log -1` for the live HEAD.
+- `feature/S-25.02-roll`: **MERGED+DELETED** — PR #824, `0959e34b`. No longer exists.
+- `feature/S-25.02-cap-trigger`: **MERGED+DELETED** — PR #818, `fff5e4cc`. No longer exists.
+- `fix/d999-sentinel-code-migration`: clean+inert @ `bf642fd9` (ADR-041 sentinel).
+- `feature/S-21.04-story-worktree-write-path-discipline`: clean+inert @ `323f440f` (pass-31 pending, no PR).
+
+### §8. BC-5.39.001 streak
+
+**Cycle-level streak: 3/3 — CONVERGED, UNCHANGED this burst** (no cycle-level adversary pass ran). Cluster-1's OWN LOCAL BC-5.39.001 cascade stays **3/3 CONVERGED — CLOSED** (D-1172/D-1173), fully retired. **Cluster-2's OWN LOCAL BC-5.39.001 cascade: CLOSED at 0/3** via human-authorized asymptotic acceptance (D-1184) — now fully retired following PR #824's merge (D-1186); no further LOCAL passes will run against cluster-2. NEXT = cluster-3's own fresh LOCAL BC-5.39.001 cascade starts at 0/3 once its F2/F3 spec-evolution finalizes and F4 TDD implementation begins.
