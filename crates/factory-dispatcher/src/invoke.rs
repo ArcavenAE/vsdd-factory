@@ -1607,6 +1607,170 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
+    // MINOR-5 (S-25.02 cluster-2 PR #824 pr-review cycle 3): concrete
+    // demonstration of the ordering side effect `main.rs`'s catch-point-(i)
+    // placement rationale did not previously mention. Because
+    // `reconcile_replace_all_overcap_if_qualifying` runs BEFORE the
+    // registry-driven PostToolUse tier loop in `main::run`, a PostToolUse
+    // WASM plugin matched for the SAME `Edit`/`MultiEdit` dispatch that
+    // fires the roll observes the canonical artifact ALREADY truncated to 0
+    // bytes — not the content the tool call just wrote.
+    //
+    // This reproduces that exact sequence: the REAL production
+    // reconciliation function runs first (identical to `main::run`'s own
+    // call order), then a REAL `read_prefix` host-function round-trip (the
+    // SAME production `setup_host_on_store_data` linker path T-002 above
+    // proves correct) reads the SAME canonical path a PostToolUse validator
+    // would read. If catch point (i) were ever reordered to run AFTER the
+    // tier loop, this fixture's `out_len` would equal the over-cap content
+    // length instead of 0 and this assertion would fail — a regression
+    // detector for the documented ordering trade-off, not merely a
+    // characterization.
+    // -----------------------------------------------------------------------
+    #[test]
+    fn test_MINOR5_post_tool_use_validator_observes_truncated_canonical_after_catch_point_i() {
+        use crate::registry::{Capabilities, ReadPrefixCaps};
+
+        let dir = tempfile::tempdir().expect("tempdir for MINOR-5 fixture");
+        let target = dir.path().join("decision-log.md");
+        let over_cap_content = "z".repeat(49_500);
+        std::fs::write(&target, &over_cap_content).expect("write over-cap fixture content");
+
+        let factory_dir = dir.path().join(".factory");
+        std::fs::create_dir_all(&factory_dir).expect("create .factory dir");
+        std::fs::write(
+            factory_dir.join("shard-config.toml"),
+            "[[shard]]\n\
+             artifact_stem = \"decision-log\"\n\
+             artifact_path = \"decision-log.md\"\n\
+             practical_fuel_ceiling = 8000000\n\
+             worst_case_fuel_per_byte = 106.36\n\
+             max_single_record_bytes = 16384\n\
+             safety_margin = 8192\n\
+             shard_cap_bytes = 49152\n\
+             shape = \"flat\"\n",
+        )
+        .expect("write shard-config.toml fixture");
+
+        let payload_value = serde_json::json!({
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Edit",
+            "session_id": "sess-minor5",
+            "tool_input": {
+                "file_path": target.to_string_lossy(),
+                "old_string": "some old text",
+                "new_string": "some new text",
+                "replace_all": true,
+            },
+            "tool_response": {"success": true},
+        });
+        let payload: crate::payload::HookPayload = serde_json::from_value(payload_value)
+            .expect("HookPayload must deserialize from a well-formed PostToolUse envelope");
+
+        // Step 1 (real production call, the SAME function `main::run` invokes
+        // BEFORE the tier loop): reconciles the over-cap write, truncating
+        // the canonical to 0 bytes.
+        reconcile_replace_all_overcap_if_qualifying(&payload, dir.path());
+        assert_eq!(
+            std::fs::metadata(&target).unwrap().len(),
+            0,
+            "precondition: catch point (i) must have truncated the canonical to 0 bytes before \
+             the PostToolUse validator step below runs"
+        );
+
+        // Step 2: a PostToolUse WASM validator, matched for the SAME
+        // Edit/MultiEdit dispatch, re-reads the canonical via the REAL
+        // production `read_prefix` host binding (the identical linker path
+        // T-002 proves correct above) — exactly what a content-inspecting
+        // validator would do.
+        let path_str = target.to_str().expect("path to str").to_string();
+        let mut ctx = bare_ctx();
+        ctx.capabilities = Capabilities {
+            read_prefix: Some(ReadPrefixCaps {
+                path_allow: vec![path_str.clone()],
+            }),
+            ..Capabilities::default()
+        };
+
+        let engine = build_engine().unwrap();
+        let mut linker: wasmtime::Linker<StoreData> = wasmtime::Linker::new(&engine);
+        setup_host_on_store_data(&mut linker).expect("setup_host_on_store_data must not error");
+
+        let module = compile(
+            &engine,
+            r#"(module
+              (import "vsdd" "read_prefix" (func $rp (param i32 i32 i32 i32 i32 i32) (result i32)))
+              (memory (export "memory") 2)
+              (func (export "call_rp") (param $path_ptr i32) (param $path_len i32) (result i32)
+                (call $rp
+                  (local.get $path_ptr)
+                  (local.get $path_len)
+                  (i32.const 65536)
+                  (i32.const 0)
+                  (i32.const 0)
+                  (i32.const 4)
+                )
+              )
+            )"#,
+        );
+
+        let wasi_ctx = WasiCtxBuilder::new().build_p1();
+        let store_data = StoreData {
+            host: ctx,
+            wasi: wasi_ctx,
+            host_output_too_large_seen: false,
+        };
+        let mut store = Store::new(&engine, store_data);
+        store
+            .set_fuel(1_000_000)
+            .expect("engine has fuel metering enabled");
+        store.set_epoch_deadline(u64::MAX);
+
+        let instance = linker
+            .instantiate(&mut store, &module)
+            .expect("MINOR-5: instantiation must succeed");
+
+        let memory = instance
+            .get_memory(&mut store, "memory")
+            .expect("module exports memory");
+        let path_bytes = path_str.as_bytes();
+        memory
+            .write(&mut store, 128, path_bytes)
+            .expect("write path bytes to WASM memory");
+
+        let call_rp = instance
+            .get_typed_func::<(i32, i32), i32>(&mut store, "call_rp")
+            .expect("module exports call_rp");
+        let ret = call_rp
+            .call(&mut store, (128, path_bytes.len() as i32))
+            .expect("call_rp must not trap");
+        assert_eq!(
+            ret, 0,
+            "MINOR-5: read_prefix must return codes::OK (0) for the allowed canonical path; got {}",
+            ret
+        );
+
+        let mem_data: Vec<u8> = memory.data(&store).to_vec();
+        let out_len = u32::from_le_bytes(
+            mem_data[4..8]
+                .try_into()
+                .expect("memory[4:8] must be 4 bytes"),
+        );
+        assert_eq!(
+            out_len,
+            0,
+            "MINOR-5: a PostToolUse validator reading the canonical AFTER catch point (i) ran \
+             (the real main::run ordering — this call precedes the tier loop) must observe 0 \
+             bytes, not the {}-byte over-cap content just written — if this is nonzero, either \
+             catch point (i) no longer runs before PostToolUse plugin execution (a correctness \
+             regression of the current documented ordering) or this fixture no longer reproduces \
+             the qualifying condition",
+            over_cap_content.len()
+        );
+        // dir goes out of scope here; tempfile::TempDir::drop auto-cleans the directory.
+    }
+
+    // -----------------------------------------------------------------------
     // S-19.09 T-002b — AC-002 head-c bound (D19 GREEN gate)
     //
     // read_prefix with a file LARGER than max_bytes must:
@@ -2315,6 +2479,331 @@ pub fn inject_git_context_if_qualifying(
     // (deserialized into HookPayload.extra via #[serde(flatten)]). AC-005.
     if let Some(map) = payload_value.as_object_mut() {
         map.insert("git_context".to_string(), git_ctx.to_json());
+    }
+}
+
+// ---------------------------------------------------------------------------
+// S-25.02 BC-1.18.006 Postcondition 7 catch point (i) qualifying wrapper
+// (story AC-024; ADR-051 §Decision 15)
+// ---------------------------------------------------------------------------
+//
+// `true` iff `tool_input` is an `Edit` call with `replace_all: true`, or a
+// `MultiEdit` call whose `edits` array contains at least one block with
+// `replace_all: true` (BC-1.18.006 Postcondition 7's scope predicate,
+// mirrored from Precondition 4). Real, cheap, structural — see
+// `detect_replace_all_overcap_candidate`'s own doc comment for why this was
+// always real, non-`todo!()` code, even while `shard_manager`'s roll bodies
+// were still stubbed.
+fn tool_input_has_replace_all_true(tool_input: &serde_json::Value) -> bool {
+    if tool_input.get("replace_all").and_then(|v| v.as_bool()) == Some(true) {
+        return true;
+    }
+    tool_input
+        .get("edits")
+        .and_then(|v| v.as_array())
+        .is_some_and(|edits| {
+            edits
+                .iter()
+                .any(|e| e.get("replace_all").and_then(|v| v.as_bool()) == Some(true))
+        })
+}
+
+/// Structural (real, non-`todo!()`) pre-filter for BC-1.18.006 Postcondition
+/// 7 catch point (i). Mirrors [`detect_git_commit_event`]'s own cheap-
+/// detect-then-act shape (used by [`inject_git_context_if_qualifying`]
+/// above) and `executor.rs::shard_cap_precheck`'s zero-cost-bypass
+/// precedent — both already-shipped, non-stub native checks reached
+/// unconditionally from `main::run`.
+///
+/// **Corrected cost framing (NIT-4, S-25.02 cluster-2 PR #824 pr-review
+/// cycle 3; supersedes an earlier revision's "every check here is cheap and
+/// structural" claim, retracted for the identical PreToolUse-leg claim by
+/// [`find_matching_entry`]'s own doc comment, PR #818 fix-burst finding
+/// B4):** the `event_name`/`tool_name`/`replace_all` checks ARE cheap and
+/// structural — pure `serde_json::Value` field lookups, no I/O. `[[shard]]`
+/// config-match is NOT: `ShardRegistry::load` performs a real (bounded, but
+/// non-zero) TOML parse of the whole config file whenever one exists on
+/// disk, exactly as `executor.rs::shard_cap_precheck`'s sibling PreToolUse
+/// gate does. This is still BC-1.18.006 Postcondition 7's OWN "zero added
+/// cost outside the narrow case" requirement — the ~99% of dispatches that
+/// are not a qualifying `PostToolUse` `Edit`/`MultiEdit` `replace_all` call
+/// never reach the config-match step at all (the cheap checks above return
+/// `None` first) — not a claim that the config-match step itself is free.
+/// It was DELIBERATELY kept real (never `todo!()`), even while
+/// `shard_manager`'s roll bodies were still stubbed during the original
+/// stub-architect burst: had this filter itself been `todo!()`, EVERY
+/// PostToolUse dispatch of ANY kind would have panicked against ADR-051
+/// §Decision 15 point 4's mandatory unconditional call site in `main::run`
+/// (see that call site's own doc comment) — a catastrophic regression of the
+/// ENTIRE cluster-1 BC-1.18.005 suite plus every other integration/bats test
+/// that drives the dispatcher at all. The BC's own tested
+/// `stat()`-and-retroactive-roll behavior lives entirely inside
+/// `shard_manager::reconcile_post_write_replace_all_overcap` (now fully
+/// implemented) — this function never touches that behavior, only decides
+/// whether to call into it.
+fn detect_replace_all_overcap_candidate(
+    original_payload: &crate::payload::HookPayload,
+    cwd: &std::path::Path,
+) -> Option<(crate::shard_manager::ShardEntry, std::path::PathBuf)> {
+    if original_payload.event_name != "PostToolUse" {
+        return None;
+    }
+    if !matches!(original_payload.tool_name.as_str(), "Edit" | "MultiEdit") {
+        return None;
+    }
+    if !tool_input_has_replace_all_true(&original_payload.tool_input) {
+        return None;
+    }
+    // NIT-4 (S-25.02 cluster-2 PR #824 pr-review cycle 3): `file_path`
+    // extraction is free (a `serde_json::Value` field lookup) and must run
+    // BEFORE the `shard_config_path.exists()` probe / `ShardRegistry::load`
+    // parse below — ordering the free check first skips the parse entirely
+    // on a malformed payload, rather than paying for a parse whose result
+    // would be discarded once `file_path` turns out to be missing/non-string.
+    let Some(target_path) = original_payload
+        .tool_input
+        .get("file_path")
+        .and_then(|v| v.as_str())
+        .map(std::path::PathBuf::from)
+    else {
+        // MINOR-2 (S-25.02 cluster-2 PR #824 pr-review cycle 3): the sibling
+        // PreToolUse path (`executor.rs::shard_cap_precheck`) treats a
+        // missing or non-string `tool_input.file_path` as fail-loud ("MUST
+        // fail loud, never silently resolve to an empty PathBuf"). This leg
+        // has no `HookResult` to return (Decision 15 point 2 — a janitor,
+        // not a gate), but the same "never silent" argument applies here:
+        // warn rather than silently returning `None` with zero telemetry.
+        tracing::warn!(
+            tool_name = %original_payload.tool_name,
+            "BC-1.18.006 Postcondition 7 catch point (i): tool_input is missing a valid string \
+             \"file_path\" while checking for a qualifying replace_all overcap candidate; \
+             skipping reconciliation for this dispatch"
+        );
+        return None;
+    };
+    let shard_config_path = cwd.join(crate::executor::SHARD_CONFIG_RELATIVE_PATH);
+    if !shard_config_path.exists() {
+        return None;
+    }
+    let registry = match crate::shard_manager::ShardRegistry::load(&shard_config_path) {
+        Ok(registry) => registry,
+        Err(e) => {
+            // F-C2-P1-005 (MINOR, S-25.02 cluster-2 LOCAL adversary pass-1):
+            // a malformed `[[shard]]` config is a genuine, actionable
+            // condition (config authors would want to know) — silently
+            // discarding it here (falling through to `None`, this leg's own
+            // "no candidate" outcome) would leave no telemetry at all,
+            // asymmetric with `build_git_context`'s own fail-open-but-logged
+            // sibling paths above. This leg's own "no HookResult signaling"
+            // contract (Decision 15 point 2) is preserved — fail-open, never
+            // propagated as an error to the caller — but never silent.
+            tracing::warn!(
+                shard_config_path = %shard_config_path.display(),
+                error = %e,
+                "BC-1.18.006 Postcondition 7 catch point (i): failed to load [[shard]] config \
+                 while checking for a qualifying replace_all overcap candidate; skipping \
+                 reconciliation for this dispatch"
+            );
+            return None;
+        }
+    };
+    let entry = match crate::shard_manager::find_matching_entry(&registry, &target_path) {
+        Ok(Some(entry)) => entry.clone(),
+        Ok(None) => return None,
+        Err(e) => {
+            // MINOR-1 (S-25.02 cluster-2 PR #824 pr-review cycle 3):
+            // `find_matching_entry`'s `Err(ShardConfigError::DuplicateArtifactStem)`
+            // is documented as a normal, fail-loud condition callers MUST
+            // handle — the PreToolUse leg (`shard_cap_gate_check`) converts it
+            // to `HookResult::Error`. This leg has no `HookResult` to return
+            // (Decision 15 point 2 — a janitor, not a gate), but silently
+            // discarding it via `.ok()` (this leg's PRIOR behavior) left zero
+            // telemetry for a genuinely ambiguous `[[shard]]` config —
+            // asymmetric with the F-C2-P1-005 registry-load-failure arm
+            // immediately above, whose own rationale ("fail-open, never
+            // propagated as an error to the caller — but never silent")
+            // applies identically here.
+            tracing::warn!(
+                target_path = %target_path.display(),
+                error = %e,
+                "BC-1.18.006 Postcondition 7 catch point (i): ambiguous [[shard]] config \
+                 (duplicate artifact_stem match) while checking for a qualifying replace_all \
+                 overcap candidate; skipping reconciliation for this dispatch"
+            );
+            return None;
+        }
+    };
+    // MAJOR-2 (S-25.02 cluster-2 PR #824 pr-review cycle 3): `find_matching_entry`
+    // only compares `artifact_stem` against `file_stem()` and calls
+    // `path_falls_under_or_equals` — it validates nothing about the entry
+    // itself. `execute_roll` (reached via `reconcile_post_write_replace_all_overcap`
+    // below) is DESTRUCTIVE: it seals and then truncates the canonical to 0
+    // bytes. `shard_cap_gate_check` (the PreToolUse leg) never reaches
+    // `execute_roll` without first calling `validate_entry` — an entry that
+    // fails EC-022 (e.g. `artifact_path = "."` or `"./"`, which normalizes to
+    // an empty registered-component vector whose suffix test then matches ANY
+    // path sharing `artifact_stem`) is refused loud there. Without this same
+    // gate on THIS leg, a config entry the PreToolUse gate would reject could
+    // silently seal-and-empty a file the config never legitimately governed —
+    // the exact raw behavior EC-022's `validate_entry` check exists to make
+    // unreachable via config (the same bypass also covers the EC-010/011/
+    // 013/015/017 cap-sanity checks `reconcile_post_write_replace_all_overcap`
+    // relies on downstream). Fail-open-but-never-silent, matching this leg's
+    // documented contract (Decision 15 point 2) and the F-C2-P1-005 registry-
+    // load-failure arm immediately above: on `Err`, warn and return `None`
+    // rather than propagating an error to the caller or silently proceeding.
+    if let Err(e) = crate::shard_manager::validate_entry(&entry) {
+        tracing::warn!(
+            artifact_stem = %entry.artifact_stem,
+            error = %e,
+            "BC-1.18.006 Postcondition 7 catch point (i): matched [[shard]] config entry failed \
+             validate_entry; skipping reconciliation for this dispatch rather than reaching the \
+             destructive execute_roll path with an entry the PreToolUse gate would have refused"
+        );
+        return None;
+    }
+    // F-C2-P2-002 (MAJOR, S-25.02 cluster-2 LOCAL adversary pass-2):
+    // Postcondition 7 catch point (i) is scoped to the `"flat"` byte-size
+    // roll mechanism ONLY — the `replace_all` occurrence-multiplicity
+    // under-projection gap it exists to catch is a defect of
+    // BC-1.18.005's byte-size formula alone, never the
+    // `"frontmatter-changelog-array"` item-count mechanism (a wholly
+    // different trigger/rotation scheme owned by BC-1.18.009). Without this
+    // shape check, a byte-over-cap `replace_all` call against a matched
+    // `"frontmatter-changelog-array"`-shaped entry (e.g. a real index-style
+    // artifact like `BC-INDEX.md`, whose rotation is item-count-driven and
+    // has nothing to do with byte size) would incorrectly byte-roll and
+    // empty it — cross-mechanism data corruption.
+    if entry.shape != Some(crate::shard_manager::ShardShape::Flat) {
+        return None;
+    }
+    Some((entry, target_path))
+}
+
+/// BC-1.18.006 Postcondition 7 catch point (i) qualifying wrapper (story
+/// AC-024; ADR-051 §Decision 15). Called unconditionally from `main::run`
+/// BEFORE its `sync_tiers.is_empty() && partition.async_group.is_empty()`
+/// early-return guard (Decision 15 point 4's load-bearing placement
+/// caveat) — mirrors [`inject_git_context_if_qualifying`]'s own
+/// detect-then-act call shape. Silent filesystem side effect: emits NO
+/// `HookResult` of its own (Decision 15 point 2 — this leg is a janitor,
+/// not a gate) and never influences the caller's own dispatch outcome.
+///
+/// MAJOR-3 (S-25.02 cluster-2 PR #824 pr-review cycle 3; ADR-051 §Decision
+/// 17): a prior revision of this doc comment claimed this placement already
+/// prevented "the exact 'silently stop firing if the plugin set changes'
+/// failure mode" **for the PreToolUse leg** — false at the time: the
+/// PreToolUse-scoped native shard-cap gate (`executor::shard_cap_precheck`,
+/// BC-1.18.005) ran only INSIDE `execute_tiers`, called from `main::run`
+/// AFTER the very early-return guard this leg's placement precedes, so an
+/// empty matched-plugin set silently defeated it — the asymmetric twin of
+/// the failure mode this leg's OWN placement (correctly) prevents. MAJOR-3
+/// hoists `shard_cap_precheck` to the SAME call site as this leg (computed
+/// once, threaded into `execute_tiers` as a parameter, never recomputed —
+/// see `executor::shard_cap_precheck` and `executor::execute_tiers`'s own
+/// doc comments) so the guarantee now genuinely holds for BOTH legs.
+///
+/// The qualification filter ([`detect_replace_all_overcap_candidate`]) and
+/// the reconciliation behavior it delegates into
+/// ([`crate::shard_manager::reconcile_post_write_replace_all_overcap`]) are
+/// both fully implemented. A failure there is logged (fail-open, matching
+/// this leg's own "no `HookResult` signaling" contract — this leg never
+/// blocks or errors the calling dispatch), not propagated.
+pub fn reconcile_replace_all_overcap_if_qualifying(
+    original_payload: &crate::payload::HookPayload,
+    cwd: &std::path::Path,
+) {
+    let Some((entry, target_path)) = detect_replace_all_overcap_candidate(original_payload, cwd)
+    else {
+        return;
+    };
+    if let Err(e) =
+        crate::shard_manager::reconcile_post_write_replace_all_overcap(&entry, &target_path)
+    {
+        tracing::warn!(
+            artifact_stem = %entry.artifact_stem,
+            error = %e,
+            "BC-1.18.006 Postcondition 7 catch point (i): retroactive reconciliation failed"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// S-25.02 cluster-2 LOCAL adversary pass-1 finding F-C2-P1-006 — coverage
+// unit tests for `tool_input_has_replace_all_true`'s `MultiEdit` `edits[]`-
+// array branch (BC-1.18.006 Precondition 4 / Postcondition 7 scope
+// predicate: "a `MultiEdit` call containing at least one edit block whose
+// `replace_all` field is `true`"). `tool_input_has_replace_all_true` is a
+// real (non-`todo!()`), already-shipped structural pre-filter — this is a
+// COVERAGE test asserting the branch behaves correctly, not a Red Gate test
+// for unimplemented behavior. If either assertion below fails, that is a
+// latent bug in the already-shipped `MultiEdit` `edits[]` branch, not an
+// expected-red TDD state.
+// ---------------------------------------------------------------------------
+#[cfg(test)]
+mod f_c2_p1_006_replace_all_multi_edit_tests {
+    use super::*;
+
+    /// A `MultiEdit` call whose `edits[]` array contains a per-block
+    /// `replace_all: true` in one of its entries (here, the SECOND block,
+    /// so the branch's `.any(...)` scan must not stop at the first,
+    /// non-qualifying block) qualifies — `tool_input_has_replace_all_true`
+    /// must return `true`.
+    #[test]
+    fn test_F_C2_P1_006_multi_edit_edits_array_per_block_replace_all_true_qualifies() {
+        let tool_input = serde_json::json!({
+            "file_path": "decision-log.md",
+            "edits": [
+                {
+                    "old_string": "first old",
+                    "new_string": "first new",
+                    "replace_all": false
+                },
+                {
+                    "old_string": "second old",
+                    "new_string": "second new",
+                    "replace_all": true
+                }
+            ]
+        });
+
+        assert!(
+            tool_input_has_replace_all_true(&tool_input),
+            "F-C2-P1-006: a MultiEdit whose edits[] array contains a per-block \
+             `replace_all: true` in ANY block must qualify (BC-1.18.006 Precondition 4's \
+             MultiEdit scope: \"a MultiEdit call containing at least one edit block whose \
+             replace_all field is true\")"
+        );
+    }
+
+    /// A negative case: a `MultiEdit` whose `edits[]` array has NO block with
+    /// `replace_all: true` (either omitted entirely, or explicitly `false`)
+    /// must NOT qualify — `tool_input_has_replace_all_true` must return
+    /// `false`.
+    #[test]
+    fn test_F_C2_P1_006_multi_edit_edits_array_without_replace_all_does_not_qualify() {
+        let tool_input = serde_json::json!({
+            "file_path": "decision-log.md",
+            "edits": [
+                {
+                    "old_string": "first old",
+                    "new_string": "first new"
+                },
+                {
+                    "old_string": "second old",
+                    "new_string": "second new",
+                    "replace_all": false
+                }
+            ]
+        });
+
+        assert!(
+            !tool_input_has_replace_all_true(&tool_input),
+            "F-C2-P1-006: a MultiEdit whose edits[] array contains NO block with \
+             `replace_all: true` must NOT qualify — a plain MultiEdit without replace_all is \
+             unaffected by BC-1.18.006 Precondition 4/Postcondition 7 (per Precondition 4's own \
+             closure-scope statement)"
+        );
     }
 }
 

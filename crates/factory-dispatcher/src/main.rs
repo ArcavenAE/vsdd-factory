@@ -34,9 +34,11 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+#[cfg(any(debug_assertions, feature = "test-support"))]
+use factory_dispatcher::engine::EngineError;
 use factory_dispatcher::engine::{EpochTicker, build_engine};
 use factory_dispatcher::executor::{
-    ExecutorInputs, PluginOutcome, execute_tiers, spawn_async_plugin,
+    ExecutorInputs, PluginOutcome, execute_tiers, shard_cap_precheck, spawn_async_plugin,
 };
 use factory_dispatcher::host::HostContext;
 use factory_dispatcher::host::emit_event::{
@@ -77,6 +79,19 @@ const ENV_SINK_FILE: &str = "VSDD_SINK_FILE";
 // name does not appear in production binaries.
 #[cfg(any(debug_assertions, feature = "test-support"))]
 const ENV_ASYNC_DRAIN_WINDOW_MS: &str = "VSDD_ASYNC_DRAIN_WINDOW_MS";
+
+// VSDD_FORCE_ENGINE_BUILD_FAILURE: test-only fault-injection seam for
+// MINOR-N1 (S-25.02 cluster-2 PR #824 pr-review cycle 4). `build_engine()`
+// (wasmtime `Engine::new` over a static `Config`) has no other reachable
+// failure mode in this environment — the MINOR-N1 finding itself notes it
+// "effectively never fails outside OOM" — so there is no way to drive a
+// genuine `build_engine()` failure from a test without this seam. Gated
+// identically to `VSDD_ASYNC_DRAIN_WINDOW_MS` above: active in debug builds
+// AND release builds compiled with feature=test-support (CI integration
+// tests only), compiled out of shipped release artifacts (release.yml: no
+// features) so the env var name never appears in a production binary.
+#[cfg(any(debug_assertions, feature = "test-support"))]
+const ENV_FORCE_ENGINE_BUILD_FAILURE: &str = "VSDD_FORCE_ENGINE_BUILD_FAILURE";
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
@@ -283,8 +298,193 @@ async fn run(internal_log: Arc<InternalLog>) -> anyhow::Result<i32> {
         partition.async_group.len(),
     );
 
+    // Resolved ONCE, here — see `resolve_project_cwd`'s own doc comment for
+    // why this must happen before the early-return guard immediately below,
+    // rather than at `base_host_ctx.cwd`'s own (later) assignment site.
+    let project_cwd = resolve_project_cwd();
+
+    // BC-1.18.006 Postcondition 7 catch point (i) / story AC-024 (ADR-051
+    // §Decision 15 point 4 — LOAD-BEARING placement caveat; §Decision 17
+    // MAJOR-3, S-25.02 cluster-2 PR #824 pr-review cycle 3): an
+    // UNCONDITIONAL native call, independent of the registry's
+    // matched-plugin count, placed BEFORE the (now widened, see below)
+    // `sync_tiers.is_empty() && partition.async_group.is_empty()`
+    // early-return guard — mirroring Decision 1's own "before the
+    // registry-driven plugin loop" placement rule. If this call were placed
+    // AFTER that guard (e.g. as "one more thing the registry-driven loop
+    // does"), it would silently stop firing altogether on any configuration
+    // where the registered PostToolUse `Edit`/`Write`/`MultiEdit` plugin set
+    // becomes empty — the exact "silently stop firing if the plugin set
+    // changes" failure mode Decision 1's placement rule already exists to
+    // prevent for the PreToolUse leg. Precedent for a native call sitting
+    // unconditionally in this exact slot: `write_indeterminate_marker`'s
+    // `executor.rs` call sites and `inject_git_context_if_qualifying`
+    // (further below, ADR-029 §Decision 1-3) — both native, non-WASM,
+    // non-registry-gated dispatcher-internal calls reached from this same
+    // `run` function.
+    //
+    // **Corrected scope (MINOR-3, S-25.02 cluster-2 PR #824 pr-review cycle
+    // 3):** "independent of the registry's matched-plugin count" means
+    // exactly that — independent of WHICH/HOW MANY `[[hooks]]` entries
+    // matched — never "independent of the registry entirely". Two registry
+    // paths still return BEFORE this call ever runs: `resolve_registry_path()?`
+    // (Tier 2 path resolution failure) and the fail-open `return Ok(exit_code)`
+    // arm on `Registry::load` failure, both above. A broken or unparseable
+    // `hooks-registry.toml` therefore disables catch point (i) for that
+    // dispatch too — an over-cap canonical left unreconciled — same as it
+    // disables every other registry-driven check in this function; this is
+    // an accepted consequence of the SAME fail-open registry-load contract
+    // (BC-1.08.001) every other native/WASM check in `run` already lives
+    // under, not a gap specific to this call site, and the registry-load
+    // failure itself is already surfaced via `emit_dispatcher_error`/the
+    // internal log above — never silently swallowed.
+    //
+    // Silent filesystem side effect, no `HookResult` signaling (Decision 15
+    // point 2 — a janitor, not a gate): this call never influences
+    // `sync_tiers`/`partition.async_group` or this function's own return
+    // value. Real, cheap, structural qualification filtering happens inside
+    // `reconcile_replace_all_overcap_if_qualifying` itself (event/tool/
+    // `replace_all` — BC-1.18.006 Postcondition 7's own "zero added cost
+    // outside the narrow case" requirement); the `[[shard]]` config-match
+    // step itself is a real (bounded) TOML parse, not free — see that
+    // function's own corrected doc comment (NIT-4). The actual
+    // `stat()`-and-retroactive-roll behavior it delegates into
+    // (`shard_manager::reconcile_post_write_replace_all_overcap`) is fully
+    // implemented and unit-tested. **Corrected coverage claim (MINOR-4,
+    // cycle 3):** this call site's WIRING through `main::run` itself —
+    // placement before the tier loop, and `project_cwd` (canonicalized, not
+    // raw `$CLAUDE_PROJECT_DIR`) as the `cwd` argument — is NOT exercised by
+    // `bc_1_18_006_roll_test.rs`'s AC-024 test, which calls
+    // `reconcile_replace_all_overcap_if_qualifying` directly and never goes
+    // through `main::run`; that test covers ONLY the delegated
+    // stat()-and-retroactive-roll behavior. The real end-to-end wiring is
+    // covered by `bc_1_18_006_roll_test.rs`'s
+    // `test_MINOR4_catch_point_i_fires_via_real_binary_before_post_tool_use_tier_loop`,
+    // which spawns the compiled binary (mirroring MAJOR-3's own real-binary
+    // falsifier for the PreToolUse leg) and asserts the sealed shard and
+    // truncated canonical on disk after a real dispatch.
+    //
+    // **Ordering trade-off (MINOR-5, cycle 3):** because this call precedes
+    // the tier loop, a PostToolUse WASM plugin ALSO matched for this same
+    // `Edit`/`MultiEdit` dispatch runs AFTER the canonical has already been
+    // truncated to 0 bytes when this leg's reconciliation fires — such a
+    // plugin, if it re-reads the artifact it was invoked for (e.g. via
+    // `read_prefix`), observes the post-roll empty file, not the content the
+    // tool call just wrote. This is a plausible false-positive
+    // advisory/block source on precisely the dispatch where the roll fires.
+    // Risk assessed as ACCEPTED: no PostToolUse WASM plugin registered in
+    // this repository's own `hooks-registry.toml` reads the artifact its
+    // OWN dispatch just wrote (the class of plugin this would affect), and
+    // the alternative — running this leg AFTER the tier loop — reintroduces
+    // the strictly worse "silently stop firing if the plugin set changes"
+    // failure mode this placement exists to prevent (see above). Concretely
+    // demonstrated by `invoke.rs`'s
+    // `test_MINOR5_post_tool_use_validator_observes_truncated_canonical_after_catch_point_i`.
+    factory_dispatcher::invoke::reconcile_replace_all_overcap_if_qualifying(&payload, &project_cwd);
+
+    // BC-1.18.005 T-2 / MAJOR-3 (S-25.02 cluster-2 PR #824 pr-review cycle
+    // 3; ADR-051 §Decision 17): the PreToolUse shard-cap gate, computed ONCE
+    // here — at the same call site as the catch-point-(i) leg immediately
+    // above, and for the SAME reason (ADR-051 §Decision 1's placement rule:
+    // a native, non-registry-gated check must run BEFORE the
+    // `sync_tiers.is_empty() && partition.async_group.is_empty()` guard, not
+    // as something the registry-driven `execute_tiers` loop does on the
+    // side). Before MAJOR-3, `shard_cap_precheck` ran only INSIDE
+    // `execute_tiers`, which this function skips entirely whenever no
+    // plugin matched — silently defeating the PreToolUse gate for exactly
+    // that configuration (an empty matched-plugin set), the asymmetric twin
+    // of the failure mode this same Decision 1 placement rule already
+    // prevents on the PostToolUse leg above. The gate's own guards
+    // (event/tool/config-presence — see `shard_cap_precheck`'s doc comment)
+    // make this a zero-cost no-op (`None`) for every dispatch that isn't a
+    // genuine PreToolUse Edit/Write/MultiEdit candidate with a `[[shard]]`
+    // config present.
+    //
+    // Computed EXACTLY ONCE: consumed either by `execute_tiers` below (via
+    // `shard_gate_verdict_outcomes`, when at least one tier group is
+    // non-empty) OR, since MINOR-N1 (S-25.02 cluster-2 PR #824 pr-review
+    // cycle 4), by this function's own empty-tier-groups short-circuit
+    // calling that SAME `shard_gate_verdict_outcomes` helper directly —
+    // never both, and never recomputed. The gate's fired branch reaches
+    // `shard_manager::execute_roll` — a destructive seal-and-truncate-to-0
+    // operation — so evaluating this twice would corrupt on-disk state (the
+    // second evaluation would see the already-rolled canonical), not merely
+    // waste cycles. **On the empty-tier-groups path (MINOR-N1), a fired
+    // verdict short-circuits DIRECTLY to its exit code — it is NO LONGER
+    // gated behind `build_engine()`, which that path never reaches at all**;
+    // see the empty-tier-groups guard immediately below for the full
+    // rationale.
+    let shard_gate_precheck_result = shard_cap_precheck(&payload, &project_cwd);
+
+    // Widened (MAJOR-3) from `sync_tiers.is_empty() && partition.async_group.is_empty()`:
+    // a fired shard-cap-gate verdict (`Some(_)`) must still reach
+    // `execute_tiers`'s verdict->`all_outcomes`/`block_intent` translation
+    // and this function's own `final_exit_code` aggregation even when BOTH
+    // the sync and async matched-plugin groups are empty — the exact
+    // configuration that previously made this gate unreachable. An empty
+    // `tiers` vec with a fired precheck verdict is already handled
+    // correctly by `execute_tiers` (empty `tiers` loop body, precheck
+    // consumed unconditionally before it).
+    //
+    // MINOR-N1 fix (S-25.02 cluster-2 PR #824 pr-review cycle 4): on this
+    // empty-tier-groups path, a FIRED verdict (`Some(_)`) short-circuits
+    // DIRECTLY to its exit code here — via [`factory_dispatcher::executor::
+    // shard_gate_verdict_outcomes`], the SAME verdict-translation
+    // `execute_tiers` runs on its own shard-gate arm, followed by this
+    // function's own `extract_block_info` — and returns BEFORE
+    // `build_engine()` is ever reached. `build_engine()` exists only to run
+    // the registry-driven tier loop below; that loop is EMPTY on this path
+    // (`tiers` would be `Vec::new()`), so building a WASM engine here is
+    // pure waste, and — the actual defect this closes — a `build_engine()`
+    // failure previously returned `Ok(0)` on this path, silently
+    // downgrading an already-fired verdict from exit 2 to exit 0 even
+    // though the fired branch's destructive `execute_roll` (seal +
+    // truncate-to-0) had ALREADY completed against on-disk state. A
+    // non-fired (`None`) verdict is unaffected: it still returns `Ok(0)`
+    // immediately below, exactly as before this fix.
     if sync_tiers.is_empty() && partition.async_group.is_empty() {
-        return Ok(0);
+        if shard_gate_precheck_result.is_none() {
+            return Ok(0);
+        }
+
+        let plugin_version = env!("CARGO_PKG_VERSION").to_string();
+        let (outcomes, block_intent) = factory_dispatcher::executor::shard_gate_verdict_outcomes(
+            shard_gate_precheck_result,
+            plugin_version,
+        );
+
+        // BC-1.15.001 PC2: PostCompact is advisory-only regardless of
+        // native-gate verdict — same suppression this function's normal
+        // (post-`execute_tiers`) path applies below.
+        let event_is_advisory_only =
+            factory_dispatcher::invoke::EventType::from_event_str(&payload.event_name)
+                .is_advisory_only();
+        let final_exit_code = if event_is_advisory_only {
+            0
+        } else if block_intent {
+            2
+        } else {
+            0
+        };
+
+        if final_exit_code == 2 {
+            let (blocking_names, block_reason) = extract_block_info(&outcomes);
+            eprintln!(
+                "  plugins_run={} total_ms=0 block_intent=true exit_code={} blocking_plugins={} block_reason=\"{}\"",
+                outcomes.len(),
+                final_exit_code,
+                blocking_names,
+                block_reason,
+            );
+        } else {
+            eprintln!(
+                "  plugins_run={} total_ms=0 block_intent=false exit_code={}",
+                outcomes.len(),
+                final_exit_code,
+            );
+        }
+
+        return Ok(final_exit_code);
     }
 
     // Execution layer. Build a shared engine + epoch ticker + module
@@ -292,7 +492,26 @@ async fn run(internal_log: Arc<InternalLog>) -> anyhow::Result<i32> {
     // of cold-start cost but sidesteps any global state concerns for
     // the short-lived dispatcher process. S-1.5's `PluginCache` still
     // amortizes per-plugin compile cost within a single invocation.
-    let engine = match build_engine() {
+    // MINOR-N1 regression coverage (S-25.02 cluster-2 PR #824 pr-review
+    // cycle 4): `VSDD_FORCE_ENGINE_BUILD_FAILURE`, gated identically to
+    // `VSDD_ASYNC_DRAIN_WINDOW_MS` above, lets a test drive a genuine
+    // `build_engine()` failure — otherwise unreachable outside OOM — so
+    // `test_MINORN1_fired_shard_gate_verdict_on_empty_tiers_survives_build_engine_failure`
+    // can prove the empty-tier-groups short-circuit above never depends on
+    // `build_engine()` succeeding. Absent from shipped release builds.
+    #[cfg(any(debug_assertions, feature = "test-support"))]
+    let engine_build_result = if std::env::var(ENV_FORCE_ENGINE_BUILD_FAILURE).is_ok() {
+        Err(EngineError::Config(
+            "VSDD_FORCE_ENGINE_BUILD_FAILURE forced failure (test-support fault injection)"
+                .to_string(),
+        ))
+    } else {
+        build_engine()
+    };
+    #[cfg(not(any(debug_assertions, feature = "test-support")))]
+    let engine_build_result = build_engine();
+
+    let engine = match engine_build_result {
         Ok(e) => e,
         Err(e) => {
             emit_dispatcher_error(
@@ -320,27 +539,13 @@ async fn run(internal_log: Arc<InternalLog>) -> anyhow::Result<i32> {
     // every hook that calls bin/emit-event) walk `.factory/logs/`
     // relative to cwd. Falling back to the dispatcher's cwd produces
     // log writes in surprising places.
-    base_host_ctx.cwd = std::env::var(ENV_PROJECT_DIR)
-        .map(PathBuf::from)
-        .ok()
-        .filter(|p| !p.as_os_str().is_empty())
-        // Canonicalize the project directory to resolve OS-level symlinks
-        // (e.g., macOS /var → /private/var). This ensures host::cwd() returns
-        // the same physical path that `git worktree list --porcelain` reports,
-        // preventing false-positive DURABILITY DEGRADED from Tier 2 path-mismatch
-        // checks in precompact-flush and similar plugins. Canonicalize failure is
-        // non-fatal: fall back to the raw path (better than no cwd at all).
-        //
-        // SEC-004 TOCTOU ACCEPTED: the canonicalize call here resolves symlinks at
-        // dispatcher startup, but the resolved path is used as a label (host::cwd()
-        // for path-comparison in plugins), not for filesystem access. Any TOCTOU
-        // window between canonicalize and plugin use is therefore inconsequential:
-        // the worst outcome is a false-positive DURABILITY DEGRADED advisory (fail-open).
-        // This is explicitly accepted under the same-user local trust model; the
-        // `unwrap_or(p)` fallback is fail-safe (raw path beats no path at all).
-        .map(|p| p.canonicalize().unwrap_or(p))
-        .or_else(|| std::env::current_dir().ok())
-        .unwrap_or_else(|| PathBuf::from("."));
+    // S-25.02 BC-1.18.006 cluster-2: reuses the SAME `project_cwd` this
+    // function already resolved above (before the early-return guard, for
+    // Postcondition 7 catch point (i)'s sake) rather than re-deriving it —
+    // see `resolve_project_cwd`'s own doc comment. Behavior-preserving: this
+    // is the exact same env-var-read + canonicalize + fallback sequence that
+    // was previously inlined here, only moved earlier and named.
+    base_host_ctx.cwd = project_cwd;
     // ADR-024 Decision 2: CLAUDE_PLUGIN_ROOT already checked above (Tier-1 vs Tier-2).
     // plugin_root_val is set from ENV_PLUGIN_ROOT at the start of run(); use it here
     // directly so HostContext carries the same value as the registry resolution path.
@@ -475,7 +680,7 @@ async fn run(internal_log: Arc<InternalLog>) -> anyhow::Result<i32> {
         resolver_registry: resolver_registry.clone(),
     };
 
-    let summary = execute_tiers(inputs, sync_tiers).await;
+    let summary = execute_tiers(inputs, sync_tiers, shard_gate_precheck_result).await;
 
     // S-15.01 F5-T-A: async_group dispatch via tokio::spawn per-plugin + tokio::select! drain.
     //
@@ -959,6 +1164,48 @@ fn resolve_log_dir() -> PathBuf {
     let project_dir = std::env::var(ENV_PROJECT_DIR).ok();
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     factory_dispatcher::log_dir::resolve_log_dir_from(project_dir.as_deref(), &cwd)
+}
+
+/// Resolve the project working directory the dispatcher treats as `cwd` for
+/// path-scoped native checks. Extracted, BEHAVIOR-PRESERVING, from the
+/// `base_host_ctx.cwd` derivation `run()` previously computed inline at its
+/// (single, pre-extraction) call site — see this function's own inline
+/// comments for the full canonicalize/TOCTOU rationale (SEC-004 ACCEPTED),
+/// reproduced verbatim, not altered.
+///
+/// This extraction exists so `run()` can resolve `cwd` ONCE, BEFORE its own
+/// `sync_tiers.is_empty() && partition.async_group.is_empty()` early-return
+/// guard, and reuse the SAME value for both (a) BC-1.18.006 Postcondition 7
+/// catch point (i)'s unconditional native call (ADR-051 §Decision 15 point 4
+/// — the placement caveat requires this call to precede that guard, which
+/// in turn requires `cwd` to be available before `base_host_ctx` itself is
+/// constructed) and (b) `base_host_ctx.cwd`'s own later assignment — never
+/// two independent env-var reads that could, in principle, observe a
+/// changed `CLAUDE_PROJECT_DIR` between them (this process never mutates its
+/// own env after start, so this is a determinism/duplication cleanup, not a
+/// correctness fix for an observed bug).
+fn resolve_project_cwd() -> PathBuf {
+    std::env::var(ENV_PROJECT_DIR)
+        .map(PathBuf::from)
+        .ok()
+        .filter(|p| !p.as_os_str().is_empty())
+        // Canonicalize the project directory to resolve OS-level symlinks
+        // (e.g., macOS /var → /private/var). This ensures host::cwd() returns
+        // the same physical path that `git worktree list --porcelain` reports,
+        // preventing false-positive DURABILITY DEGRADED from Tier 2 path-mismatch
+        // checks in precompact-flush and similar plugins. Canonicalize failure is
+        // non-fatal: fall back to the raw path (better than no cwd at all).
+        //
+        // SEC-004 TOCTOU ACCEPTED: the canonicalize call here resolves symlinks at
+        // dispatcher startup, but the resolved path is used as a label (host::cwd()
+        // for path-comparison in plugins), not for filesystem access. Any TOCTOU
+        // window between canonicalize and plugin use is therefore inconsequential:
+        // the worst outcome is a false-positive DURABILITY DEGRADED advisory (fail-open).
+        // This is explicitly accepted under the same-user local trust model; the
+        // `unwrap_or(p)` fallback is fail-safe (raw path beats no path at all).
+        .map(|p| p.canonicalize().unwrap_or(p))
+        .or_else(|| std::env::current_dir().ok())
+        .unwrap_or_else(|| PathBuf::from("."))
 }
 
 // flush_sink_file is now in factory_dispatcher::vsdd_sink (S-19.05 AC-004).

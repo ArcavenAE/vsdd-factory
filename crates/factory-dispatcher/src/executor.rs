@@ -285,12 +285,34 @@ pub struct ExecutorInputs<'a> {
 /// `shard-config.toml` rather than `hooks-registry.toml` itself, so the
 /// gate's config surface can evolve independently of the WASM plugin
 /// registry schema.
-const SHARD_CONFIG_RELATIVE_PATH: &str = ".factory/shard-config.toml";
+// S-25.02 BC-1.18.006 cluster-2: widened from private to `pub(crate)` so
+// `invoke::detect_replace_all_overcap_candidate` (Postcondition 7 catch
+// point (i)'s qualification filter) can reuse the SAME well-known path
+// rather than duplicating this string literal — visibility-only change, no
+// behavior change to this constant's pre-existing PreToolUse call site
+// below.
+pub(crate) const SHARD_CONFIG_RELATIVE_PATH: &str = ".factory/shard-config.toml";
 
 /// Native (non-WASM) shard-cap gate invocation point (S-25.02 BC-1.18.005
-/// T-2). Called from `execute_tiers` BEFORE the registry-driven tier loop
-/// (Invariant 1's placement requirement — architecturally analogous to the
-/// `block_if_marker_check` native-check precedent in `indeterminate_marker.rs`).
+/// T-2). MAJOR-3 (S-25.02 cluster-2 PR #824 pr-review cycle 3; ADR-051
+/// §Decision 17): decoupled from [`ExecutorInputs`] and `execute_tiers` —
+/// called ONCE from `main::run`, at the SAME call site as
+/// `invoke::reconcile_replace_all_overcap_if_qualifying`, BEFORE the
+/// `sync_tiers.is_empty() && partition.async_group.is_empty()` early-return
+/// guard, mirroring that guard's own widened form
+/// (`shard_gate_precheck_result.is_none() && sync_tiers.is_empty() &&
+/// partition.async_group.is_empty()`). Prior to MAJOR-3, this check ran
+/// only INSIDE `execute_tiers`, which `main::run` skips entirely whenever no
+/// plugin matched the dispatch — silently defeating the PreToolUse
+/// shard-cap gate for exactly that configuration, the mirror image of the
+/// "silently stop firing if the plugin set changes" failure mode Decision 1's
+/// own placement rule already prevents for the git-context injection leg.
+/// The result this function returns is computed EXACTLY ONCE per dispatch —
+/// `main::run` threads the `Option<HookResult>` into `execute_tiers` as a
+/// parameter, which consumes it without ever recomputing it: the fired
+/// branch reaches `shard_manager::execute_roll`, a destructive seal+
+/// truncate-to-0 operation, so a second evaluation would corrupt state
+/// rather than merely waste cycles.
 ///
 /// # Guarded call site (BC-5.38.001 Red Gate discipline)
 ///
@@ -320,45 +342,33 @@ const SHARD_CONFIG_RELATIVE_PATH: &str = ".factory/shard-config.toml";
 ///
 /// The native shard-cap gate is a `PreToolUse`-only check — it exists to stop
 /// a mutation BEFORE it lands, not to audit one after the fact. The
-/// `event_name` guard below reads the harness's `EventType` classification
-/// (mirroring `main.rs`'s `EventType::from_event_str(&payload.event_name)`)
-/// and short-circuits for any event that is explicitly NOT `PreToolUse` —
-/// e.g. a `PostToolUse` Edit/Write/MultiEdit call against the exact same
-/// matched, malformed `[[shard]]` entry that would legitimately block a
-/// PreToolUse call. A dispatch that omits `event_name` entirely (as this
-/// crate's own PreToolUse-only test fixtures above do, since they predate
-/// this guard) is treated as `PreToolUse`-equivalent for backward
-/// compatibility with those fixtures — only an EXPLICIT non-PreToolUse
-/// `event_name` opts a dispatch out.
-fn shard_cap_precheck(inputs: &ExecutorInputs<'_>) -> Option<vsdd_hook_sdk::HookResult> {
-    // PR #818 fix-burst finding m4: named, documented default rather than an
-    // implicit `.unwrap_or(...)` fallback that reads as ad hoc fixture
-    // convenience. See this function's own doc comment above for the full
-    // backward-compatibility rationale (this crate's pre-existing
-    // PreToolUse-only test fixtures predate the `event_name` guard and never
-    // populate this field) — this constant makes that a deliberate,
-    // named choice rather than an accidental one.
-    const DEFAULT_EVENT_TYPE_WHEN_ABSENT: EventType = EventType::PreToolUse;
-    let event_type = inputs
-        .payload_value
-        .get("event_name")
-        .and_then(|v| v.as_str())
-        .map(EventType::from_event_str)
-        .unwrap_or(DEFAULT_EVENT_TYPE_WHEN_ABSENT);
-    if event_type != EventType::PreToolUse {
+/// `event_name` guard below reads `payload.event_name`'s `EventType`
+/// classification (mirroring `main.rs`'s own
+/// `EventType::from_event_str(&payload.event_name)` use) and short-circuits
+/// for any event that is not `PreToolUse` — e.g. a `PostToolUse`
+/// Edit/Write/MultiEdit call against the exact same matched, malformed
+/// `[[shard]]` entry that would legitimately block a PreToolUse call.
+/// `payload::HookPayload::event_name` is a required (non-`Option`) field, so
+/// a real dispatcher payload always carries a genuine value here —
+/// `EventType::from_event_str("")` resolves to `EventType::Other`, never
+/// `PreToolUse`, so an empty string is correctly treated as NOT PreToolUse
+/// (no absent-field special case is needed post-decoupling, unlike the
+/// pre-MAJOR-3 `ExecutorInputs`-based signature this replaced, which read an
+/// untyped `serde_json::Value` that could omit the key entirely).
+pub fn shard_cap_precheck(
+    payload: &crate::payload::HookPayload,
+    cwd: &std::path::Path,
+) -> Option<vsdd_hook_sdk::HookResult> {
+    if EventType::from_event_str(&payload.event_name) != EventType::PreToolUse {
         return None;
     }
 
-    let tool_name = inputs
-        .payload_value
-        .get("tool_name")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    let tool_name = payload.tool_name.as_str();
     if !matches!(tool_name, "Edit" | "Write" | "MultiEdit") {
         return None;
     }
 
-    let shard_config_path = inputs.base_host_ctx.cwd.join(SHARD_CONFIG_RELATIVE_PATH);
+    let shard_config_path = cwd.join(SHARD_CONFIG_RELATIVE_PATH);
     if !shard_config_path.exists() {
         return None;
     }
@@ -372,11 +382,6 @@ fn shard_cap_precheck(inputs: &ExecutorInputs<'_>) -> Option<vsdd_hook_sdk::Hook
         Ok(reg) => reg,
         Err(e) => return Some(e.into()),
     };
-    let tool_input = inputs
-        .payload_value
-        .get("tool_input")
-        .cloned()
-        .unwrap_or(serde_json::Value::Null);
     // PR #818 cycle-2 review finding B-2: an absent or non-string
     // `tool_input.file_path` MUST fail loud, never silently resolve to an
     // empty `PathBuf` — an empty path has no `file_stem()`, so
@@ -387,7 +392,8 @@ fn shard_cap_precheck(inputs: &ExecutorInputs<'_>) -> Option<vsdd_hook_sdk::Hook
     // `required_str_len_bytes` precedent this mirrors): those three govern
     // the computed SIZE once a match is already known; this one governs
     // whether the gate applies AT ALL.
-    let Some(target_path) = tool_input
+    let Some(target_path) = payload
+        .tool_input
         .get("file_path")
         .and_then(|v| v.as_str())
         .map(std::path::PathBuf::from)
@@ -403,7 +409,7 @@ fn shard_cap_precheck(inputs: &ExecutorInputs<'_>) -> Option<vsdd_hook_sdk::Hook
         &registry,
         tool_name,
         &target_path,
-        &tool_input,
+        &payload.tool_input,
     ))
 }
 
@@ -481,60 +487,109 @@ fn shard_gate_block_outcome(message: String, plugin_version: String) -> PluginOu
 }
 
 /// Run every tier and return the aggregated summary.
-pub async fn execute_tiers(
-    inputs: ExecutorInputs<'_>,
-    tiers: Vec<Vec<&RegistryEntry>>,
-) -> TierExecutionSummary {
-    let started = Instant::now();
-    let mut all_outcomes: Vec<PluginOutcome> = Vec::new();
+///
+/// `shard_gate_precheck_result` (MAJOR-3, S-25.02 cluster-2 PR #824
+/// pr-review cycle 3; ADR-051 §Decision 17): the PRECOMPUTED verdict from
+/// [`shard_cap_precheck`], called ONCE by `main::run` before this function
+/// (and before its own `sync_tiers.is_empty() && partition.async_group.is_empty()`
+/// early-return guard) — never recomputed here. `execute_tiers` only
+/// CONSUMES this value; calling `shard_cap_precheck` a second time would
+/// re-run its potentially-destructive `execute_roll` branch against
+/// already-mutated on-disk state.
+/// Translate a precomputed [`shard_cap_precheck`] verdict into synthesized
+/// [`PluginOutcome`]s plus whether the verdict constitutes a block — the
+/// EXACT logic `execute_tiers` runs on the verdict before its own
+/// registry-driven tier loop (see that function's inline call site below).
+///
+/// Factored out (MINOR-N1 fix, S-25.02 cluster-2 PR #824 pr-review cycle 4)
+/// so `main::run`'s empty-tier-groups short-circuit can translate a FIRED
+/// verdict to its exit code via this SAME path — reusing
+/// `extract_block_info`'s existing `is_blocking`/reason-extraction contract
+/// against the outcome this function synthesizes — without needing a
+/// `wasmtime::Engine` (this function does no I/O and touches no engine/cache
+/// state). This matters because the fired branch of
+/// [`shard_cap_precheck`]/`shard_cap_gate_check` has ALREADY run the
+/// destructive `execute_roll` (seal + truncate-to-0) by the time this
+/// function is called — a verdict this function reports must never be
+/// silently downgraded behind an unrelated fallible engine build.
+///
+/// S-25.02 BC-1.18.005 T-2 — native shard-cap gate verdict, consumed BEFORE
+/// the registry-driven tier loop (Invariant 1). MAJOR-3: this value is
+/// COMPUTED by the caller (`main::run`, via `shard_cap_precheck`) and
+/// threaded in as a parameter — see `execute_tiers`'s own doc comment and
+/// `shard_cap_precheck`'s doc comment for the full placement/no-recompute
+/// rationale. `None` for every dispatch that isn't both an
+/// Edit/Write/MultiEdit PreToolUse call AND has a `[[shard]]` config file
+/// present, which covers 100% of this crate's pre-existing test fixtures.
+///
+/// F-001 fix (S-25.02 Phase F4 LOCAL adversary pass-1 cluster-1, HIGH): a
+/// fail-loud `HookResult::Error` from `shard_cap_gate_check`'s
+/// entry-match-time `validate_entry` call (EC-009 missing `shape`; EC-011
+/// `low_water_mark >= N`) is BC-1.18.005's OWN postcondition and MUST become
+/// a BLOCKING dispatch outcome here — the same way
+/// `plugin_fail_closed`/`plugin_requests_block` translate a WASM plugin's
+/// fail-closed verdict into `block_intent` in `execute_tiers`'s tier loop.
+/// `HookResult::Block` is translated identically. **CORRECTED (F-C2-P7-003,
+/// MINOR, cluster-2 LOCAL adversary pass-7):** this comment previously
+/// claimed `shard_cap_gate_check` "does not construct [a Block] today" and
+/// that the gate "still returns Continue + warn for a fired trigger" for
+/// every shape — stale as of cluster-2 (BC-1.18.006). The `ShardShape::Flat`
+/// arm's fired size-trigger branch now returns a REAL `HookResult::Block`
+/// (the roll-before-write block-and-retry outcome, via `execute_roll`) or
+/// `HookResult::Error` (a genuine `E-SHD-NNN` roll failure), both handled by
+/// this same match — no further change was needed for that shape. The "gate
+/// returns `Continue` + non-fatal `tracing::warn!` advisory for a fired
+/// trigger, out of scope for this cluster" description now applies ONLY to
+/// the item-count shape (`ShardShape::FrontmatterChangelogArray` /
+/// BC-1.18.009's rotate-and-retry contract), which remains unimplemented;
+/// this match arm was wired ahead of that shape landing so that hand-off
+/// requires no further change when it does.
+///
+/// F-C1-P2-001 fix (S-25.02 Phase F4 LOCAL adversary pass-2 cluster-1,
+/// MEDIUM): a fail-loud verdict here MUST also be appended to the returned
+/// outcomes vec (via `shard_gate_block_outcome`) — not just flip
+/// `block_intent` — so `main.rs::extract_block_info`'s scan over
+/// `TierExecutionSummary::per_plugin_results` (or, on the MINOR-N1
+/// short-circuit path, over this function's own return value directly) has
+/// something to find. See `shard_gate_block_outcome`'s doc comment for the
+/// full rationale.
+pub fn shard_gate_verdict_outcomes(
+    verdict: Option<vsdd_hook_sdk::HookResult>,
+    plugin_version: String,
+) -> (Vec<PluginOutcome>, bool) {
+    let mut outcomes: Vec<PluginOutcome> = Vec::new();
     let mut block_intent = false;
-
-    // S-25.02 BC-1.18.005 T-2 — native shard-cap gate, BEFORE the
-    // registry-driven tier loop below (Invariant 1). See
-    // `shard_cap_precheck`'s doc comment for the guard rationale; this call
-    // is a no-op (`None`) for every dispatch that isn't both an
-    // Edit/Write/MultiEdit PreToolUse call AND has a `[[shard]]` config file
-    // present, which covers 100% of this crate's pre-existing test fixtures.
-    // F-001 fix (S-25.02 Phase F4 LOCAL adversary pass-1 cluster-1, HIGH):
-    // a fail-loud `HookResult::Error` from `shard_cap_gate_check`'s
-    // entry-match-time `validate_entry` call (EC-009 missing `shape`;
-    // EC-011 `low_water_mark >= N`) is BC-1.18.005's OWN postcondition and
-    // MUST become a BLOCKING dispatch outcome here — the
-    // same way `plugin_fail_closed`/`plugin_requests_block` translate a
-    // WASM plugin's fail-closed verdict into `block_intent` below. A
-    // `HookResult::Block` is likewise translated identically, though
-    // `shard_cap_gate_check` does not construct one today: a fired
-    // size/item-count trigger is BC-1.18.006's/BC-1.18.009's own observable
-    // roll/rotate-and-retry outcome (out of scope for this cluster), so the
-    // gate itself still returns `Continue` + a non-fatal `tracing::warn!`
-    // advisory for a fired trigger (see `shard_manager.rs`) — this match
-    // arm is wired now so that hand-off requires no further executor.rs
-    // change when those later clusters land.
-    // F-C1-P2-001 fix (S-25.02 Phase F4 LOCAL adversary pass-2 cluster-1,
-    // MEDIUM): a fail-loud verdict here MUST also be appended to
-    // `all_outcomes` (via `shard_gate_block_outcome`) — not just flip
-    // `block_intent` — so `main.rs::extract_block_info`'s scan over
-    // `TierExecutionSummary::per_plugin_results` has something to find. See
-    // `shard_gate_block_outcome`'s doc comment for the full rationale.
-    if let Some(shard_gate_result) = shard_cap_precheck(&inputs) {
+    if let Some(shard_gate_result) = verdict {
         match shard_gate_result {
             vsdd_hook_sdk::HookResult::Error { message } => {
                 block_intent = true;
-                all_outcomes.push(shard_gate_block_outcome(
-                    message,
-                    inputs.base_host_ctx.plugin_version.clone(),
-                ));
+                outcomes.push(shard_gate_block_outcome(message, plugin_version));
             }
             vsdd_hook_sdk::HookResult::Block { reason } => {
                 block_intent = true;
-                all_outcomes.push(shard_gate_block_outcome(
-                    reason,
-                    inputs.base_host_ctx.plugin_version.clone(),
-                ));
+                outcomes.push(shard_gate_block_outcome(reason, plugin_version));
             }
             vsdd_hook_sdk::HookResult::Continue => {}
         }
     }
+    (outcomes, block_intent)
+}
+
+pub async fn execute_tiers(
+    inputs: ExecutorInputs<'_>,
+    tiers: Vec<Vec<&RegistryEntry>>,
+    shard_gate_precheck_result: Option<vsdd_hook_sdk::HookResult>,
+) -> TierExecutionSummary {
+    let started = Instant::now();
+
+    // Native shard-cap gate verdict, consumed BEFORE the registry-driven
+    // tier loop below (Invariant 1) — see [`shard_gate_verdict_outcomes`]'s
+    // doc comment for the full translation rationale (shared with
+    // `main::run`'s MINOR-N1 empty-tier-groups short-circuit).
+    let (mut all_outcomes, mut block_intent) = shard_gate_verdict_outcomes(
+        shard_gate_precheck_result,
+        inputs.base_host_ctx.plugin_version.clone(),
+    );
 
     for tier in tiers {
         let mut tier_outcomes = execute_tier(&inputs, tier).await;
