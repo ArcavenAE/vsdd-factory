@@ -1,1 +1,1 @@
-{"status":"pass","timestamp":"2026-09-08T21:01:38Z","command":"cargo test -p factory-dispatcher --lib shard_manager::bc_1_18_006_roll_tests::test_BC_1_18_006_EC025_FC2P8_002_execute_roll_reclaims_zero_byte_destination_and_succeeds -- --exact --nocapture 2>&1 | tail -60"}
+{"status":"pass","timestamp":"2026-09-09T02:00:23Z","command":"cargo test -p factory-dispatcher --lib 2>&1 | tail -20"}
