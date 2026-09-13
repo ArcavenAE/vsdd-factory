@@ -8814,3 +8814,47 @@ BC-4.17.001 v1.29 active. BC-6.28.001 v1.3 active. BC-5.45.001 v1.3 active. BC-1
 **Cycle-level streak: 3/3 — CONVERGED, UNCHANGED** (D-1213..D-1220 are spec-convergence/bookkeeping bursts). Cross-vendor Codex ADR-052 closure reviews NON-STREAK (decision-support only). Cluster-5 LOCAL cascade NOT started (TDD BLOCKED — awaiting POLICY 22). All prior cluster cascades CLOSED: cluster-1 (D-1172/D-1173), cluster-2 (D-1184), cluster-3 (D-1204), cluster-4 (D-1211). **PIPELINE PAUSED — 4th Codex re-review then POLICY 22 ratification owed on resume.**
 
 *(Archived 2026-09-12 during SESSION-WRAP-PAUSE-2026-09-12 v10.47→v10.48 pause burst; replaced by new SRC reflecting 2nd Codex ADR-052 closure state.)*
+
+---
+
+## Session Resume Checkpoint (2026-09-13 — D-1221-ADR052-V14-LOCAL-ADV-PASS1-FIX-BURST v10.52→v10.53; develop ebd16f79 (PR #832 merged); main 51023185; merged_count 122; v1.0.0-rc.25 SHIPPED; PIPELINE PAUSED — ADR-052 v1.4 COMMITTED; LOCAL CASCADE 0/3; NEXT = adversary pass-2 → 3-CLEAN → POLICY 22 ratification)
+
+> **SELF-SUFFICIENT RESUME CONTEXT.** ADR-052 v1.4 re-hardening COMMITTED (D-1221; in-house adversary LOCAL pass-1 NOT-RATIFIABLE 2C+5H+5M, all 12 findings closed). BC-5.39.001 LOCAL streak RESET 0/3. ADR-052 review track is now the REGULAR in-house adversary LOCAL cascade (Codex cross-vendor HELD per human direction, decision-support only). **NEXT = adversary pass-2 (fresh-context, reads only pass-1 Part A per Iron Law)** toward 3-CLEAN. PIPELINE REMAINS PAUSED.
+> Prior checkpoint (D-1220-ADR052-V13-RESEARCH-GROUNDED-REDESIGN-BURST v10.51→v10.52, 2026-09-13) archived verbatim to
+> `cycles/v1.0-brownfield-backfill/session-checkpoints.md`.
+
+### §1. Position (D-1221 state)
+
+2026-09-13. S-25.02 F4 cluster-5 F1; ADR-052 v1.4 COMMITTED (D-1221) — in-house adversary LOCAL pass-1 = NOT-RATIFIABLE (2C+5H+5M); all 12 findings closed. BC-5.39.001 LOCAL streak RESET 0/3. NEXT = adversary pass-2 (fresh context, reads only pass-1 Part A). After 3-CLEAN: HUMAN POLICY 22 ratification (with 2 sign-off items). `pipeline:` PAUSED.
+
+### §2. Convergence (D-1221 state)
+
+BC-5.39.001 LOCAL cluster-5 streak **0/3 — RESET** (D-1221 fix burst = adversary pass-1 NOT-RATIFIABLE; streak starts fresh). Cycle-level streak: CONVERGED 3/3 (unchanged). ADR-052 LOCAL cascade: pass-1 done (D-1221); passes 2 and 3 needed for 3-CLEAN.
+
+### §3. In-flight / Abandoned (D-1221 state)
+
+None. D-1221 burst committed successfully. No abandoned dispatches.
+
+### §4. Pending human decisions / open blockers (D-1221 state)
+
+ADR-052 v1.4 COMMITTED (D-1221) — NEXT = adversary pass-2 → 3-CLEAN → POLICY 22. BC-5.39.001 LOCAL streak 0/3. After 3 consecutive clean passes: HUMAN POLICY 22 ratification required with 2 sign-off items: (i) macOS exec-TOCTOU residual window; (ii) APFS directory-fsync durability test. Cluster-5 TDD BLOCKED. [D-1212-DRIFT-002] → S-12.15. [D-1221-PG-001] → S-12.13. S-25.05, S-25.06. OWED #2+#3.
+
+### §5. WIP branches (D-1221 state)
+
+None. `develop` @ `ebd16f79`. `factory-artifacts` HEAD = D-1221 burst commit.
+
+### §6. Resume command
+
+`/vsdd-factory:rehydrate-wave` then `/vsdd-factory:next-step`.
+
+BC-1.18.010 **v1.6** / BC-1.18.011 **v1.4** (draft). BC-INDEX **v5.91**. ARCH-INDEX **v4.31** (ADR-052 v1.4). error-taxonomy.md **v1.21**.
+
+### §7. HEADs (D-1221 state)
+
+- `develop`: **`ebd16f79`** (PR #832 merged). `main`: **`51023185`**. `factory-artifacts`: D-1221 burst commit (run `git -C .factory log -1`).
+
+### §8. BC-5.39.001 streak (D-1221 state)
+
+**LOCAL cluster-5 streak: 0/3 — RESET** (pass-1 = NOT-RATIFIABLE D-1221; adversary pass-2 next). Cycle-level streak: 3/3 CONVERGED UNCHANGED.
+
+*(Archived 2026-09-13 during D-1222-ADR052-V15-LOCAL-ADV-PASS2-FIX-BURST v10.53→v10.54; replaced by new SRC reflecting ADR-052 v1.5 + ADR-051 v1.14 committed state.)*

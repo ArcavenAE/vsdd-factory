@@ -10721,3 +10721,64 @@ Architect closed the two CRIT findings (C1, C2) and HIGH findings (H1–H5) via 
 ### Canonical 6-column row (STATE.md Decisions Log)
 
 | D-1221 | D-1221-ADR052-V14-LOCAL-ADV-PASS1-FIX-BURST | **ADR-052 v1.4 re-hardening committed (state-manager, single-commit TD-VSDD-053; D-1221): in-house adversary LOCAL pass-1 = NOT-RATIFIABLE (2C+5H+5M); all 12 findings closed — C1 canonical-first/generation-fallback reader protocol; C2 normalized allowlist; H1 gate-reset-on-abort; H2 durable reservation dir; H3 pre-pivot census gate step 3b; H4 STAGING state; H5 11 error codes enumerated; M1 fencing reframed advisory; M2 pivot step 6 corrected; M3 structural total_bcs; M4 BC-INDEX v1.5 changelog cell corrected (§Reader Integration only, Invariant 2 UNCHANGED); M5 macOS reframed. BC-1.18.011 v1.3→v1.4; BC-1.18.010 v1.5→v1.6; error-taxonomy.md v1.20→v1.21. ARCH-INDEX v4.30→v4.31; BC-INDEX v5.90→v5.91. Input-hashes: ADR-052 PARTIAL (missing input, pre-existing) / BC-1.18.011 ddee535 (cascade-stale circular dep pre-existing per OWED #3) / BC-1.18.010 37fc36a (PASS) / error-taxonomy 19a618d (PASS). BC-5.39.001 LOCAL streak RESET 0/3. Process-gap [D-1221-PG-001] recorded: no CI lint asserts error-taxonomy Message-Format ↔ Display parity; anchored S-12.13 (E-12). POLICY 22 still OPEN. OWED #2+#3 unchanged. Cluster-5 TDD BLOCKED. pipeline: PAUSED.** | S-25.02 F4 | 2026-09-13 |
+
+## D-1222: ADR-052 v1.5 + ADR-051 v1.14 Fix Burst — In-House Adversary LOCAL Pass-2 (1C+4H+7M Closed)
+
+**Decision ID:** D-1222
+**Slug:** D-1222-ADR052-V15-LOCAL-ADV-PASS2-FIX-BURST
+**Context:** S-25.02 F4 cluster-5 F1; ADR-052 cascade
+**Date:** 2026-09-13
+**Author:** state-manager
+
+### Context
+
+ADR-052 v1.4 was committed at D-1221. The in-house LOCAL adversary cascade continued with pass-2 (fresh-context, reads only pass-1 Part A per Iron Law). The adversary returned NOT-RATIFIABLE with 1 CRIT + 4 HIGH + 7 MED (12 findings total).
+
+Architect closed the CRIT finding (C-1) and HIGH findings (H-1..H-4) via ADR-052 v1.5. Product-owner closed the MED findings (M-1..M-6) and observation findings (L-1..L-5) plus the inputs-fix via BC-1.18.010 v1.7, BC-1.18.011 v1.5, and error-taxonomy.md v1.22. Architect also bumped ADR-051 to v1.14 for the M-2 coupling removal.
+
+### Findings Summary
+
+| ID | Severity | Description | Resolution |
+|----|----------|-------------|------------|
+| C-1 | CRIT | Reader protocol regression: v1.4 canonical-first/generation-fallback was incorrect for BC-INDEX.md (in-place overwrite target whose canonical path holds the old monolithic body until step 7's rename); canonical-first would read stale content for BC-INDEX.md during COMMITTING window | INVERTED to generation-first/canonical-fallback: try gen-<generation_id>/ FIRST, fall back to canonical if absent; fault-injection reader test mandate added (ADR-052 v1.5 §Decision 7c; BC-1.18.010 v1.7; BC-1.18.011 v1.5 Invariant 3) |
+| H-1 | HIGH | ADR had dangling "see v1.2 §..." references; skipped-control inventory not self-contained | §Decision 6 audit-trail inlined (COMPLETED.json substituted for COMMITTED marker per v1.3); §Decision 8 skipped-control inventory table inlined; §Downstream Amendments 1–3 fully inlined from v1.2; no dangling cross-version references remain (ADR-052 v1.5) |
+| H-2 | HIGH | mtime guard re-stat placed AFTER exec returns — fires only on exec failure; execve never returns on success | Re-stat moved to IMMEDIATELY BEFORE execve call; "Human sign-off required" updated with corrected residual-risk semantics: sub-instruction stat→execve gap + no-concurrent-cargo-build pre-flight (ADR-052 v1.5 §Decision 11) |
+| H-3 | HIGH | Reservation UUID: prior design used in-process shared state for Pre/Post hook pair correlation, fragile across crash boundaries | PreToolUse creates `<tool_use_id>.reservation` using stable harness tool-invocation ID; PostToolUse removes it by same tool_use_id without shared in-process state; test mandates added: Pre-creates/Post-removes, stale-PID cleanup (ADR-052 v1.5 §Decision 7b) |
+| H-4 | HIGH | Load-bearing version pins (e.g., "ADR-052 v1.4 EXCEPTION") throughout ADR and BCs — would require re-amendment on every version bump | Version pins removed; CLAUDE.md amendment text updated to "ADR-052 EXCEPTION" (stable); all BC cross-refs updated to stable §Decision N form (ADR-052 v1.5; BC-1.18.010 v1.7; BC-1.18.011 v1.5) |
+| M-1 | MED | ADR-052 §Decision 7c traceability row missing from BC-1.18.011 Architecture Anchors | ADR-052 §Decision 7c added to BC-1.18.011 Architecture Anchors (BC-1.18.011 v1.5) |
+| M-2 | MED | ADR-051 §Decision 10 item 6: "at the SAME F4 activation moment mechanism A's own backfill runs" — incorrect coupling; B2 migration activates independently | §Decision 10 item 6 corrected: B2 migration activates "as part of this SAME one-time B2 migration operation (independently of mechanism A's activation schedule — per BC-1.18.011 Precondition 4 and ADR-052 §Decision 1)"; ADR-051 bumped v1.13→v1.14 (ADR-051 v1.14) |
+| M-3 | MED | E-MAINTENANCE referenced as plain "E-MAINTENANCE" throughout — error-taxonomy.md uses "E-MAINTENANCE-001" as the canonical code | Corrected to E-MAINTENANCE-001 throughout ADR-052 v1.5; error-taxonomy.md v1.22 header updated to acknowledge MIG + MAINTENANCE categories |
+| M-4 | MED | Stale reader instruction in §Downstream BC-1.18.010 §Reader Integration (v1.3 "use gen-uuid/" and v1.4 canonical-first both present) | Stale instructions deleted; single correct generation-first/canonical-fallback instruction kept (BC-1.18.010 v1.7; ADR-052 v1.5 §Downstream amendments) |
+| M-6 | MED | Bash admission reservation undocumented in §5a — admitted Bash mutations creating reservations not explicitly stated | Explicit text added to §5a: admitted Bash mutations with write effect create `<tool_use_id>.reservation`; §5c classifier determines write-effect; quiescence waits for all Bash reservations; test mandate added (ADR-052 v1.5 §Decision 5a) |
+| L-1..L-5 | LOW | Various observation-class findings: positive test cases for validate_write_target(), mechanism-A config-driven wildcard, drain-timeout liveness note, EC-003 step citation, error-taxonomy header audit | Addressed in ADR-052 v1.5 and BC-1.18.011 v1.5 as documented above |
+| inputs-fix | INFO | Non-existent file `adv-cv-adr052-v13-closure-2026-09-13.md` listed in ADR-052 inputs: | Removed from inputs: field; compute-input-hash --update run (new hash 080d460) |
+
+### Codification
+
+**BC-5.39.001 LOCAL cascade:** pass-2 = NOT-RATIFIABLE. Streak REMAINS 0/3. Adversary pass-3 next (fresh-context, reads only pass-2 Part A per Iron Law).
+
+**Index advances this burst:**
+- ARCH-INDEX v4.31 → v4.32 (ADR-052 row v1.4→v1.5; ADR-051 row v1.13→v1.14; SS-01 shard_manager.rs added)
+- BC-INDEX v5.91 → v5.92 (BC-1.18.010 v1.6→v1.7; BC-1.18.011 v1.4→v1.5)
+
+**Input-hashes (post-update):**
+- ADR-052: `080d460` (PASS — updated; stale b607e57 was cascade-stale from prior inputs-fix; new hash reflects inputs after removing non-existent file)
+- BC-1.18.010: `9c03116` (PASS — updated)
+- BC-1.18.011: `5da155e` (PASS — updated; cascade-stale on circular dep ADR-052↔BC pre-existing per OWED #3 — noted, not chased)
+- error-taxonomy.md: `c86c32c` (PASS — updated)
+- ADR-051: no inputs: field — skipped (confirmed)
+
+**Drift Item recorded (production-grade — MUST resolve before POLICY 22 ratification):** `[D-1222-DRIFT-001]` — prd.md §5.1 does NOT enumerate the MIG + MAINTENANCE error categories that now exist in error-taxonomy.md v1.22. Recorded with concrete follow-up: cluster-5 PRD sync (product-owner, an E-12 story; target before POLICY 22 ratification). This MUST be resolved before POLICY 22 ratification gate.
+
+**Process-gap [D-1221-PG-001] status:** UNCHANGED OPEN. Adversary pass-2 re-flagged same class (L-6): MIG error codes (E-MIG-001..011, 11 codes added v1.21) inherit the same Display-parity CI lint risk as E-SHD codes. No additional action required this burst — the existing [D-1221-PG-001] + S-12.13 anchor already covers the whole error-taxonomy class. Confirmed still recorded.
+
+**POLICY 22 status:** OPEN (unchanged). Two sign-off items still owed with CORRECTED semantics:
+- (i) macOS exec-TOCTOU residual window — CORRECTED: this is the sub-instruction stat→execve gap + no-concurrent-cargo-build pre-flight (not the broader digest-check-to-exec window as previously described in v1.4)
+- (ii) APFS directory-fsync durability darwin-arm64 test — unchanged
+Cluster-5 TDD remains BLOCKED until POLICY 22 ratification.
+
+**OWED (unchanged):** OWED #2 (907-file hash sweep); OWED #3 (ADR-052↔BC circular re-settle). Cluster-5 TDD BLOCKED. prd.md §5.1 MIG/MAINTENANCE sync [D-1222-DRIFT-001] owed before ratification.
+
+### Canonical 6-column row (STATE.md Decisions Log)
+
+| D-1222 | D-1222-ADR052-V15-LOCAL-ADV-PASS2-FIX-BURST | **ADR-052 v1.5 + ADR-051 v1.14 fix burst committed (state-manager, single-commit TD-VSDD-053; D-1222): in-house adversary LOCAL pass-2 = NOT-RATIFIABLE (1C+4H+7M); all 12 findings closed — C-1 reader protocol INVERTED generation-first/canonical-fallback (v1.4 canonical-first was regression for BC-INDEX.md in-place overwrite target); H-1 self-contained skipped-control inventory inlined + dangling refs removed; H-2 mtime re-stat immediately pre-execve (corrected residual-risk: sub-instruction stat→execve gap); H-3 tool_use_id reservations (stable harness ID, no in-process shared state); H-4 version pins removed (stable §Decision N form); M-1 ADR-052 traceability row +BC-1.18.011 Architecture Anchors; M-2 ADR-051 §D10 item 6 activation-coupling removed (ADR-051 v1.13→v1.14); M-3 E-MAINTENANCE-001 corrected throughout; M-4 stale reader instruction removed from §Downstream BC-1.18.010; M-6 Bash reservation documented §5a; L-1..L-5+inputs-fix. BC-1.18.010 v1.6→v1.7; BC-1.18.011 v1.4→v1.5; error-taxonomy.md v1.21→v1.22. ARCH-INDEX v4.31→v4.32 (SS-01 shard_manager.rs added M-5); BC-INDEX v5.91→v5.92. Input-hashes: ADR-052 080d460 (PASS) / BC-1.18.010 9c03116 (PASS) / BC-1.18.011 5da155e (cascade-stale circular dep pre-existing OWED #3) / error-taxonomy c86c32c (PASS) / ADR-051 no-inputs. [D-1222-DRIFT-001] NEW drift item: prd.md §5.1 does NOT enumerate MIG+MAINTENANCE error categories — owed before POLICY 22 ratification (cluster-5 PRD sync, E-12). [D-1221-PG-001] CONFIRMED STILL OPEN: MIG codes inherit same Display-parity risk (L-6 adversary pass-2 re-flag); anchor S-12.13 unchanged. BC-5.39.001 LOCAL streak 0/3 (pass-3 next). POLICY 22 OPEN — TWO sign-off items with CORRECTED semantics: (i) macOS exec-TOCTOU sub-instruction stat→execve gap + no-concurrent-cargo-build pre-flight; (ii) APFS darwin-arm64 durability test. OWED #2+#3 unchanged. Cluster-5 TDD BLOCKED. pipeline: PAUSED.** | S-25.02 F4 | 2026-09-13 |

@@ -1,7 +1,7 @@
 ---
 document_type: behavioral-contract
 level: L3
-version: "1.6"
+version: "1.7"
 status: draft
 producer: product-owner
 timestamp: 2026-09-05T00:00:00Z
@@ -13,7 +13,7 @@ inputs:
   - .factory/specs/behavioral-contracts/ss-01/BC-1.18.006.md
   - .factory/specs/behavioral-contracts/ss-01/BC-1.18.009.md
   - .factory/specs/verification-properties/VP-INDEX.md
-input-hash: "37fc36a"
+input-hash: "9c03116"
 traces_to: .factory/specs/prd.md
 origin: greenfield
 extracted_from: null
@@ -219,12 +219,14 @@ During the B2 migration window (after CURRENT.json pointer swap, before COMPLETE
 written), readers accessing BC-INDEX paths MUST use the following protocol:
 1. Check `.factory/migration-state/completed.json` — if exists: canonical paths are current.
 2. Check `.factory/migration-state/CURRENT.json` — if `status: committing`: for each required
-   file, try canonical path first; if not found, fall back to
-   `.factory/migration-state/gen-<generation_id>/` equivalent path. Rationale (C1): step 7 moves
-   files from `gen-<uuid>/` to canonical paths one by one; `gen-<uuid>/` paths become unavailable
-   for already-moved files; canonical-first fallback ensures ENOENT is impossible for any
-   new-generation file during the committing window (`rename(2)` atomicity — a file is at canonical
-   OR at `gen-<uuid>/`, never at neither).
+   file, try `.factory/migration-state/gen-<generation_id>/` path FIRST; if absent, fall back
+   to the canonical path. Rationale (C-1, ADR-052 §Decision 7c): the canonical path holds STALE
+   old content for in-place-overwrite targets (e.g. BC-INDEX.md) until step 7's specific rename
+   for that file — generation-first ensures new content is always returned for BOTH net-new shard
+   files AND in-place-overwrite targets. A file present at `gen-<uuid>/` has not yet been moved
+   (new content); a file absent from `gen-<uuid>/` has already been renamed to canonical (new
+   content at canonical). `rename(2)` atomicity ensures ENOENT is impossible for any new-generation
+   file during the COMMITTING window.
 3. If neither exists: legacy BC-INDEX.md path is current (migration not started).
 In steady state (COMPLETED.json present), canonical paths are always authoritative. The
 'COMMITTED absent → read legacy BC-INDEX.md' heuristic from v1.2 is eliminated: COMPLETED.json
@@ -287,6 +289,7 @@ S-25.02 — Artifact Sharding Layer 2: Size-Triggered Shard Rotation for Cycle A
 
 | Version | Date | Author | Change |
 |---------|------|--------|--------|
+| 1.7 | 2026-09-13 | product-owner | ADR-052 v1.5 re-hardening (C-1 mirror). §Reader Integration step 2 protocol inverted to generation-first/canonical-fallback: for each required file, try `gen-<generation_id>/` path FIRST; if absent, fall back to canonical path. Rationale (C-1, ADR-052 §Decision 7c): the canonical path holds STALE old content for in-place-overwrite targets (e.g. BC-INDEX.md itself) until step 7's specific rename for that file — canonical-first (the v1.6 protocol) returns stale content for BC-INDEX.md before its rename; generation-first is correct for BOTH net-new shard files AND in-place-overwrite targets. A file present at `gen-<uuid>/` is not yet moved (new content); a file absent from `gen-<uuid>/` has already been renamed to canonical (new content at canonical); `rename(2)` atomicity ensures ENOENT is impossible for any new-generation file during the COMMITTING window. |
 | 1.6 | 2026-09-13 | product-owner | ADR-052 v1.4 re-hardening (§Reader Integration step 2 C1 fix). Step 2 changed from "use `gen-<generation_id>/` paths for reads" to canonical-first / generation-fallback: for each required file, try canonical path first; fall back to `gen-<generation_id>/` equivalent if canonical absent. Rationale (C1): step 7 of the publication sequence (ADR-052 §Decision 7c) moves files from `gen-<uuid>/` to canonical paths one by one; `gen-<uuid>/` paths become unavailable for already-moved files; canonical-first fallback ensures readers never see ENOENT for any new-generation file during the committing window, regardless of step 7 progress, because `rename(2)` is atomic — a file is at canonical OR at `gen-<uuid>/`, never at neither. |
 | 1.5 | 2026-09-13 | product-owner | ADR-052 v1.3 re-hardening. §Reader Integration section replaced: the v1.2 COMMITTED-absent heuristic ("COMMITTED present → canonical; COMMITTED absent → legacy; COMMITTED archived at CLEANED") is replaced with the v1.3 three-step protocol keyed on two permanent pointer files — (1) check `completed.json` first (presence means canonical paths current); (2) check `CURRENT.json` with `status: committing` (use generation staging paths); (3) if neither exists: legacy BC-INDEX.md path is current (migration not started). COMMITTED/CLEANED terminology eliminated throughout. COMPLETED.json is permanent and never archived; its absence in steady state is not an error. Closes F1/F9 alignment gap: BC-1.18.010's reader protocol now matches ADR-052 v1.3 §Decision 7c's atomic-pointer model. |
 | 1.4 | 2026-09-13 | product-owner | ADR-052 v1.2 hardening (2 amendments): (1) Invariant 2 amended from two-parity to three-way parity: replaced "Two parity checks" with "Three parity checks" plus explicit three-way formula `config.arch_index_sha` == `manifest.approved_arch_index_sha` == live ARCH-INDEX SHA; added stale-binary detection description ("including a stale binary (config at revision A) invoked with a current manifest (revision B)"); added (c) stale-installed-config CI test; removed "NECESSARY-BUT-NOT-SUFFICIENT / sufficient condition" framing in favour of the new three-way check structure; `arch_index_sha` embedding field now cited as `arch_index_sha` (not generic "the ARCH-INDEX commit SHA"); updated closing sentence to "triggering a CI parity failure as the forcing function." (2) New §Reader Integration section added (2nd Codex F2 — not in v1.1): specifies that during the B2 migration window (after first target rename, before CLEANED), readers MUST consult the COMMITTED marker at `.factory/migration-state/migrate-bc-index-state.json` to determine read path — COMMITTED present: read from canonical shard paths; COMMITTED absent: read from legacy BC-INDEX.md; in steady state (after CLEANED), shard paths are always canonical; COMMITTED archived to `.factory/migration-audit/` at CLEANED time, its absence in steady state is not an error. |
