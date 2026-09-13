@@ -1,7 +1,7 @@
 ---
 document_type: behavioral-contract
 level: L3
-version: "1.3"
+version: "1.4"
 status: draft
 producer: product-owner
 timestamp: 2026-09-05T00:00:00Z
@@ -14,7 +14,7 @@ inputs:
   - .factory/specs/behavioral-contracts/ss-01/BC-1.18.006.md
   - .factory/cycles/v1.0-brownfield-backfill/S-25.02-f2-architecture-delta.md
   - .factory/specs/behavioral-contracts/BC-INDEX.md
-input-hash: "6e82271"
+input-hash: "ddee535"
 traces_to: .factory/specs/prd.md
 origin: greenfield
 extracted_from: null
@@ -104,7 +104,9 @@ size alone and require immediate sub-sharding at the same F4 activation moment.
    (pre-split) `BC-INDEX.md`'s full per-BC-row content byte-for-byte — modulo the newly-introduced
    `§Subsystem Shard Manifest` section itself, which is new structural metadata, not migrated
    content. This is BC-1.18.008 Postcondition 6(a)'s exact analogue, applied to a content
-   partition (by subsystem) instead of a time partition (by seal sequence).
+   partition (by subsystem) instead of a time partition (by seal sequence). PC1 is verified
+   at ADR-052 §Decision 7c step 3b against the staged generation files BEFORE the CURRENT.json
+   pointer swap; step 3c aborts cleanly (txn → ABORTED, gate → OPEN) on any verification failure.
 
 2. **Independent-census integrity check — every BC row in EXACTLY one shard.** Before the split
    begins, capture an independent census: the complete set of `BC-X.YY.NNN` IDs present in the
@@ -119,7 +121,9 @@ size alone and require immediate sub-sharding at the same F4 activation moment.
    specialized to BC-INDEX's ID-keyed partition instead of decision-log's row-boundary partition,
    and is the "independent census" check BC-1.18.010 already specifies for the STEADY STATE — this
    migration BC specifies the ONE-TIME check that establishes that steady state correctly in the
-   first place.
+   first place. PC2 (the independent census) is verified at ADR-052 §Decision 7c step 3b against
+   the staged generation files BEFORE the CURRENT.json pointer swap; step 3c aborts cleanly
+   (txn → ABORTED, gate → OPEN) on any census failure.
 
 3. **Crash-atomicity: staging + verify + atomic replace, all-or-nothing.** Write all ten (or more)
    resulting shard files and the shard-manifest TOML to a staging location first; only after
@@ -139,7 +143,7 @@ size alone and require immediate sub-sharding at the same F4 activation moment.
    `sync_dir_best_effort()` per ADR-052 §Decision 7d.
 
 3a. **Pre-commit source-fingerprint recheck (TOCTOU guard).** This check is performed EXACTLY
-    ONCE, before the CURRENT.json pointer swap (step 5 in ADR-052 §Decision 7c) — not between
+    ONCE, before the CURRENT.json pointer swap (step 6 in ADR-052 §Decision 7c) — not between
     individual renames. The migration binary re-reads BC-INDEX.md's source content, computes
     SHA-256, and compares against the `source_sha256` field recorded in the txn record at
     quiescence. If they differ: ABORT. The txn record is set to state ABORTED. BC-INDEX.md's
@@ -207,8 +211,11 @@ size alone and require immediate sub-sharding at the same F4 activation moment.
    and the intent log: before the CURRENT.json pointer swap, the state machine is either STAGING
    (staging generation in progress, intent log recording per-target expected hashes) or has no txn
    record (no migration in progress); after the CURRENT.json pointer swap transitions to COMMITTING,
-   canonical readers see the migration as in-progress and use generation paths — there is no turning
-   back. COMPLETED.json (written after all canonical path moves complete and are hash-verified) is
+   canonical readers see the migration as in-progress and access new-generation content via the
+   canonical-first / generation-fallback protocol (ADR-052 §Decision 7c reader protocol, C1 fix):
+   each file is accessible at its canonical path (if already moved by step 7's progress) OR at
+   `gen-<uuid>/` (not yet moved); `rename(2)` atomicity ensures ENOENT is not possible for any
+   new-generation file during the COMMITTING window. There is no turning back. COMPLETED.json (written after all canonical path moves complete and are hash-verified) is
    the permanent terminal record; forward recovery uses the intent log + matching-hash rule to
    resume from the first uncompleted canonical path move.
    The CURRENT.json atomic pointer swap is the sole commit-point for the multi-file atomic
@@ -226,7 +233,7 @@ size alone and require immediate sub-sharding at the same F4 activation moment.
 |----|-------------|-------------------|
 | EC-001 | Content-preservation (Postcondition 1) passes but independent census (Postcondition 2) finds a duplicated row across two shard files | Migration ABORTS per Postcondition 4 — passing ONE check is not sufficient; both are independently mandatory (Invariant 2) |
 | EC-002 | Migration crashes after writing 6 of 10 first-level shard files to staging | Postcondition 3's atomicity guarantee: `BC-INDEX.md`'s original body is untouched (staging was incomplete and never promoted); the partial staged output is discarded on the next attempt, which restarts cleanly |
-| EC-003 | A prior migration attempt left a complete, verified shard set in staging but crashed before the atomic-replace step | Re-running MUST detect the verified-complete staged state and resume directly to the atomic-replace step, not re-run the full split from scratch (Postcondition 5's idempotency, resume-from-verified-checkpoint variant) |
+| EC-003 | A prior migration attempt left a complete, verified shard set in staging but crashed before the atomic-replace step | Re-running MUST detect the verified-complete staged state (txn record state = STAGING) and resume toward the pointer swap. **H3 fix (v1.4):** resume-from-STAGING MUST re-run the full census (step 3b per ADR-052 §Decision 4e) before proceeding to the pointer swap — the census gate is not skippable on resume even when the staged generation was previously verified complete. The census re-run uses the existing staged generation files; it does NOT re-run the full split from scratch (Postcondition 5's idempotency). |
 | EC-004 | SS-05's second-level sub-split (Postcondition 6) produces sub-shards `.a`/`.b`/`.c` whose combined row count does not match an independent pre-split count of `BC-5.*` rows | Migration ABORTS for the entire operation (not just SS-05) per Postcondition 4 — a sub-shard-level census failure is treated with the same severity as a top-level census failure, since a partial-success outcome (nine subsystems split correctly, SS-05 corrupted) would still violate Invariant 3's all-or-nothing guarantee |
 | EC-005 | An implementer mistakenly makes this migration a precondition for BC-7.08.001's Cohort B flip | Scope violation of Postcondition 7/Invariant 4 — the F2 architecture-delta doc's migration-impact map already confirms zero dependency; this BC introduces none |
 | EC-006 | The migration is re-run after already completing successfully (no partial state, fully migrated) | Idempotent no-op: the migration detects `BC-INDEX.md`'s body is already in the split end-state (zero per-BC rows remain in the body, per BC-1.18.010 Invariant 3) and exits without re-splitting or re-writing any shard file |
@@ -302,14 +309,17 @@ BC's Invariant 1 states are reused, not reimplemented, for the staging+verify+at
 sequence (Postcondition 3).
 
 ```
-$ grep -oE "^total_bcs: [0-9]+" .factory/specs/behavioral-contracts/BC-INDEX.md
-total_bcs: 2005
+$ grep -oE "^total_bcs: [0-9]+" .factory/specs/behavioral-contracts/BC-INDEX.md | sed -E 's/[0-9]+/<N>/'
+total_bcs: <N>
 ```
 
-Confirms the live `total_bcs` frontmatter field's current value, grounding this BC's Postcondition
-2 independent-count-oracle claim (the exact figure is expected to change as BC-INDEX grows further
-before F4 execution — this BC's own authoring-time snapshot, not a literal migration input, mirrors
-BC-1.18.008 Precondition 3's identical illustrative-scale caveat).
+Confirms the live `total_bcs` frontmatter field exists and is numeric; the volatile value is
+redacted to `<N>` (per POLICY 5 HEAD-reproducibility mandate — mirrors BC-1.18.010 v1.2's
+structural-form fix for the identical drift class). Any future reader MUST re-execute the grep at
+HEAD to obtain the CURRENT count. This BC's Postcondition 2's independent-count-oracle claim
+depends only on the FIELD being present and numeric, not on any specific value (the count grows
+with every new BC addition before F4 execution; the migration binary reads the live value at
+activation time, not from this grounding evidence).
 
 ```
 $ grep -oE "^\*\*CAP-04[123] " .factory/specs/domain-spec/capabilities.md
@@ -345,6 +355,7 @@ S-25.02 — Artifact Sharding Layer 2: Size-Triggered Shard Rotation for Cycle A
 
 | Version | Date | Author | Change |
 |---------|------|--------|--------|
+| 1.4 | 2026-09-13 | product-owner | ADR-052 v1.4 re-hardening (5 amendments). (1) Postconditions 1 and 2: added explicit cross-reference to ADR-052 §Decision 7c step 3b — PC1 (content-preservation) and PC2 (independent census) are verified against the staged generation BEFORE the CURRENT.json pointer swap; step 3c aborts cleanly (txn → ABORTED, gate → OPEN) on failure. (2) Postcondition 3a (Amendment 7): corrected pointer-swap step index from "step 5" to "step 6" (step 5 = fingerprint recheck; step 6 = CURRENT.json pointer swap = the commit point). (3) Invariant 3: added COMMITTING-window reader protocol (C1 fix): during COMMITTING, new-generation content is accessible via canonical-first / generation-fallback — each file is at its canonical path (if already moved by step 7) OR at gen-uuid/ (not yet moved); rename(2) atomicity ensures ENOENT is not possible for any file during the committing window (ADR-052 §Decision 7c reader protocol). (4) EC-003 resume logic: added H3 fix note — resume-from-STAGING MUST re-run the full census (step 3b) before proceeding to the pointer swap; the census gate is not skippable on resume (ADR-052 §Decision 4e). (5) SDK Grounding Evidence re-grounded: the literal `total_bcs: 2005` stdout value replaced with structural form `total_bcs: <N>` (per POLICY 5 HEAD-reproducibility mandate; mirrors BC-1.18.010 v1.2's structural-form fix for the identical drift class — the value is 2006 at HEAD and will continue to drift; any future reader MUST re-execute the grep at HEAD for the current count). No state-name corrections required: no PREPARED occurrences exist in the v1.3 body (v1.3 already replaced all such occurrences with STAGING/COMMITTING/COMPLETED/ABORTED). |
 | 1.3 | 2026-09-13 | product-owner | ADR-052 v1.3 re-hardening (6 amendments). Amendment 4 — Precondition 5 replaced: PREPARED/COMMITTED/CLEANED phase-marker model replaced with STAGING/COMMITTING/COMPLETED txn-record state machine (`txn-<uuid>.json`) + framed checksummed intent log (`intent-<generation_uuid>.log`); EC-003 now reads intent log + txn record (matching-destination-hash rule) instead of `completed_renames`. Amendment 5 — Precondition 6 replaced: O_CREAT\|O_EXCL + alive-PID lock model replaced with dual independent mechanisms: (a) advisory flock on stable pre-created never-unlinked inode (kernel auto-releases on death); (b) txn record state STAGING/COMMITTING blocks ALL mutation tool calls via native admission gate regardless of PID liveness; (c) OPEN/DRAINING gate with writer reservations ensures quiescence before snapshot. Amendment 6 — Postcondition 3 corrected: removed "dir-fsync is mandatory, not best-effort" blanket assertion; replaced with platform-branched durability: Linux mandatory fsync+dir-fsync; macOS F_FULLFSYNC on file mandatory, APFS dir-fsync best-effort only (Apple docs do not guarantee power-loss durability for directory fsync); cites `sync_file_durable()`/`sync_dir_best_effort()` per ADR-052 §Decision 7d. Amendment 7 — Postcondition 3a updated: TOCTOU fingerprint check still EXACTLY ONCE; reference changed from "before the first rename" to "before the CURRENT.json pointer swap (step 5 in ADR-052 §Decision 7c)"; compared against `source_sha256` in txn record (not PREPARED marker); abort sets txn record to ABORTED. Amendment 8 — Invariant 3 updated: "COMMITTED marker is the sole commit-point" replaced with "CURRENT.json atomic pointer swap is the sole commit-point"; `completed_renames` tracking replaced with intent log + matching-hash rule for forward recovery; COMPLETED.json is the permanent terminal record. Amendment 9 — Architecture Anchors updated: §Decision 7 generic citation replaced with §Decision 7a (advisory flock + durable txn record + fencing_generation), §Decision 7b (framed intent log + WAL boundary + recovery decision table), §Decision 7c (CURRENT.json pointer swap + COMPLETED.json + reader protocol); §Decision 5a description updated to OPEN/DRAINING gate + txn state check. |
 | 1.2 | 2026-09-13 | product-owner | ADR-052 v1.2 hardening (6 delta amendments over v1.1): Amendment 3 — Postcondition 7 scope-clarification reference updated from "ADR-052 v1.1" to "ADR-052 §Decision 1". Amendment 4 — Precondition 5 PREPARED/COMMITTED/CLEANED descriptions updated: PREPARED now includes `completed_renames` list initialized and "original content preserved in staging"; COMMITTED adds "per-target hashes verified" and "Written AFTER the last rename and dir-fsync"; CLEANED adds "terminal success state"; EC-003 sentence updated to "reads the `completed_renames` field to determine which renames succeeded and which must be retried; it does NOT re-run the full split from scratch." Amendment 5 — Precondition 6 corrected: lock file content added "(containing PID + activation_id + timestamp per ADR-052 §Decision 7a)"; "Ordinary governed writers (Edit/Write tool calls validated by the `validate-factory-path-staging` dispatcher guard)" replaced with "ALL mutation tool calls (Edit/Write/MultiEdit/Bash) targeting BC-INDEX paths are blocked by the native admission gate in `executor.rs` (ADR-052 §Decision 5a) when this lock file exists with an alive PID"; TOCTOU drain-protocol sentence added; `validate-factory-path-staging` guard sentence removed. Amendment 7 — Postcondition 3a rewritten: "EXACTLY ONCE, before the first rename" (not per-rename); compares against `source_sha256` field in PREPARED marker; "The migration requires re-activation" added; replaced closing sentence with v1.1 contradiction explanation. Amendment 8 — Invariant 3 updated: "single COMMITTED phase marker" replaced with "COMMITTED phase marker ... and the `completed_renames` tracking in PREPARED"; state machine description updated to "(staging in progress, with zero or more completed renames tracked)". Amendment 9 — Architecture Anchors updated: §Decision 4 description updated to "(two-phase validation: pre-lock and under-exclusion)"; new §Decision 5a anchor added; §Decision 7 description updated to include "per-target completion tracking + content-bearing lock file with crash-recovery ownership protocol"; §Decision 8 updated to "accurate skipped-control inventory and enumerated allowed write targets". No existing guarantee weakened. |
 | 1.1 | 2026-09-12 | product-owner | ADR-052 v1.1 hardening (9 amendments): Amendment 1 — removed A/B2 simultaneous-activation coupling from Precondition 4 ("at the SAME moment BC-1.18.008 runs" language deleted; each migration independently gated via its own armed-activation manifest per ADR-052 §Decision 4). Amendment 2 — Postcondition 6 last sentence "at the SAME F4 activation moment mechanism A's own backfill (BC-1.18.008) runs" replaced with "at F4 activation, as part of the same one-time B2 migration operation (independently of mechanism A's activation schedule)" (SS-05/SS-06 B2-internal atomicity preserved; only A/B2 simultaneous-activation coupling removed). Amendment 3 — appended Postcondition 7 scope clarification ("governs B2/Cohort-B independence only; A/B2 scheduling independence governed by Precondition 4 as amended"). Amendment 4 — new Precondition 5: durable phase-marker file at `.factory/migration-state/migrate-bc-index-state.json` (PREPARED/COMMITTED/CLEANED transitions, EC-003 resume logic). Amendment 5 — new Precondition 6: writer-exclusion advisory lock at `.factory/migration-state/exclusive.lock`, governed writers fail E-MAINTENANCE-001 during migration window, lock released on COMMITTED or abort (ADR-052 §Decision 5 guard). Amendment 6 — appended mandatory dir-fsync mandate to Postcondition 3 (each rename(2) followed by fsync on parent directory; mandatory, not best-effort; POSIX rename(2) + Pillai et al. OSDI'14). Amendment 7 — new Postcondition 3a: TOCTOU pre-commit source-fingerprint recheck immediately before PREPARED→COMMITTED transition (SHA-256 recompute vs. census-time fingerprint; abort + rollback + delete PREPARED marker on mismatch). Amendment 8 — appended COMMITTED-marker commit-pointer specification to Invariant 3 (sole commit-point for the multi-file atomic operation; N independent write_atomic calls without it do not satisfy all-or-nothing). Amendment 9 — added ADR-052 §Decision 4/7/8 to Architecture Anchors. ADR-052 added to inputs. No existing guarantee weakened. |

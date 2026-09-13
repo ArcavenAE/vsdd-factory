@@ -8759,4 +8759,58 @@ BC-4.17.001 v1.29 active. BC-6.28.001 v1.3 active. BC-5.45.001 v1.3 active. BC-1
 
 **Cycle-level streak: 3/3 — CONVERGED, UNCHANGED this burst** (no cycle-level adversary pass ran). Cluster-1's OWN LOCAL cascade stays **3/3 CONVERGED — CLOSED** (D-1172/D-1173), fully retired. Cluster-2's OWN LOCAL cascade stays **CLOSED at 0/3** via human-authorized asymptotic acceptance (D-1184), fully retired since PR #824 (D-1186). **Cluster-3's OWN LOCAL cascade stays 3/3 CONVERGED — CLOSED** (D-1204), fully retired since PR #831 (D-1206). **Cluster-4's OWN LOCAL cascade stays 3/3 CONVERGED — CLOSED** (passes A/B/C, D-1211), fully retired since PR #832 (D-1212). **NEXT = cluster-5 (mechanism-B2 sharding, BC-1.18.010+011) begins a FRESH LOCAL BC-5.39.001 cascade once its own TDD implementation lands, per D-1170's sequencing. PIPELINE PAUSED — cluster-5 pending human GO.**
 
+---
+
+## Session Resume Checkpoint (2026-09-13 — D-1220-ADR052-V13-RESEARCH-GROUNDED-REDESIGN-BURST v10.51→v10.52; develop ebd16f79 (PR #832 merged); main 51023185; merged_count 122; v1.0.0-rc.25 SHIPPED; PIPELINE PAUSED — ADR-052 v1.3 COMMITTED; NEXT = 4th Codex re-review → POLICY 22 ratification)
+
+Archived from STATE.md by the D-1221-ADR052-V14-LOCAL-ADV-PASS1-FIX-BURST (2026-09-13). Full content preserved in git: `git show HEAD:.factory/STATE.md` at factory-artifacts HEAD before D-1221 commit.
+
+> **SELF-SUFFICIENT RESUME CONTEXT.** ADR-052 v1.3 research-grounded redesign COMMITTED (D-1220; 11 Codex findings closed via atomic-publication architecture). OWED item #1 status = v1.3 redesign DONE. **NEXT = 4th cross-vendor Codex re-review of ADR-052 v1.3**, then HUMAN POLICY 22 ratification carrying 2 sign-off items: (i) macOS exec-TOCTOU residual window; (ii) APFS directory-fsync durability test. Cluster-5 TDD BLOCKED until POLICY 22 ratification. PIPELINE REMAINS PAUSED.
+
+### §1. Position (a)
+
+2026-09-13. S-25.02 F4 cluster-5 F1; ADR-052 v1.3 COMMITTED (D-1220) — research-grounded redesign per research brief `research-adr-052-v13-atomic-publication-2026-09-13.md`; 11 Codex findings from D-1218 closed via atomic-publication architecture. OWED item #1 (v1.3 redesign) COMPLETE. NEXT = 4th cross-vendor Codex re-review of ADR-052 v1.3 → HUMAN POLICY 22 ratification (with 2 sign-off items). `pipeline:` PAUSED.
+
+### §2. Convergence (b)
+
+BC-5.39.001 cycle streak **3/3 — CONVERGED, UNCHANGED** (D-1213..D-1220 are spec-convergence/bookkeeping bursts, NOT cycle-level adversary passes). ADR-052 Codex review track: 1st (7 findings, D-1214) →2nd (8 findings, D-1216) →3rd (11 findings, D-1218) — DIVERGING; v1.3 redesign addresses all 11; 4th re-review OWED. No cluster-5 LOCAL cascade yet (TDD BLOCKED).
+
+### §3. In-flight / Abandoned (c)
+
+None. D-1220 burst committed successfully. No abandoned dispatches.
+
+### §4. Pending human decisions / open blockers (d)
+
+**ADR-052 v1.3 COMMITTED (D-1220) — NEXT = 4th Codex re-review + POLICY 22 ratification.** The v1.3 redesign addresses all 11 findings. 4th cross-vendor Codex re-review is the next step (adversary dispatch). After re-review: HUMAN POLICY 22 ratification required with 2 mandatory sign-off items:
+- **(i) macOS exec-TOCTOU residual window:** Architect chose freeze-build-under-lock + documented residual window; mandatory operational constraint "no concurrent `cargo build` during active migration." Human must explicitly acknowledge.
+- **(ii) APFS directory-fsync durability:** Treated best-effort in v1.3; empirical darwin-arm64 durability test owed before APFS code path declared production-grade. Confirm darwin-arm64 CI runner availability (GitHub Actions macOS-14 or equivalent).
+
+Cluster-5 TDD BLOCKED until POLICY 22 ratification. Other open: **[D-1212-DRIFT-002]** → S-12.15. **S-25.05** (Obs-B), **S-25.06** (executor). S-12.09..S-12.15 (E-12). **F-006+SEC-831-01** → T-12. **[D-1207]** `.factory/.gitignore` unregistered. Cycle-file compaction → S-25.06. 4 PRs open: **#769, #768, #729, #632**.
+
+**OWED ON RESUME (2 items remaining):**
+2. input-hash currency refresh — `compute-input-hash --scan --update` sweep (907 files) OWED.
+3. ADR-052↔BC input-hash circular-dependency re-settle (after POLICY 22 ratification).
+
+### §5. WIP branches (e)
+
+None — `develop` @ `ebd16f79` (PR #832 merged, cluster-4 closed); no story worktrees open. `factory-artifacts` HEAD = this burst's commit.
+
+### §6. Resume command (f)
+
+`/vsdd-factory:rehydrate-wave` then `/vsdd-factory:next-step`.
+
+BC-4.17.001 v1.29 active. BC-6.28.001 v1.3 active. BC-5.45.001 v1.3 active. BC-10.13.001 v1.3 active. BC-4.18.001 v1.2 active. BC-1.18.001 v1.7 active. BC-1.18.002 v1.8 active. BC-1.18.003 v1.8 active. BC-1.18.004 v1.4 active. BC-3.08.001 v1.34 active. BC-4.16.002 v1.2 active. BC-5.39.006 v1.9 active. **BC-1.18.005 v1.15 active.** **BC-1.18.006 v1.12 active.** **BC-1.18.007 v1.2 active.** **BC-1.18.008 v1.9 active.** **BC-1.18.009 v1.8 active** (POL-14 promoted D-1212). BC-1.18.010 **v1.5** / BC-1.18.011 **v1.3** (draft; SS-01; ADR-052 PROPOSED v1.3 COMMITTED D-1220 — 11 Codex findings closed; 4th Codex re-review + HUMAN POLICY 22 ratification OWED; 2 sign-off items: macOS exec-TOCTOU + APFS fsync durability). BC-1.18.012 v1.1 (draft; SS-01). BC-7.08.001 v1.1 (draft; SS-07). BC-INDEX **v5.90** (2,006 BCs). VP-INDEX v3.19 (141 VPs). STORY-INDEX v4.468 (25 epics). ARCH-INDEX **v4.30** (52 ADRs; ADR-052 PROPOSED v1.3). error-taxonomy.md **v1.20**.
+
+### §7. HEADs
+
+- `develop`: **`ebd16f79`** (PR #832 squash-merged). merged_count **122**.
+- `main`: **`51023185`** (origin/main; v1.0.0-rc.25; UNCHANGED).
+- `factory-artifacts`: run `git -C .factory log -1` for live HEAD.
+- `fix/d999-sentinel-code-migration`: clean+inert @ `bf642fd9`.
+- `feature/S-21.04-story-worktree-write-path-discipline`: clean+inert @ `323f440f`.
+
+### §8. BC-5.39.001 streak (D-1220 state)
+
+**Cycle-level streak: 3/3 — CONVERGED, UNCHANGED** (D-1213..D-1220 are spec-convergence/bookkeeping bursts). Cross-vendor Codex ADR-052 closure reviews NON-STREAK (decision-support only). Cluster-5 LOCAL cascade NOT started (TDD BLOCKED — awaiting POLICY 22). All prior cluster cascades CLOSED: cluster-1 (D-1172/D-1173), cluster-2 (D-1184), cluster-3 (D-1204), cluster-4 (D-1211). **PIPELINE PAUSED — 4th Codex re-review then POLICY 22 ratification owed on resume.**
+
 *(Archived 2026-09-12 during SESSION-WRAP-PAUSE-2026-09-12 v10.47→v10.48 pause burst; replaced by new SRC reflecting 2nd Codex ADR-052 closure state.)*

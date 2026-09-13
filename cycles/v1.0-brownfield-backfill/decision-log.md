@@ -10663,3 +10663,61 @@ ADR-052 v1.3 adopts platform-branched durability:
 ### Canonical 6-column row (STATE.md Decisions Log)
 
 | D-1220 | D-1220-ADR052-V13-RESEARCH-GROUNDED-REDESIGN-BURST | **ADR-052 v1.3 research-grounded redesign committed (state-manager, single-commit TD-VSDD-053; D-1220): 11 Codex findings from D-1218 closed via atomic-publication architecture redesign (CURRENT.json pointer swap; framed intent log; advisory flock; txn-record state machine; OPEN/DRAINING drain gate; execveat + digest binding; platform-branched APFS/Linux durability). BC-1.18.011 v1.2→v1.3; BC-1.18.010 v1.4→v1.5; error-taxonomy.md v1.19→v1.20. ARCH-INDEX v4.29→v4.30; BC-INDEX v5.89→v5.90. Input-hashes: ADR-052 aedcdc1 / BC-1.18.011 6e82271 (cascade-stale, circular dep) / BC-1.18.010 de1520c / error-taxonomy 5826e39. TWO items owed for POLICY 22 sign-off: (i) macOS exec-TOCTOU residual window (freeze-build-under-lock + no-concurrent-cargo-build constraint); (ii) APFS directory-fsync durability best-effort (empirical darwin-arm64 test owed). POLICY 22 ratification OPEN; cluster-5 TDD BLOCKED. pipeline: PAUSED. OWED: 907-file hash sweep; ADR-052↔BC re-settle.** | S-25.02 F4 | 2026-09-13 |
+
+---
+
+## D-1221: ADR-052 v1.4 Re-Hardening Fix Burst — In-House Adversary LOCAL Pass-1 (2C+5H+5M Closed)
+
+**Decision ID:** D-1221
+**Slug:** D-1221-ADR052-V14-LOCAL-ADV-PASS1-FIX-BURST
+**Context:** S-25.02 F4 cluster-5 F1; ADR-052 cascade
+**Date:** 2026-09-13
+**Author:** state-manager
+
+### Context
+
+ADR-052 v1.3 was committed at D-1220. The review track for cluster-5 then transitioned from cross-vendor Codex (decision-support only, NON-STREAK) to the in-house LOCAL adversary cascade (BC-5.39.001, streak-counting). Per the checklist, a fresh-context in-house adversary was dispatched to review ADR-052 v1.3 + BC-1.18.011 v1.3 + BC-1.18.010 v1.5 + error-taxonomy.md v1.20. The adversary returned NOT-RATIFIABLE with 2 CRIT + 5 HIGH + 5 MED (12 findings total).
+
+Architect closed the two CRIT findings (C1, C2) and HIGH findings (H1–H5) via ADR-052 v1.4. Product-owner closed the MED findings (M1–M5) via BC-1.18.011 v1.4, BC-1.18.010 v1.6, and error-taxonomy.md v1.21. State-manager closed M4 (BC-INDEX version-cell correction) in this burst.
+
+### Findings Summary
+
+| ID | Severity | Description | Resolution |
+|----|----------|-------------|------------|
+| C1 | CRIT | §Reader Integration step 2 used generation-path reads exclusively; during COMMITTING window files move one-by-one to canonical paths — generation path becomes ENOENT for already-moved files | Canonical-first/generation-fallback: try canonical first, fall back to gen-uuid/ if absent; rename(2) atomicity ensures ENOENT impossible for any file (BC-1.18.010 v1.6; ADR-052 §Decision 7c reader protocol) |
+| C2 | CRIT | Allowlist fragmentation — multiple conflicting allow-entries across versions; no single authoritative entry | Normalized to single authoritative allow-entry in ADR-052 §Decision 3 (ADR-052 v1.4) |
+| H1 | HIGH | Gate not reset on abort — txn→ABORTED but admission gate stayed OPEN/DRAINING indefinitely | Gate reset to OPEN on abort, mirroring gate close-on-commit (ADR-052 v1.4 §Decision 5) |
+| H2 | HIGH | Durable reservation dir not pre-created — intent-log parent dir assumed to exist | Pre-create dir + fsync before first generation write (ADR-052 v1.4 §Decision 7b) |
+| H3 | HIGH | Pre-pivot census gate skippable on resume from STAGING — EC-003 resume logic went straight to pointer swap | EC-003 resume-from-STAGING MUST re-run full census (step 3b) before proceeding to pointer swap; census is not skippable on resume (BC-1.18.011 v1.4 EC-003; ADR-052 §Decision 4e) |
+| H4 | HIGH | STAGING state missing from spec enumeration | STAGING added as explicit state in ADR-052 v1.4 and BC-1.18.011 v1.4 Precondition 5 state machine |
+| H5 | HIGH | Error codes not exhaustively enumerated — spec mentioned error classes without allocating distinct codes | 11 error-taxonomy codes enumerated in error-taxonomy.md v1.21 (E-MIG-001..E-MIG-011) |
+| M1 | MED | Fencing described as BLOCKING all writes — should be advisory (audit-only) | Reframed as advisory fencing in ADR-052 v1.4 §Decision 5a; txn-record state is the authoritative block, flock is advisory |
+| M2 | MED | PC3a cited "step 5" as the pointer-swap step — step 5 is the fingerprint recheck | Corrected to "step 6" (CURRENT.json pointer swap) in BC-1.18.011 v1.4 |
+| M3 | MED | SDK Grounding Evidence `total_bcs:` used literal `2006` — violates POLICY 5 HEAD-reproducibility mandate | Structural form `total_bcs: <N>` per POLICY 5 (BC-1.18.011 v1.4 SDK Grounding Evidence) |
+| M4 | MED | BC-INDEX v5.90 version cell for BC-1.18.010 v1.5 claimed "three-way parity extended to cover CURRENT.json generation pointer binding" — Invariant 2 was UNCHANGED per ADR-052; index↔body drift | Body-table v1.5 cell corrected: §Reader Integration only, Invariant 2 UNCHANGED from v1.4 (state-manager, this burst); frontmatter v5.90 changelog cell also corrected |
+| M5 | MED | macOS exec-TOCTOU risk described in BLOCKING terms — residual window is accepted operational constraint, not a blocker | Reframed as accepted residual constraint with operational mitigation (no concurrent cargo build) in ADR-052 v1.4 §Decision 11 |
+
+### Codification
+
+**BC-5.39.001 LOCAL cascade:** pass-1 = NOT-RATIFIABLE. Streak RESET to 0/3. Adversary pass-2 next (fresh-context, reads only prior pass Part A per Iron Law).
+
+**Index advances this burst:**
+- ARCH-INDEX v4.30 → v4.31 (ADR-052 row v1.3→v1.4)
+- BC-INDEX v5.90 → v5.91 (BC-1.18.011 v1.3→v1.4; BC-1.18.010 v1.5→v1.6; M4 cell correction)
+
+**Input-hashes (post-update):**
+- ADR-052: PARTIAL (missing input `adv-cv-adr052-v13-closure-2026-09-13.md`; input-hash not updatable; pre-existing circular/missing-input condition)
+- BC-1.18.011: `ddee535` (PASS — updated)
+- BC-1.18.010: `37fc36a` (PASS — updated)
+- error-taxonomy.md: `19a618d` (PASS — updated)
+- BC-1.18.011 was cascade-stale (circular dep ADR-052↔BC pre-existing per D-1220; noted, not chased per OWED #3)
+
+**Process-gap (adversary finding):** No CI lint / regression-detector asserts error-taxonomy Message-Format cell ↔ shipped Display parity; this class has recurred 6+ times (L-BB-D1210). Recorded as Drift Item [D-1221-PG-001] in STATE.md; anchored to S-12.13 (E-SHD Display Drift enforcement story, E-12). Lesson appended to lessons.md.
+
+**POLICY 22 status:** OPEN (unchanged). Two sign-off items still owed: (i) macOS exec-TOCTOU residual window; (ii) APFS directory-fsync durability test. Cluster-5 TDD remains BLOCKED until POLICY 22 ratification.
+
+**OWED (unchanged):** OWED #2 (907-file hash sweep); OWED #3 (ADR-052↔BC circular re-settle). Cluster-5 TDD BLOCKED.
+
+### Canonical 6-column row (STATE.md Decisions Log)
+
+| D-1221 | D-1221-ADR052-V14-LOCAL-ADV-PASS1-FIX-BURST | **ADR-052 v1.4 re-hardening committed (state-manager, single-commit TD-VSDD-053; D-1221): in-house adversary LOCAL pass-1 = NOT-RATIFIABLE (2C+5H+5M); all 12 findings closed — C1 canonical-first/generation-fallback reader protocol; C2 normalized allowlist; H1 gate-reset-on-abort; H2 durable reservation dir; H3 pre-pivot census gate step 3b; H4 STAGING state; H5 11 error codes enumerated; M1 fencing reframed advisory; M2 pivot step 6 corrected; M3 structural total_bcs; M4 BC-INDEX v1.5 changelog cell corrected (§Reader Integration only, Invariant 2 UNCHANGED); M5 macOS reframed. BC-1.18.011 v1.3→v1.4; BC-1.18.010 v1.5→v1.6; error-taxonomy.md v1.20→v1.21. ARCH-INDEX v4.30→v4.31; BC-INDEX v5.90→v5.91. Input-hashes: ADR-052 PARTIAL (missing input, pre-existing) / BC-1.18.011 ddee535 (cascade-stale circular dep pre-existing per OWED #3) / BC-1.18.010 37fc36a (PASS) / error-taxonomy 19a618d (PASS). BC-5.39.001 LOCAL streak RESET 0/3. Process-gap [D-1221-PG-001] recorded: no CI lint asserts error-taxonomy Message-Format ↔ Display parity; anchored S-12.13 (E-12). POLICY 22 still OPEN. OWED #2+#3 unchanged. Cluster-5 TDD BLOCKED. pipeline: PAUSED.** | S-25.02 F4 | 2026-09-13 |
