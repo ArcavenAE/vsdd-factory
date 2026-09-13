@@ -1,7 +1,7 @@
 ---
 document_type: behavioral-contract
 level: L3
-version: "1.4"
+version: "1.5"
 status: draft
 producer: product-owner
 timestamp: 2026-09-05T00:00:00Z
@@ -13,7 +13,7 @@ inputs:
   - .factory/specs/behavioral-contracts/ss-01/BC-1.18.006.md
   - .factory/specs/behavioral-contracts/ss-01/BC-1.18.009.md
   - .factory/specs/verification-properties/VP-INDEX.md
-input-hash: "7e56d92"
+input-hash: "de1520c"
 traces_to: .factory/specs/prd.md
 origin: greenfield
 extracted_from: null
@@ -215,13 +215,15 @@ assignment, consistent with the sibling VP-128 row above. No property content ch
 
 ## Reader Integration
 
-During the B2 migration window (after the first target rename, before CLEANED), readers
-accessing BC-INDEX paths MUST consult the COMMITTED marker at
-`.factory/migration-state/migrate-bc-index-state.json` to determine the correct read path:
-- COMMITTED present: read from canonical shard paths (migration complete)
-- COMMITTED absent: read from legacy BC-INDEX.md path (migration in progress or not started)
-In steady state (after CLEANED), shard paths are always canonical. COMMITTED is archived to
-`.factory/migration-audit/` at CLEANED time; its absence in steady state is not an error.
+During the B2 migration window (after CURRENT.json pointer swap, before COMPLETED.json
+written), readers accessing BC-INDEX paths MUST use the following protocol:
+1. Check `.factory/migration-state/completed.json` — if exists: canonical paths are current.
+2. Check `.factory/migration-state/CURRENT.json` — if `status: committing`: use
+   `.factory/migration-state/gen-<generation_id>/` paths for reads.
+3. If neither exists: legacy BC-INDEX.md path is current (migration not started).
+In steady state (COMPLETED.json present), canonical paths are always authoritative. The
+'COMMITTED absent → read legacy BC-INDEX.md' heuristic from v1.2 is eliminated: COMPLETED.json
+is permanent and its presence is unambiguous in all states including after cleanup.
 
 ## SDK Grounding Evidence
 
@@ -280,6 +282,7 @@ S-25.02 — Artifact Sharding Layer 2: Size-Triggered Shard Rotation for Cycle A
 
 | Version | Date | Author | Change |
 |---------|------|--------|--------|
+| 1.5 | 2026-09-13 | product-owner | ADR-052 v1.3 re-hardening. §Reader Integration section replaced: the v1.2 COMMITTED-absent heuristic ("COMMITTED present → canonical; COMMITTED absent → legacy; COMMITTED archived at CLEANED") is replaced with the v1.3 three-step protocol keyed on two permanent pointer files — (1) check `completed.json` first (presence means canonical paths current); (2) check `CURRENT.json` with `status: committing` (use generation staging paths); (3) if neither exists: legacy BC-INDEX.md path is current (migration not started). COMMITTED/CLEANED terminology eliminated throughout. COMPLETED.json is permanent and never archived; its absence in steady state is not an error. Closes F1/F9 alignment gap: BC-1.18.010's reader protocol now matches ADR-052 v1.3 §Decision 7c's atomic-pointer model. |
 | 1.4 | 2026-09-13 | product-owner | ADR-052 v1.2 hardening (2 amendments): (1) Invariant 2 amended from two-parity to three-way parity: replaced "Two parity checks" with "Three parity checks" plus explicit three-way formula `config.arch_index_sha` == `manifest.approved_arch_index_sha` == live ARCH-INDEX SHA; added stale-binary detection description ("including a stale binary (config at revision A) invoked with a current manifest (revision B)"); added (c) stale-installed-config CI test; removed "NECESSARY-BUT-NOT-SUFFICIENT / sufficient condition" framing in favour of the new three-way check structure; `arch_index_sha` embedding field now cited as `arch_index_sha` (not generic "the ARCH-INDEX commit SHA"); updated closing sentence to "triggering a CI parity failure as the forcing function." (2) New §Reader Integration section added (2nd Codex F2 — not in v1.1): specifies that during the B2 migration window (after first target rename, before CLEANED), readers MUST consult the COMMITTED marker at `.factory/migration-state/migrate-bc-index-state.json` to determine read path — COMMITTED present: read from canonical shard paths; COMMITTED absent: read from legacy BC-INDEX.md; in steady state (after CLEANED), shard paths are always canonical; COMMITTED archived to `.factory/migration-audit/` at CLEANED time, its absence in steady state is not an error. |
 | 1.3 | 2026-09-12 | product-owner | ADR-052 v1.1 hardening: replaced Invariant 2 with the full config-snapshot-with-revision-binding specification. The prior text ("READ from ARCH-INDEX's Subsystem Registry, never independently hardcoded or duplicated") only stated what NOT to do; the replacement specifies the complete positive mechanism: the mapping is embedded as a `subsystem_prefixes` TOML snapshot in the `[[shard]]` config entry with a mandatory `arch_index_sha` binding (ADR-052 §Decision 10); two parity checks enforce the snapshot never diverges from ARCH-INDEX — (a) CI test `arch_index_parity` diffs snapshot vs. HEAD ARCH-INDEX on every commit (necessary-but-not-sufficient), and (b) at migration activation the binary verifies the live ARCH-INDEX matches `approved_arch_index_sha` in the armed-activation manifest and fails CLOSED on mismatch (the sufficient condition); a future subsystem renumbering propagates by regenerating the config snapshot and updating the SHA, triggering CI parity failure first; this satisfies the 'never independently hardcoded' constraint because the snapshot is CI-validated, not independent. ADR-052 added to inputs. |
 | 1.2 | 2026-09-05 | product-owner | Fix-burst amendment (adversary pass-2 finding F-P2-006, MEDIUM, POLICY 5 v1.3.6 HEAD-reproducibility mandate): re-grounded the `## SDK Grounding Evidence` §Summary-row grep to a STRUCTURAL-FORM assertion (the `BC-S Prefix`→`SS-NN`→count→shard-directory row shape, with the volatile count field redacted to `<N>` via a `sed` pass) instead of pasting a literal count digit that had already drifted from `133` (v1.1's citation) to `134` (live at authoring time) and drifts again to `135` within this SAME burst (BC-1.18.012's addition below) — closes the drift CLASS, not just this instance; future readers re-execute the grep at HEAD for the current count. No postcondition/invariant/VP content change. |

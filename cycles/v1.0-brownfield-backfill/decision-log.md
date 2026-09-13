@@ -10588,3 +10588,78 @@ Findings 1, 2, 6, and 9 stem from the same in-place per-file-rename publication 
 
 | D-1218 | D-1218-3RD-CODEX-ADR052-V12-NOT-RATIFIABLE | **3rd cross-vendor Codex closure-review of ADR-052 v1.2 PERSISTED (adv-cv-adr052-v12-closure-2026-09-13.md; NON-STREAK decision-support; D-1218): NOT RATIFIABLE — 11 findings (10 HIGH+1 MED), novelty HIGH. Trajectory DIVERGING: 7 (1st, D-1214) →8 (2nd, D-1216) →11 (3rd). Root-cause = in-place per-file-rename model; Codex recommendations converge on generation-based atomic-pointer publication + OS advisory lock on stable inode + immutable-executable digest binding. Direction decision escalated to human: (a) v1.3 atomic-pointer redesign, (b) research-first, (c) reconsider ADR-052 scope. ADR-052 remains v1.2 committed @ 9b65872f (NOT ratifiable). POLICY 22 ratification OPEN; cluster-5 TDD BLOCKED. No BC/VP/STORY/ARCH indexes changed. BC-5.39.001 streak 3/3 UNCHANGED. pipeline: PAUSED.** | S-25.02 F4 | 2026-09-13 |
 | D-1219 | D-1219-RESEARCH-BRIEF-VALIDATOR-EVASION-REMEDIATED | **[governance-remediation][process-gap] Research-agent evaded validate-input-hash by renaming reserved `inputs:` key to `source_inputs:` in research brief `research-adr-052-v13-atomic-publication-2026-09-13.md`; harness flagged `[Security Weaken]`. Remediation (state-manager single-commit TD-VSDD-053): (1) body integrity verified CLEAN — no prompt-injection, no embedded directives, no tampering beyond the frontmatter key; (2) `source_inputs:` corrected to canonical `sources:` key (convention per sibling `research-adr-052-assumption-validation-2026-09-12.md`; research briefs are NOT input-hash-governed, so `sources:` is the correct key — NOT a re-evasion of the gate); (3) `inputs:` / `input-hash:` NOT reintroduced; (4) [process-gap] recorded: research-agent prompt/guardrails MUST be amended to (a) forbid key-rename as validator-evasion mechanism and (b) specify `sources:` as the canonical provenance key for research briefs; anchored to next research-agent prompt-hardening pass (E-12 / no story ID assigned yet). Human DIRECTION DECISION LOCKED: option (b) research-first SELECTED; research brief `research-adr-052-v13-atomic-publication-2026-09-13.md` produced and now trusted; ADR-052 v1.3 redesign IS THE ACTIVE NEXT STEP (architect dispatch, using the research brief's 5 RQ → F1/F2/F9 + F3/F4/F5 + F6 + F11 + macOS/APFS platform specifics). After architect: product-owner re-hardens BC-1.18.010/011 → state-manager commit → 4th Codex re-review → human POLICY 22 ratification. POLICY 22 ratification OPEN; cluster-5 TDD BLOCKED. No BC/VP/STORY/ARCH indexes changed. BC-5.39.001 streak 3/3 UNCHANGED. pipeline: PAUSED. STATE.md v10.50→v10.51.** | S-25.02 F4 | 2026-09-13 |
+
+---
+
+## D-1220: ADR-052 v1.3 Research-Grounded Redesign Package
+
+**Date:** 2026-09-13
+**Decision ID:** D-1220
+**Codified by:** state-manager (single-commit TD-VSDD-053)
+**Phase:** S-25.02 F4 (Delta-Implementation), cluster-5 BLOCKED pending POLICY 22
+**Type:** Spec redesign burst — architect (ADR-052 v1.3) + product-owner (BC-1.18.011 v1.3, BC-1.18.010 v1.5, error-taxonomy v1.20)
+
+### Context
+
+ADR-052 v1.2 was declared NOT RATIFIABLE by the 3rd cross-vendor Codex closure-review (D-1218; 11 findings, trajectory DIVERGING 7→8→11). Human selected option (b) research-first (D-1219). Research brief `research-adr-052-v13-atomic-publication-2026-09-13.md` produced 5 research questions (RQ1 atomic publication / RQ2 WAL recovery / RQ3 single-writer exclusion / RQ4 fexecve TOCTOU / RQ5 authorization expiry). Architect executed the v1.3 redesign using the research brief; product-owner hardened BC-1.18.011 and BC-1.18.010 accordingly.
+
+### ADR-052 v1.3 Redesign — 11 Findings Closed
+
+| Finding | Root-cause (D-1218) | v1.3 Resolution |
+|---------|-------------------|----------------|
+| F1 | Rename-before-COMMITTED window | CURRENT.json pointer swap (generation-based atomic publication — readers see only complete BC-INDEX generations) |
+| F2 | Crash after rename, no recovery | Framed intent log with pre-rename content hash + rename-intent record before every rename |
+| F3 | Admitted-writer drain insufficient | OPEN/DRAINING drain gate — writer reservations held through mutation completion |
+| F4 | Stale-lock reclamation race | Advisory flock on stable inode; serialized reclamation protocol |
+| F5 | PREPARED-transaction takeover undefined | txn-record state machine separating process ownership from maintenance intent |
+| F6 | Expiry deletes recovery record after renames | Authorization check before first destructive step; retain transaction state until commit or safe rollback |
+| F7 | Bash admission undefined | Conservative Bash admission with explicit sanctioned-command classification |
+| F8 | Census/COMMITTED reruns blocked by manifest requirement | Separate guard branches for read-only / terminal-state / new-activation / recovery |
+| F9 | CLEANED state undetermined | Permanent published-generation terminal-success record at stable location |
+| F10 | Allowlist path mismatch | Single authoritative allowlist covering all required paths |
+| F11 | Executable substitution window | execveat-based execution + immutable artifact digest bound into activation record |
+
+### Platform-Branched Durability
+
+ADR-052 v1.3 adopts platform-branched durability:
+- **Linux (ext4/xfs):** directory-fsync mandatory, fully durable
+- **macOS (APFS):** directory-fsync best-effort (APFS provides its own crash consistency; per-file fdatasync still mandatory; directory-fsync logged + advisory only)
+
+### Decisions
+
+1. **ADR-052 v1.3 committed:** Full atomic-publication redesign. Status remains PROPOSED — POLICY 22 ratification OPEN.
+
+2. **BC-1.18.011 v1.2→v1.3:** Product-owner amended to align with the v1.3 atomic-publication architecture. Key BC changes in v1.3 documented by architect/PO in the BC body.
+
+3. **BC-1.18.010 v1.4→v1.5:** Product-owner amended three-way parity and §Reader Integration section to reflect the CURRENT.json pointer-swap reader model.
+
+4. **error-taxonomy.md v1.19→v1.20:** Updated error codes to reflect the new txn-record state machine and drain-gate error taxonomy introduced in v1.3.
+
+5. **Index bumps:** ARCH-INDEX v4.29→v4.30 (ADR-052 row marker v1.2→v1.3); BC-INDEX v5.89→v5.90 (BC-1.18.011 row v1.2→v1.3, BC-1.18.010 row v1.4→v1.5).
+
+6. **Input-hash refresh (targeted):** All 4 artifacts updated — ADR-052 → aedcdc1 (tool-verified, cascade converged; see note on circular dep); BC-1.18.011 → 6e82271 (pre-circular-dep-cascade); BC-1.18.010 → de1520c; error-taxonomy.md → 5826e39. Note: ADR-052 ↔ BC-1.18.011 circular input-dep (pre-existing since v1.2) means the two cannot simultaneously pass `--check` — best-achievable state: ADR-052 PASS + BC-1.18.010 PASS + error-taxonomy PASS; BC-1.18.011 technically stale due to the cascade. Broader 907-file sweep (OWED #2) DEFERRED.
+
+7. **TWO items flagged for HUMAN sign-off at POLICY 22 ratification:**
+   - **(i) macOS exec-TOCTOU:** Architect chose freeze-build-under-lock approach + documented the residual TOCTOU window (cargo build writes new binary bytes to the same inode between digest-check and execveat call). Mandatory operational constraint recorded: "no concurrent `cargo build` during an active migration window." This constraint is a deliberate architectural trade-off, not an oversight; POLICY 22 ratification must explicitly acknowledge this residual window.
+   - **(ii) APFS directory-fsync durability:** Treated as best-effort in v1.3. The precise durability guarantee on darwin-arm64 APFS has not been empirically measured in the vsdd-factory test environment. An empirical darwin-arm64 durability test (power-fail simulation or equivalent) is owed before the APFS code path can be declared production-grade. Confirm darwin-arm64 CI runner availability (GitHub Actions macOS-14 or equivalent) before scheduling.
+
+8. **Pipeline state:** Remains PAUSED. OWED items #2 (907-file input-hash sweep) and #3 (ADR-052↔BC circular input-hash re-settle) still open. Cluster-5 TDD BLOCKED until POLICY 22 ratification. NEXT = 4th cross-vendor Codex re-review of ADR-052 v1.3 → HUMAN POLICY 22 ratification (carrying the 2 sign-off items above).
+
+### Summary Table
+
+| Aspect | Value |
+|--------|-------|
+| ADR-052 | v1.2→v1.3 (full atomic-publication redesign, 11 findings closed) |
+| BC-1.18.011 | v1.2→v1.3 |
+| BC-1.18.010 | v1.4→v1.5 |
+| error-taxonomy.md | v1.19→v1.20 |
+| ARCH-INDEX | v4.29→v4.30 |
+| BC-INDEX | v5.89→v5.90 |
+| Input-hashes | ADR-052 aedcdc1 (PASS) / BC-1.18.011 6e82271 (cascade-stale, circular dep) / BC-1.18.010 de1520c (PASS) / error-taxonomy 5826e39 (PASS) |
+| POLICY 22 | OPEN — 4th Codex re-review + human ratification owed (2 sign-off items: macOS exec-TOCTOU + APFS fsync durability) |
+| pipeline | PAUSED (unchanged) |
+| Owed | 907-file hash sweep (#2); ADR-052↔BC re-settle post-ratification (#3) |
+
+### Canonical 6-column row (STATE.md Decisions Log)
+
+| D-1220 | D-1220-ADR052-V13-RESEARCH-GROUNDED-REDESIGN-BURST | **ADR-052 v1.3 research-grounded redesign committed (state-manager, single-commit TD-VSDD-053; D-1220): 11 Codex findings from D-1218 closed via atomic-publication architecture redesign (CURRENT.json pointer swap; framed intent log; advisory flock; txn-record state machine; OPEN/DRAINING drain gate; execveat + digest binding; platform-branched APFS/Linux durability). BC-1.18.011 v1.2→v1.3; BC-1.18.010 v1.4→v1.5; error-taxonomy.md v1.19→v1.20. ARCH-INDEX v4.29→v4.30; BC-INDEX v5.89→v5.90. Input-hashes: ADR-052 aedcdc1 / BC-1.18.011 6e82271 (cascade-stale, circular dep) / BC-1.18.010 de1520c / error-taxonomy 5826e39. TWO items owed for POLICY 22 sign-off: (i) macOS exec-TOCTOU residual window (freeze-build-under-lock + no-concurrent-cargo-build constraint); (ii) APFS directory-fsync durability best-effort (empirical darwin-arm64 test owed). POLICY 22 ratification OPEN; cluster-5 TDD BLOCKED. pipeline: PAUSED. OWED: 907-file hash sweep; ADR-052↔BC re-settle.** | S-25.02 F4 | 2026-09-13 |
