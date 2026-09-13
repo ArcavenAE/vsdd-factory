@@ -8879,3 +8879,23 @@ BC-5.39.001 LOCAL cluster-5 streak **0/3 — pass-1 (D-1221) NOT-RATIFIABLE; pas
 
 **LOCAL cluster-5 streak: 0/3** — pass-1 NOT-RATIFIABLE (D-1221), pass-2 NOT-RATIFIABLE (D-1222); adversary pass-3 next. Cycle-level streak: 3/3 CONVERGED UNCHANGED.
 
+
+---
+
+## Archived Checkpoint: D-1223-ADR052-V16-LOCAL-ADV-PASS3-FIX-BURST (v10.54→v10.55, 2026-09-13)
+
+*(Archived 2026-09-13 during D-1224-ADR052-V17-LOCAL-ADV-PASS4-FIX-BURST v10.55→v10.56; replaced by new SRC reflecting ADR-052 v1.7 fix burst committed state.)*
+
+**SELF-SUFFICIENT RESUME CONTEXT.** ADR-052 v1.6 COMMITTED (D-1223; in-house adversary LOCAL pass-3 NOT-RATIFIABLE 1C+4H+5M+2L, all 12 findings closed; census gate byte-for-byte+ID-set; provenance persisted). BC-5.39.001 LOCAL streak 0/3. **NEXT = adversary pass-4 (fresh-context, reads only pass-3 Part A per Iron Law)** toward 3-CLEAN. HARD STOP gate: if pass-4 does NOT drop below ~3 CRIT+HIGH, orchestrator escalates to human for scope/expertise decision. PIPELINE REMAINS PAUSED.
+
+### §1. Position
+
+2026-09-13. S-25.02 F4 cluster-5 F1; ADR-052 v1.6 COMMITTED (D-1223) — in-house adversary LOCAL pass-3 = NOT-RATIFIABLE (1C+4H+5M+2L); all 12 findings closed. BC-5.39.001 LOCAL streak 0/3. NEXT = adversary pass-4 (fresh context, reads only pass-3 Part A). HARD STOP: if pass-4 ≥3 CRIT+HIGH, orchestrator escalates to human. After 3-CLEAN: HUMAN POLICY 22 ratification (with 4 sign-off items + prd.md §5.1 sync). `pipeline:` PAUSED.
+
+### §2. Convergence
+
+BC-5.39.001 LOCAL cluster-5 streak **0/3 — pass-1 (D-1221) NOT-RATIFIABLE; pass-2 (D-1222) NOT-RATIFIABLE; pass-3 (D-1223) NOT-RATIFIABLE; pass-4 next.** Cycle-level streak: CONVERGED 3/3 (unchanged). ADR-052 LOCAL cascade: pass-1 done (D-1221), pass-2 done (D-1222), pass-3 done (D-1223); pass-4 next toward 3-CLEAN. ADR-052 Codex cross-vendor track (NON-STREAK): paused — Codex held.
+
+### §8. BC-5.39.001 streak (D-1223 state)
+
+**LOCAL cluster-5 streak: 0/3** — pass-1 NOT-RATIFIABLE (D-1221), pass-2 NOT-RATIFIABLE (D-1222), pass-3 NOT-RATIFIABLE (D-1223); adversary pass-4 next. Cycle-level streak: 3/3 CONVERGED UNCHANGED.

@@ -1,7 +1,7 @@
 ---
 document_type: behavioral-contract
 level: L3
-version: "1.5"
+version: "1.6"
 status: draft
 producer: product-owner
 timestamp: 2026-09-05T00:00:00Z
@@ -14,7 +14,7 @@ inputs:
   - .factory/specs/behavioral-contracts/ss-01/BC-1.18.006.md
   - .factory/cycles/v1.0-brownfield-backfill/S-25.02-f2-architecture-delta.md
   - .factory/specs/behavioral-contracts/BC-INDEX.md
-input-hash: "5da155e"
+input-hash: "4dfb5fc"
 traces_to: .factory/specs/prd.md
 origin: greenfield
 extracted_from: null
@@ -54,8 +54,16 @@ size alone and require immediate sub-sharding at the same F4 activation moment.
    `shards/BC-INDEX-SS-NN.md`, the top-level shard-manifest schema, and the SS-05/SS-06
    second-level manifest schema) is fully specified and available as the TARGET this migration
    produces.
-2. BC-1.18.006's atomic-write primitives (temp-file-then-rename staging/publish discipline) are
-   implemented and available for reuse — this BC does not invent new atomic-write machinery.
+2. BC-1.18.006's atomic-write primitive (`write_atomic`, the temp-file-then-rename staging/publish
+   discipline implemented in `last_amended_migrate::atomic_write::write_atomic` and called in
+   `crates/factory-dispatcher/src/shard_manager.rs`) is implemented and available for reuse for
+   per-file writes. This BC's crash-atomicity envelope is provided by the NEW multi-file machinery
+   introduced by ADR-052 §Decision 7: §Decision 7a (advisory flock on stable never-unlinked inode;
+   durable txn record with STAGING/COMMITTING/COMPLETED/ABORTED lifecycle, enforcing writer
+   exclusion independent of PID liveness), §Decision 7b (framed checksummed intent log with WAL
+   boundary and matching-destination-hash crash recovery), §Decision 7c (CURRENT.json atomic pointer
+   swap as the sole commit-point; completed.json as the permanent terminal record). The per-file
+   write primitive is reused from BC-1.18.006; the multi-file atomicity infrastructure is new.
 3. `BC-INDEX.md`'s live frontmatter `total_bcs` field is readable and is treated as an independent
    count-oracle against which the pre-split census (Postcondition 2) is cross-checked — not as the
    census itself (the census is a fresh enumeration of the body's actual `BC-X.YY.NNN` rows,
@@ -75,7 +83,7 @@ size alone and require immediate sub-sharding at the same F4 activation moment.
      authorization gate check pending.
    - State COMMITTING (the pivot): CURRENT.json pointer swap executed atomically; from this
      point forward recovery is mandatory; authorization expiry does NOT abort.
-   - State COMPLETED: all canonical path moves complete and hash-verified; COMPLETED.json
+   - State COMPLETED: all canonical path moves complete and hash-verified; completed.json
      written at stable path; PERMANENT.
    EC-003 resume logic reads the intent log + txn record to determine which canonical path
    moves succeeded (matching-destination-hash rule) and resumes from first uncompleted move.
@@ -189,11 +197,17 @@ size alone and require immediate sub-sharding at the same F4 activation moment.
 
 ## Invariants
 
-1. **This BC's migration logic is a caller of BC-1.18.006's atomic-write primitives, not a
-   reimplementation.** The migration reuses the SAME temp-file-then-rename atomic-write pattern
-   BC-1.18.006 defines for the ongoing per-write case — this BC differs only in WHEN it runs (once,
-   at F4 activation) and WHAT it operates on (BC-INDEX's existing body, partitioned by subsystem,
-   rather than a single new append).
+1. **This BC's per-file write logic invokes BC-1.18.006's `write_atomic` primitive
+   (`last_amended_migrate::atomic_write::write_atomic`, the temp-file-then-rename mechanism), not a
+   reimplementation.** This BC differs from BC-1.18.006 in WHEN it runs (once, at F4 activation)
+   and WHAT it operates on (BC-INDEX's existing body, partitioned by subsystem). However, this BC
+   DOES introduce new multi-file crash-atomicity machinery via ADR-052 §Decision 7: §Decision 7a
+   (advisory flock on stable pre-created never-unlinked inode; durable txn record separate from the
+   flock), §Decision 7b (framed checksummed intent log with WAL boundary; matching-destination-hash
+   crash recovery table), §Decision 7c (single CURRENT.json atomic pointer swap as the sole
+   commit-point; completed.json as the permanent terminal record). BC-1.18.006's `write_atomic`
+   provides the per-file write primitive; ADR-052 §Decision 7 provides the multi-file atomic
+   publication envelope that `write_atomic` alone cannot provide.
 
 2. **No BC row is ever counted twice or dropped.** The independent census (Postcondition 2) is the
    sole source of truth for "did every row survive the split" — a migration that passes
@@ -216,7 +230,7 @@ size alone and require immediate sub-sharding at the same F4 activation moment.
    accessible at its `gen-<uuid>/` path (not yet moved to canonical) OR at its canonical path
    (already moved by step 7's progress); a file absent from `gen-<uuid>/` has already been renamed
    to canonical and new content is at canonical; `rename(2)` atomicity ensures ENOENT is not
-   possible for any new-generation file during the COMMITTING window. There is no turning back. COMPLETED.json (written after all canonical path moves complete and are hash-verified) is
+   possible for any new-generation file during the COMMITTING window. There is no turning back. completed.json (written after all canonical path moves complete and are hash-verified) is
    the permanent terminal record; forward recovery uses the intent log + matching-hash rule to
    resume from the first uncompleted canonical path move.
    The CURRENT.json atomic pointer swap is the sole commit-point for the multi-file atomic
@@ -245,8 +259,8 @@ size alone and require immediate sub-sharding at the same F4 activation moment.
 |-------|----------------|----------|
 | `BC-INDEX.md` at 2,005 total BCs across 10 `### SS-NN` sections, `total_bcs: 2005` in frontmatter | Pre-split census enumerates exactly 2,005 unique `BC-X.YY.NNN` IDs, matching `total_bcs`; post-split, the union of all 10 (or more, with SS-05/SS-06 sub-shards) shard files' row counts is exactly 2,005; `BC-INDEX.md`'s body retains zero per-BC rows | happy-path |
 | SS-05 (661 BCs, ~88,695 bytes) and SS-06 (592 BCs, ~85,407 bytes) both exceed the provisional cap | Both receive second-level sub-splits (e.g. SS-05 → `.a`/`.b`/`.c`) in the SAME migration operation; SS-05's sub-shard row counts sum to exactly 661, SS-06's to exactly 592 | happy-path |
-| Content-preservation check finds a byte mismatch (one row's trailing whitespace altered during extraction) | Migration ABORTS; original `BC-INDEX.md` body untouched; fail-loud error surfaced (E-SHD-005) | error |
-| Independent census finds a `BC-3.14.002` row present in BOTH `shards/BC-INDEX-SS-03.md` and (erroneously) `shards/BC-INDEX-SS-04.md` | Migration ABORTS per Postcondition 4/EC-001; fail-loud error surfaced (E-SHD-005) naming the duplicated ID | error |
+| Content-preservation check finds a byte mismatch (one row's trailing whitespace altered during extraction) | Migration ABORTS; original `BC-INDEX.md` body untouched; fail-loud CONTENT_PRESERVATION_ABORT (process exit code) | error |
+| Independent census finds a `BC-3.14.002` row present in BOTH `shards/BC-INDEX-SS-03.md` and (erroneously) `shards/BC-INDEX-SS-04.md` | Migration ABORTS per Postcondition 4/EC-001; fail-loud CENSUS_MISMATCH_ABORT (process exit code) naming the duplicated ID | error |
 | Migration crashes mid-staging, restarted from scratch | Original `BC-INDEX.md` byte-identical to pre-crash state; restart produces the same split result as an uninterrupted run | error |
 | Migration re-run after a prior successful completion | No-op: zero shard files rewritten, `BC-INDEX.md` body unchanged (EC-006) | edge-case |
 
@@ -263,7 +277,7 @@ size alone and require immediate sub-sharding at the same F4 activation moment.
 
 VP IDs allocated by formal-verifier (S-25.02 F2 verification-property fix-burst; VP-INDEX v3.03):
 **VP-132** (proptest; content-preservation byte-for-byte), **VP-133** (integration; independent-census
-integrity + crash-atomicity + fail-loud rollback E-SHD-005 + idempotency + SS-05/SS-06 sub-split
+integrity + crash-atomicity + fail-loud rollback CENSUS_MISMATCH_ABORT (process exit code) + idempotency + SS-05/SS-06 sub-split
 census — the four same-method safety obligations consolidated per the single-method-per-VP convention,
 mirroring VP-124), and **VP-134** (static-check; no-new-Cohort-B-dependency). This is the B2 analogue
 of VP-123/VP-124 (BC-1.18.008's content-preservation + atomicity/idempotency pair) but keyed to
@@ -280,14 +294,14 @@ completion only (VP-side of the trace); no BC body/postcondition/version change.
 
 ## Architecture Anchors
 
-- `crates/factory-dispatcher/src/shard_manager.rs` — one-time migration entry point for the B2 body split, reusing BC-1.18.006's staging/atomic-replace primitives
+- `crates/factory-dispatcher/src/shard_manager.rs` — one-time migration entry point for the B2 body split, invoking BC-1.18.006's `write_atomic` primitive (`last_amended_migrate::atomic_write::write_atomic`) for per-file writes; multi-file crash-atomicity provided by ADR-052 §Decision 7
 - `.factory/specs/behavioral-contracts/BC-INDEX.md` §Summary / `total_bcs` frontmatter field — the independent count-oracle this BC's census check (Postcondition 2) cross-checks against
 - `.factory/specs/architecture/ARCH-INDEX.md` §Subsystem Registry — the `BC-S Prefix`→`SS-NN` mapping this BC's per-subsystem partition boundaries follow (same mapping BC-1.18.010 Postcondition 2 reuses)
 - ADR-052 §Decision 4 — armed-activation manifest governing pre-mutation authorization (two-phase validation: pre-lock and under-exclusion)
 - ADR-052 §Decision 5a — native admission gate in executor.rs: OPEN/DRAINING gate with writer reservations (PreToolUse-acquire/PostToolUse-release); txn record state check (STAGING/COMMITTING) blocks ordinary writers regardless of PID liveness
 - ADR-052 §Decision 7a — advisory flock on stable pre-created never-unlinked inode (`.factory/migration-state/exclusive.lock`); durable txn record separate from lock file with `fencing_generation` for recovery-owner claim
 - ADR-052 §Decision 7b — framed checksummed intent log with per-target expected post-hash + pre-state; WAL boundary after intent fsync; matching-destination-hash recovery decision table
-- ADR-052 §Decision 7c — single atomic CURRENT.json pointer swap (the commit point); COMPLETED.json as permanent terminal record; reader protocol (COMPLETED.json → CURRENT.json → legacy)
+- ADR-052 §Decision 7c — single atomic CURRENT.json pointer swap (the commit point); completed.json as permanent terminal record; reader protocol (completed.json → CURRENT.json → legacy)
 - ADR-052 §Decision 8 — POLICY 22 exception declaration with accurate skipped-control inventory and enumerated allowed write targets
 
 ## SDK Grounding Evidence
@@ -301,13 +315,16 @@ pub fn write_atomic
 ```
 
 ```
-$ grep -oE "^pub fn write_indeterminate_marker" crates/factory-dispatcher/src/indeterminate_marker.rs
-pub fn write_indeterminate_marker
+$ grep -oE "last_amended_migrate::atomic_write::write_atomic" crates/factory-dispatcher/src/shard_manager.rs | head -1
+last_amended_migrate::atomic_write::write_atomic
 ```
 
-Confirms both existing atomic-write primitives (`write_atomic`, `write_indeterminate_marker`) this
-BC's Invariant 1 states are reused, not reimplemented, for the staging+verify+atomic-replace
-sequence (Postcondition 3).
+Confirms BC-1.18.006's shipped `write_atomic` primitive (`last_amended_migrate::atomic_write::write_atomic`)
+is the per-file write mechanism this BC's Invariant 1 states is invoked (not reimplemented) in
+`crates/factory-dispatcher/src/shard_manager.rs`. Note: `write_indeterminate_marker` (a CAP-041
+INDETERMINATE quarantine-marker writer in `crates/factory-dispatcher/src/indeterminate_marker.rs`)
+is NOT an atomic-write staging primitive and is not cited here — removed per ADR-052 §BC Impact
+v1.7 F7.
 
 ```
 $ grep -oE "^total_bcs: [0-9]+" .factory/specs/behavioral-contracts/BC-INDEX.md | sed -E 's/[0-9]+/<N>/'
@@ -337,7 +354,7 @@ S-25.02 — Artifact Sharding Layer 2: Size-Triggered Shard Rotation for Cycle A
 
 ## VP Anchors
 
-- VP-132, VP-133, VP-134 — allocated by formal-verifier (S-25.02 F2 verification-property fix-burst; VP-INDEX v3.03), analogous to VP-123/VP-124 (content-preservation + record-integrity; atomicity-under-interruption + idempotency) but keyed to BC-INDEX's ID-census model instead of decision-log's byte-count model, per the F2 architecture-delta doc §4a authorship input for this BC. VP-132 (proptest; content-preservation byte-for-byte), VP-133 (integration; independent-census integrity + crash-atomicity + fail-loud rollback E-SHD-005 + idempotency + SS-05/SS-06 second-level sub-split census — four same-method obligations consolidated per the single-method-per-VP convention), VP-134 (static-check; no-new-Cohort-B-dependency). The six candidate properties enumerated in `## Verification Properties` above map to these three VPs: candidate 1 → VP-132; candidates 2/3/4/5 → VP-133; candidate 6 → VP-134.
+- VP-132, VP-133, VP-134 — allocated by formal-verifier (S-25.02 F2 verification-property fix-burst; VP-INDEX v3.03), analogous to VP-123/VP-124 (content-preservation + record-integrity; atomicity-under-interruption + idempotency) but keyed to BC-INDEX's ID-census model instead of decision-log's byte-count model, per the F2 architecture-delta doc §4a authorship input for this BC. VP-132 (proptest; content-preservation byte-for-byte), VP-133 (integration; independent-census integrity + crash-atomicity + fail-loud rollback CENSUS_MISMATCH_ABORT (process exit code) + idempotency + SS-05/SS-06 second-level sub-split census — four same-method obligations consolidated per the single-method-per-VP convention), VP-134 (static-check; no-new-Cohort-B-dependency). The six candidate properties enumerated in `## Verification Properties` above map to these three VPs: candidate 1 → VP-132; candidates 2/3/4/5 → VP-133; candidate 6 → VP-134.
 
 ## Traceability
 
@@ -347,7 +364,7 @@ S-25.02 — Artifact Sharding Layer 2: Size-Triggered Shard Rotation for Cycle A
 | Capability Anchor Justification | Anchoring to CAP-043: "Artifact Sharding Layer 2: Size-Triggered Shard Rotation for Cycle Append-Logs and BC-INDEX Structured-Catalog Sharding" — because this BC describes the governed one-time migration that establishes mechanism B2's split end-state (BC-1.18.010) correctly and safely for `BC-INDEX.md`, which is exactly what CAP-043 defines per `capabilities.md` §CAP-043: "This capability has two mechanisms for two artifact shapes: mechanism A shards four append-only cycle logs... mechanism B shards `BC-INDEX.md`... via two sub-mechanisms: B1... and B2 splits the file's ten already-existing `### SS-NN` per-subsystem body sections into individually-addressable shard files." CAP-043 ("Artifact Sharding Layer 2: Size-Triggered Shard Rotation for Cycle Append-Logs and BC-INDEX Structured-Catalog Sharding") per capabilities.md §CAP-043 — no existing capability other than CAP-043 covers a governed one-time migration establishing B2's split end-state; CAP-041 (INDETERMINATE detection/quarantine) and CAP-042 (the `rotate_changelog`/`last_amended` write-path fix) are both distinguishable per capabilities.md's own CAP-043 entry, and neither covers a BC-INDEX body-structure migration. |
 | L2 Domain Invariants | none (dispatcher runtime architectural invariant, not an L2 domain-spec DI-NNN — consistent with the sibling BC-1.18.005–010 precedent for this class of dispatcher-mechanics contract) |
 | Architecture Module | SS-01 (Hook Dispatcher Core — `shard_manager.rs` one-time B2 migration logic) |
-| ADR | ADR-051 §Decision 10 (governed one-time migration for the B2 BC-INDEX body split, fix-burst addition F-S2502-F2-002); ADR-051 §Decision 7 (B2 end-state design this migration produces); ADR-051 §Decision 8 (shard-manifest schema this migration publishes); ADR-052 §Decision 4 (armed-activation manifest governing pre-mutation authorization); ADR-052 §Decision 5a (native admission gate: OPEN/DRAINING gate with writer reservations; txn state check blocks ordinary writers regardless of PID liveness); ADR-052 §Decision 7a (advisory flock on stable never-unlinked inode; durable txn record separate from lock file); ADR-052 §Decision 7b (framed checksummed intent log + WAL boundary + matching-destination-hash recovery decision table); ADR-052 §Decision 7c (single atomic CURRENT.json pointer swap + COMPLETED.json permanent terminal record + generation-first/canonical-fallback reader protocol); ADR-052 §Decision 8 (POLICY 22 exception declaration with enumerated allowed write targets) |
+| ADR | ADR-051 §Decision 10 (governed one-time migration for the B2 BC-INDEX body split, fix-burst addition F-S2502-F2-002); ADR-051 §Decision 7 (B2 end-state design this migration produces); ADR-051 §Decision 8 (shard-manifest schema this migration publishes); ADR-052 §Decision 4 (armed-activation manifest governing pre-mutation authorization); ADR-052 §Decision 5a (native admission gate: OPEN/DRAINING gate with writer reservations; txn state check blocks ordinary writers regardless of PID liveness); ADR-052 §Decision 7a (advisory flock on stable never-unlinked inode; durable txn record separate from lock file); ADR-052 §Decision 7b (framed checksummed intent log + WAL boundary + matching-destination-hash recovery decision table); ADR-052 §Decision 7c (single atomic CURRENT.json pointer swap + completed.json permanent terminal record + generation-first/canonical-fallback reader protocol); ADR-052 §Decision 8 (POLICY 22 exception declaration with enumerated allowed write targets) |
 | Stories | S-25.02 |
 | Cycle | v1.0-brownfield-backfill (F2 — product-owner spec-evolution fix-burst) |
 | Feature | E-25 — Validation Integrity and Large-Artifact Resilience |
@@ -356,6 +373,7 @@ S-25.02 — Artifact Sharding Layer 2: Size-Triggered Shard Rotation for Cycle A
 
 | Version | Date | Author | Change |
 |---------|------|--------|--------|
+| 1.6 | 2026-09-13 | product-owner | ADR-052 v1.7 re-hardening (F2/F3/F6/F7). (F2) Replaced HookResult/E-SHD-005 terminology in Canonical Test Vectors rows 3–4 and VP-133/VP-Anchors prose with correct process exit code terminology — CONTENT_PRESERVATION_ABORT (exit 2) for content-preservation failure, CENSUS_MISMATCH_ABORT (exit 2) for census/ID-set failure; the migration binary is Bash-invoked and emits process exit codes, not HookResult values; E-SHD-005 is scoped to the steady-state native gate (BC-1.18.006/BC-1.18.010) only. (F3) Corrected all path-bearing COMPLETED.json occurrences in Precondition 5, Invariant 3, Architecture Anchors, and Traceability ADR row to lowercase completed.json per ADR-052 §Decision 7c step 8. (F6) Amended Precondition 2 and Invariant 1 to disclose ADR-052 §Decision 7 NEW multi-file crash-atomicity machinery: removed the false claim that the migration "does not invent new atomic-write machinery"; Precondition 2 now states BC-1.18.006's write_atomic handles per-file writes while §Decision 7a (advisory flock + durable txn record), §Decision 7b (framed intent log + WAL boundary + matching-destination-hash recovery), and §Decision 7c (CURRENT.json pointer swap + completed.json terminal record) provide the multi-file atomicity envelope; Invariant 1 retitled to reflect write_atomic invocation (not reimplementation) plus §Decision 7 machinery disclosure. (F7) SDK Grounding: removed write_indeterminate_marker (CAP-041 INDETERMINATE quarantine-marker writer; not an atomic-write staging primitive; incorrectly cited in prior versions); added grep confirming last_amended_migrate::atomic_write::write_atomic is called in crates/factory-dispatcher/src/shard_manager.rs; updated Architecture Anchors first bullet to cite write_atomic by fully-qualified name. |
 | 1.5 | 2026-09-13 | product-owner | ADR-052 v1.5 re-hardening (3 amendments). (1) Invariant 3 — COMMITTING-window reader protocol corrected to generation-first/canonical-fallback (C-1 mirror): each file is accessible at `gen-<uuid>/` path (not yet moved to canonical) OR at its canonical path (already moved by step 7's progress); generation-first is correct for BOTH net-new shards AND in-place-overwrite targets such as BC-INDEX.md; citation updated from "canonical-first / generation-fallback (ADR-052 §Decision 7c reader protocol, C1 fix)" to "generation-first/canonical-fallback (ADR-052 §Decision 7c C-1 fix)". (2) EC-003 — corrected citation from "step 3b per ADR-052 §Decision 4e" to "ADR-052 §Decision 7c step 3b (referenced by §Decision 4e)" for precision (step 3b is defined in §7c; §4e references it for the resume-from-STAGING case); version pin "(v1.4)" removed from "H3 fix" label per H-4 POLICY 19 / TD-VSDD-091; stable form "§Decision 7c step 3b (H3 fix)" substituted. (3) Traceability ADR row — ADR-052 §Decision 4/5a/7a/7b/7c/8 added alongside existing ADR-051 citations, aligning Traceability with Architecture Anchors on governing ADRs (M-1). |
 | 1.4 | 2026-09-13 | product-owner | ADR-052 v1.4 re-hardening (5 amendments). (1) Postconditions 1 and 2: added explicit cross-reference to ADR-052 §Decision 7c step 3b — PC1 (content-preservation) and PC2 (independent census) are verified against the staged generation BEFORE the CURRENT.json pointer swap; step 3c aborts cleanly (txn → ABORTED, gate → OPEN) on failure. (2) Postcondition 3a (Amendment 7): corrected pointer-swap step index from "step 5" to "step 6" (step 5 = fingerprint recheck; step 6 = CURRENT.json pointer swap = the commit point). (3) Invariant 3: added COMMITTING-window reader protocol (C1 fix): during COMMITTING, new-generation content is accessible via canonical-first / generation-fallback — each file is at its canonical path (if already moved by step 7) OR at gen-uuid/ (not yet moved); rename(2) atomicity ensures ENOENT is not possible for any file during the committing window (ADR-052 §Decision 7c reader protocol). (4) EC-003 resume logic: added H3 fix note — resume-from-STAGING MUST re-run the full census (step 3b) before proceeding to the pointer swap; the census gate is not skippable on resume (ADR-052 §Decision 4e). (5) SDK Grounding Evidence re-grounded: the literal `total_bcs: 2005` stdout value replaced with structural form `total_bcs: <N>` (per POLICY 5 HEAD-reproducibility mandate; mirrors BC-1.18.010 v1.2's structural-form fix for the identical drift class — the value is 2006 at HEAD and will continue to drift; any future reader MUST re-execute the grep at HEAD for the current count). No state-name corrections required: no PREPARED occurrences exist in the v1.3 body (v1.3 already replaced all such occurrences with STAGING/COMMITTING/COMPLETED/ABORTED). |
 | 1.3 | 2026-09-13 | product-owner | ADR-052 v1.3 re-hardening (6 amendments). Amendment 4 — Precondition 5 replaced: PREPARED/COMMITTED/CLEANED phase-marker model replaced with STAGING/COMMITTING/COMPLETED txn-record state machine (`txn-<uuid>.json`) + framed checksummed intent log (`intent-<generation_uuid>.log`); EC-003 now reads intent log + txn record (matching-destination-hash rule) instead of `completed_renames`. Amendment 5 — Precondition 6 replaced: O_CREAT\|O_EXCL + alive-PID lock model replaced with dual independent mechanisms: (a) advisory flock on stable pre-created never-unlinked inode (kernel auto-releases on death); (b) txn record state STAGING/COMMITTING blocks ALL mutation tool calls via native admission gate regardless of PID liveness; (c) OPEN/DRAINING gate with writer reservations ensures quiescence before snapshot. Amendment 6 — Postcondition 3 corrected: removed "dir-fsync is mandatory, not best-effort" blanket assertion; replaced with platform-branched durability: Linux mandatory fsync+dir-fsync; macOS F_FULLFSYNC on file mandatory, APFS dir-fsync best-effort only (Apple docs do not guarantee power-loss durability for directory fsync); cites `sync_file_durable()`/`sync_dir_best_effort()` per ADR-052 §Decision 7d. Amendment 7 — Postcondition 3a updated: TOCTOU fingerprint check still EXACTLY ONCE; reference changed from "before the first rename" to "before the CURRENT.json pointer swap (step 5 in ADR-052 §Decision 7c)"; compared against `source_sha256` in txn record (not PREPARED marker); abort sets txn record to ABORTED. Amendment 8 — Invariant 3 updated: "COMMITTED marker is the sole commit-point" replaced with "CURRENT.json atomic pointer swap is the sole commit-point"; `completed_renames` tracking replaced with intent log + matching-hash rule for forward recovery; COMPLETED.json is the permanent terminal record. Amendment 9 — Architecture Anchors updated: §Decision 7 generic citation replaced with §Decision 7a (advisory flock + durable txn record + fencing_generation), §Decision 7b (framed intent log + WAL boundary + recovery decision table), §Decision 7c (CURRENT.json pointer swap + COMPLETED.json + reader protocol); §Decision 5a description updated to OPEN/DRAINING gate + txn state check. |

@@ -835,13 +835,16 @@ follow-ups (non-blocking): Obs-B crash-atomicity → S-25.05; E-SHD-lint-gate �
 |------|---------|----------|--------|-------|
 | **1** | **NOT-RATIFIABLE** | 12 (2C+5H+5M) | **0/3** | In-house LOCAL adversary, fresh context, ADR-052 v1.3 base (post-Codex redesign). All 12 findings closed by ADR-052 v1.4 fix burst (D-1221). BC-5.39.001 LOCAL streak: 0/3 — RESET. |
 | **2** | **NOT-RATIFIABLE** | 12 (1C+4H+7M) | **0/3** | In-house LOCAL adversary, fresh context, reads only pass-1 Part A. All 12 findings closed by ADR-052 v1.5 + ADR-051 v1.14 fix burst (D-1222). BC-5.39.001 LOCAL streak: 0/3 — REMAINS RESET. |
-| **3** | **NOT-RATIFIABLE** | 12 (1C+4H+5M+2L) | **0/3** | In-house LOCAL adversary, fresh context, reads only pass-2 Part A. All 12 findings closed by ADR-052 v1.6 deep-consolidated fix burst (D-1223): C-1 census gate tautology → real byte-for-byte+ID-set; H-1 §4e txn-state re-key; H-2 terminal-path gate reconciliation; H-3 provenance persisted (`adv-local-adr052-pass3.md`); H-4 §Downstream Amendments 7/8/9 inlined; MEDs at prose+code+predicate level. BC-5.39.001 LOCAL streak: 0/3 — REMAINS. Pass-4 next. HARD STOP if pass-4 ≥3 CRIT+HIGH. |
+| **3** | **NOT-RATIFIABLE** | 12 (1C+4H+5M+2L) | **0/3** | In-house LOCAL adversary, fresh context, reads only pass-2 Part A. All 12 findings closed by ADR-052 v1.6 deep-consolidated fix burst (D-1223): C-1 census gate tautology → real byte-for-byte+ID-set; H-1 §4e txn-state re-key; H-2 terminal-path gate reconciliation; H-3 provenance persisted (`adv-local-adr052-pass3.md`); H-4 §Downstream Amendments 7/8/9 inlined; MEDs at prose+code+predicate level. BC-5.39.001 LOCAL streak: 0/3 — REMAINS. |
+| **4** | **NOT-RATIFIABLE** | 10 (2H F1,F2 + F3-F10) | **0/3** | In-house LOCAL adversary, fresh context, reads only pass-3 Part A. All 10 findings closed by ADR-052 v1.7 fix burst (D-1224): F1 PC1 census gate restructured (per-BC-row structured-equivalence via source_body_row_sha256; whole-concat SHA unsatisfiable); F2 E-SHD-005 rescoped to STEADY-STATE native gate (BC-1.18.006/BC-1.18.010 HookResult; migration contexts corrected to CENSUS_MISMATCH_ABORT/CONTENT_PRESERVATION_ABORT); F4 PreToolUse self-heals stuck-LOCKED gate; F5 dangling §Context ref inlined; F8 APFS test elevated to RATIFICATION PREREQUISITE; F9 stale BC-Impact row corrected; F10 PID-reuse tuple; F3/F6/F7 BC-owned routed PO (BC-1.18.011 v1.6; BC-1.18.010 v1.8). VP-133 description updated per POLICY 9 (VP-INDEX v3.20). TRAJECTORY: CRIT+HIGH 7→5→5→2 (plateau broken). BC-5.39.001 LOCAL streak: 0/3 — REMAINS. Pass-5 next. |
 
 **Convergence Status (S-25.02 F4 cluster-5 LOCAL cascade): IN PROGRESS — BC-5.39.001 streak 0/3.
-Pass-3 (D-1223) NOT-RATIFIABLE (1C+4H+5M+2L); all 12 findings closed by ADR-052 v1.6. Adversary
-pass-4 next (fresh-context, reads only pass-3 Part A per Iron Law). HARD STOP gate per human
-direction: if pass-4 does NOT drop below ~3 CRIT+HIGH, orchestrator escalates for scope/expertise
-decision. POLICY 22 ratification OPEN (4 sign-off items). Cluster-5 TDD BLOCKED until ratification.**
+Pass-4 (D-1224) NOT-RATIFIABLE (2H F1,F2 + F3-F10); all 10 findings closed by ADR-052 v1.7.
+TRAJECTORY: CRIT+HIGH 7→5→5→2 — plateau broken (pass-4 is first pass below the 5-finding plateau).
+Adversary pass-5 next (fresh-context, reads only pass-4 Part A per Iron Law).
+POLICY 22 ratification OPEN — 2 sign-off items: (i) macOS exec-TOCTOU sub-instruction gap;
+(ii) F8 APFS darwin-arm64 durability test (RATIFICATION PREREQUISITE — must complete before POLICY 22 gate).
+Cluster-5 TDD BLOCKED until ratification (including F8 APFS prerequisite).**
 
 ## Artifact Size Budgets (IP-003 / D-835)
 

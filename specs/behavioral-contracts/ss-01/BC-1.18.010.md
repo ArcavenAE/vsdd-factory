@@ -1,7 +1,7 @@
 ---
 document_type: behavioral-contract
 level: L3
-version: "1.7"
+version: "1.8"
 status: draft
 producer: product-owner
 timestamp: 2026-09-05T00:00:00Z
@@ -13,7 +13,7 @@ inputs:
   - .factory/specs/behavioral-contracts/ss-01/BC-1.18.006.md
   - .factory/specs/behavioral-contracts/ss-01/BC-1.18.009.md
   - .factory/specs/verification-properties/VP-INDEX.md
-input-hash: "9c03116"
+input-hash: "02f93ec"
 traces_to: .factory/specs/prd.md
 origin: greenfield
 extracted_from: null
@@ -215,7 +215,7 @@ assignment, consistent with the sibling VP-128 row above. No property content ch
 
 ## Reader Integration
 
-During the B2 migration window (after CURRENT.json pointer swap, before COMPLETED.json
+During the B2 migration window (after CURRENT.json pointer swap, before completed.json
 written), readers accessing BC-INDEX paths MUST use the following protocol:
 1. Check `.factory/migration-state/completed.json` — if exists: canonical paths are current.
 2. Check `.factory/migration-state/CURRENT.json` — if `status: committing`: for each required
@@ -228,8 +228,8 @@ written), readers accessing BC-INDEX paths MUST use the following protocol:
    content at canonical). `rename(2)` atomicity ensures ENOENT is impossible for any new-generation
    file during the COMMITTING window.
 3. If neither exists: legacy BC-INDEX.md path is current (migration not started).
-In steady state (COMPLETED.json present), canonical paths are always authoritative. The
-'COMMITTED absent → read legacy BC-INDEX.md' heuristic from v1.2 is eliminated: COMPLETED.json
+In steady state (completed.json present), canonical paths are always authoritative. The
+'COMMITTED absent → read legacy BC-INDEX.md' heuristic from v1.2 is eliminated: completed.json
 is permanent and its presence is unambiguous in all states including after cleanup.
 
 ## SDK Grounding Evidence
@@ -289,6 +289,7 @@ S-25.02 — Artifact Sharding Layer 2: Size-Triggered Shard Rotation for Cycle A
 
 | Version | Date | Author | Change |
 |---------|------|--------|--------|
+| 1.8 | 2026-09-13 | product-owner | ADR-052 v1.7 re-hardening (F3 casing sweep). Corrected all path-bearing COMPLETED.json occurrences in §Reader Integration to lowercase completed.json per ADR-052 §Decision 7c step 8: (1) §Reader Integration preamble "before COMPLETED.json written" → "before completed.json written"; (2) steady-state prose "In steady state (COMPLETED.json present)" → "In steady state (completed.json present)"; (3) "COMPLETED.json is permanent and its presence is unambiguous" → "completed.json is permanent and its presence is unambiguous". Step 1's `completed.json` check (line 220) was already lowercase — confirmed correct and unchanged. |
 | 1.7 | 2026-09-13 | product-owner | ADR-052 v1.5 re-hardening (C-1 mirror). §Reader Integration step 2 protocol inverted to generation-first/canonical-fallback: for each required file, try `gen-<generation_id>/` path FIRST; if absent, fall back to canonical path. Rationale (C-1, ADR-052 §Decision 7c): the canonical path holds STALE old content for in-place-overwrite targets (e.g. BC-INDEX.md itself) until step 7's specific rename for that file — canonical-first (the v1.6 protocol) returns stale content for BC-INDEX.md before its rename; generation-first is correct for BOTH net-new shard files AND in-place-overwrite targets. A file present at `gen-<uuid>/` is not yet moved (new content); a file absent from `gen-<uuid>/` has already been renamed to canonical (new content at canonical); `rename(2)` atomicity ensures ENOENT is impossible for any new-generation file during the COMMITTING window. |
 | 1.6 | 2026-09-13 | product-owner | ADR-052 v1.4 re-hardening (§Reader Integration step 2 C1 fix). Step 2 changed from "use `gen-<generation_id>/` paths for reads" to canonical-first / generation-fallback: for each required file, try canonical path first; fall back to `gen-<generation_id>/` equivalent if canonical absent. Rationale (C1): step 7 of the publication sequence (ADR-052 §Decision 7c) moves files from `gen-<uuid>/` to canonical paths one by one; `gen-<uuid>/` paths become unavailable for already-moved files; canonical-first fallback ensures readers never see ENOENT for any new-generation file during the committing window, regardless of step 7 progress, because `rename(2)` is atomic — a file is at canonical OR at `gen-<uuid>/`, never at neither. |
 | 1.5 | 2026-09-13 | product-owner | ADR-052 v1.3 re-hardening. §Reader Integration section replaced: the v1.2 COMMITTED-absent heuristic ("COMMITTED present → canonical; COMMITTED absent → legacy; COMMITTED archived at CLEANED") is replaced with the v1.3 three-step protocol keyed on two permanent pointer files — (1) check `completed.json` first (presence means canonical paths current); (2) check `CURRENT.json` with `status: committing` (use generation staging paths); (3) if neither exists: legacy BC-INDEX.md path is current (migration not started). COMMITTED/CLEANED terminology eliminated throughout. COMPLETED.json is permanent and never archived; its absence in steady state is not an error. Closes F1/F9 alignment gap: BC-1.18.010's reader protocol now matches ADR-052 v1.3 §Decision 7c's atomic-pointer model. |

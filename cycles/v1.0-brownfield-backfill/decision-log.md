@@ -10843,3 +10843,74 @@ Cluster-5 TDD remains BLOCKED until POLICY 22 ratification.
 ### Canonical 6-column row (STATE.md Decisions Log)
 
 | D-1223 | D-1223-ADR052-V16-LOCAL-ADV-PASS3-FIX-BURST | **ADR-052 v1.6 deep-consolidated fix burst committed (state-manager, single-commit TD-VSDD-053; D-1223): in-house adversary LOCAL pass-3 = NOT-RATIFIABLE (1C+4H+5M+2L); all 12 findings closed — C-1 census gate tautology FIXED: PC1 now reconstruct+compare vs source_sha256 (not self-hash); PC2 now per-ID exactly-one-shard set enumeration (EC-001 dup+drop caught); H-1 §4e re-keyed on txn-record state discriminator (STAGING/COMMITTING/COMPLETED/ABORTED; impossible CURRENT.json-status:staging row deleted); H-2 ALREADY_MIGRATED terminal-path acquires LOCK_EX + reconciles stale gate before exit 0; H-3 adv-local-adr052-pass3.md persisted + inputs[] updated; H-4 §Downstream Amendments 7/8/9 fully inlined; M-1 admission gate_state+txn-state parity; M-2 macOS code sample pre-execve mtime re-stat; M-3 census/preservation abort code alignment; M-4 CLAUDE.md wildcard→4 exact append-log paths; M-5 stale-reservation GC at every drain; L-1 H1 title pin stripped; L-2 completed.json casing unified. ADR-052 input-hash 080d460→0ae730c (adv-local-adr052-pass3.md added). error-taxonomy.md v1.22→v1.23 (trigger alignment). ARCH-INDEX v4.32→v4.33. BC-INDEX UNCHANGED v5.92. BC-5.39.001 LOCAL streak 0/3 (adversary pass-4 next; HARD STOP if pass-4 ≥3 CRIT+HIGH). POLICY 22 OPEN — FOUR sign-off items: (i) macOS exec-TOCTOU sub-instruction stat→execve gap + no-concurrent-cargo-build pre-flight; (ii) APFS darwin-arm64 durability test; (iii) CLAUDE.md amendment 4 exact append-log paths; (iv) 4 dispatcher-guard amendments. [D-1222-DRIFT-001] prd.md §5.1 sync OWED pre-ratification (unchanged). OWED #2+#3 unchanged. Cluster-5 TDD BLOCKED. pipeline: PAUSED.** | S-25.02 F4 | 2026-09-13 |
+
+---
+
+**Decision ID:** D-1224
+**Slug:** D-1224-ADR052-V17-LOCAL-ADV-PASS4-FIX-BURST
+**Context:** S-25.02 F4 cluster-5 F1; ADR-052 cascade
+**Date:** 2026-09-13
+**Author:** state-manager
+
+### Context
+
+ADR-052 v1.6 was committed at D-1223. The in-house LOCAL adversary cascade continued with pass-4 (fresh-context, reads only pass-3 Part A per Iron Law). The adversary returned NOT-RATIFIABLE with 2 HIGH + 6 MED + 2 OBS (10 findings total — F1,F2 HIGH; F3,F4,F5,F6,F7,F8 MED; F9,F10 OBS).
+
+Architect closed the HIGH findings (F1,F2) and architect-owned MED/OBS findings (F4,F5,F8,F9,F10) via ADR-052 v1.7. Product-owner closed BC-owned MED findings (F3,F6,F7) via BC-1.18.011 v1.6 and BC-1.18.010 v1.8. Formal-verifier propagated VP-133 description update (E-SHD-005 rescoping) to VP-INDEX v3.20, verification-architecture.md v1.34, and verification-coverage-matrix.md v1.32 per POLICY 9.
+
+### Findings Summary (pass-4)
+
+| ID | Severity | Description | Resolution |
+|----|----------|-------------|------------|
+| F1 | HIGH | PC1 census gate was unsatisfiable: whole-concat SHA against source_sha256 cannot match because staged lean body adds §Subsystem Shard Manifest section; content is reordered | Introduced source_body_row_sha256 field in txn record (SHA-256 of BC-X.YY.NNN table rows in canonical BC-ID sort order, excl. headers); PC1 rewritten as structured-equivalence (ADR-052 v1.7 §Decision 7c) |
+| F2 | HIGH | E-SHD-005 erroneously referenced in migration binary process-exit-code contexts; E-SHD-005 is a steady-state-gate HookResult (BC-1.18.006/BC-1.18.010), not a migration process exit code | E-SHD-005 removed from all migration-binary contexts; CENSUS_MISMATCH_ABORT/CONTENT_PRESERVATION_ABORT are the correct process exit terms; BC-1.18.011 updated (v1.6); VP-133 description updated per POLICY 9 (ADR-052 v1.7, BC-1.18.011 v1.6, VP-INDEX v3.20) |
+| F3 | MED (BC-owned) | completed.json casing inconsistency in BC-1.18.010 and BC-1.18.011 | completed.json casing sweep applied throughout BC-1.18.010 v1.8 and BC-1.18.011 v1.6 |
+| F4 | MED | Completion-crash left gate permanently LOCKED: crash between completed.json write and gate→OPEN flip blocked all writes until binary re-invocation | PreToolUse self-heals stuck-LOCKED gate: if gate=LOCKED AND completed.json present AND no active txn, PreToolUse acquires LOCK_EX and flips gate→OPEN; fault-injection test mandate added (ADR-052 v1.7 §Decision 5a) |
+| F5 | MED | Dangling §Context ref cited "v1.2 §Context" which no longer exists in-file | Removed dangling cross-reference; replaced with forward references to §Rationale/§Decision 5a (ADR-052 v1.7 §Context) |
+| F6 | MED (BC-owned) | BC-1.18.011 Invariant 1/Precondition 2 claimed no new crash-atomicity machinery needed, contradicting ADR-052 §Decision 7's framed intent log + flock protocol | Invariant 1/Precondition 2 explicitly cites ADR-052 §Decision 7 crash-atomicity machinery (BC-1.18.011 v1.6) |
+| F7 | MED (BC-owned) | BC-1.18.011 SDK Grounding cited write_indeterminate_marker as atomic primitive; write_indeterminate_marker does NOT provide crash-atomicity | write_indeterminate_marker dropped; Invariant 1 grounded against BC-1.18.006 shard_manager.rs shipped primitive (BC-1.18.011 v1.6) |
+| F8 | MED | APFS darwin-arm64 durability test was a post-ratification deliverable, not a ratification gate | Test ELEVATED to RATIFICATION PREREQUISITE: ADR MUST NOT be ratified safe on macOS until test completes; §Decision 11 POLICY 22 block updated (ADR-052 v1.7 §Decision 7d) |
+| F9 | OBS | Stale BC-Impact v1.3-handoff row said "step 5" for pointer swap; step 6 is correct per v1.4 | Corrected to "step 6" (step 5 = fingerprint recheck; step 6 = CURRENT.json pointer swap) (ADR-052 v1.7 §BC-Impact table) |
+| F10 | OBS | PID-reuse hazard: stale-reservation GC used PID alone; OS PID reuse causes false-negative | (pid, process_start_time) tuple in reservation files; GC compares both; PID match + start_time mismatch = PID reuse → reclaim (ADR-052 v1.7 §Decision 5a) |
+
+### Codification
+
+**BC-5.39.001 LOCAL cascade:** pass-4 = NOT-RATIFIABLE. Streak REMAINS 0/3. Adversary pass-5 next (fresh-context, reads only pass-4 Part A per Iron Law).
+
+**TRAJECTORY (CRIT+HIGH):** 7→5→5→2 — plateau BROKEN. Pass-4 is the first pass that dropped below the 5-finding plateau set by passes 2 and 3.
+
+**Index advances this burst:**
+- ARCH-INDEX v4.33 → v4.34 (ADR-052 row v1.6→v1.7; VP-INDEX/BC-INDEX advances co-noted)
+- BC-INDEX v5.92 → v5.93 (BC-1.18.011 v1.5→v1.6; BC-1.18.010 v1.7→v1.8)
+- VP-INDEX v3.19 → v3.20 (VP-133 description E-SHD-005 rescoping propagated per POLICY 9)
+- verification-architecture.md v1.33 → v1.34 (POLICY 9 VP-133 description propagation)
+- verification-coverage-matrix.md v1.31 → v1.32 (POLICY 9 VP-133 description propagation)
+
+**Input-hashes (post-update):**
+- ADR-052: `5d73495` (PASS — updated)
+- BC-1.18.011: `4dfb5fc` (circular-stale OWED #3 — noted, not chased)
+- BC-1.18.010: `02f93ec` (circular-stale OWED #3 — noted, not chased)
+- error-taxonomy.md: `a64f756` (PASS — already current)
+- verification-architecture.md: `7e30fa6` (PASS — updated; VP-INDEX.md is input)
+- verification-coverage-matrix.md: `7e30fa6` (PASS — updated; VP-INDEX.md is input)
+- VP-INDEX: no inputs: field — skipped
+
+**Drift item recorded [D-1224-DRIFT-001]:** E-SHD-005 now has NO dedicated VP leg (scoped to steady-state gate; VP-133 rescoped to process exit codes). New steady-state-gate VP needed — flagged for orchestrator routing under E-12. POLICY 1 append-only, no VP renumbered or retired.
+
+**Drift items status:**
+- [D-1222-DRIFT-001] prd.md §5.1 MIG+MAINTENANCE sync: UNCHANGED OPEN — owed before POLICY 22 ratification.
+- [D-1221-PG-001] taxonomy Display-drift CI lint (S-12.13): UNCHANGED OPEN.
+- [D-1224-DRIFT-001] NEW: E-SHD-005 VP-leg gap (no dedicated VP; E-12 routing needed).
+
+**STATE.md VP count reconciliation:** Stale "26 VPs" citation corrected to 141 to match VP-INDEX.md total_vps (authoritative source).
+
+**POLICY 22 status:** OPEN with 2 sign-off items (F8 elevates APFS test to ratification prerequisite):
+- (i) macOS exec-TOCTOU residual window: sub-instruction stat→execve gap + no-concurrent-cargo-build pre-flight (unchanged).
+- (ii) APFS darwin-arm64 durability test: RATIFICATION PREREQUISITE — must complete before POLICY 22 ratification gate.
+Cluster-5 TDD remains BLOCKED until POLICY 22 ratification (including F8 APFS prerequisite).
+
+**OWED (unchanged):** OWED #2 (907-file hash sweep); OWED #3 (ADR-052↔BC circular re-settle). prd.md §5.1 MIG/MAINTENANCE sync [D-1222-DRIFT-001] owed before ratification.
+
+### Canonical 6-column row (STATE.md Decisions Log)
+
+| D-1224 | D-1224-ADR052-V17-LOCAL-ADV-PASS4-FIX-BURST | **ADR-052 v1.7 fix burst committed (state-manager, single-commit TD-VSDD-053; D-1224): in-house adversary LOCAL pass-4 = NOT-RATIFIABLE (2H F1,F2 + F3-F10); all 10 findings closed — F1 PC1 census gate restructured: per-BC-row structured-equivalence via source_body_row_sha256 (staged lean body adds §Subsystem Shard Manifest; whole-concat SHA vs source_sha256 unsatisfiable); F2 E-SHD-005 rescoped to STEADY-STATE native admission gate (BC-1.18.006/BC-1.18.010 HookResult; migration-binary contexts corrected to CENSUS_MISMATCH_ABORT/CONTENT_PRESERVATION_ABORT); F4 PreToolUse self-heals stuck-LOCKED gate (completed.json present + no active txn → LOCK_EX + gate→OPEN + test mandate); F5 dangling §Context ref inlined; F8 APFS durability test ELEVATED to RATIFICATION PREREQUISITE; F9 stale BC-Impact step-5 row corrected; F10 PID-reuse tuple (pid, process_start_time); F3/F6/F7 BC-owned routed PO (completed.json casing sweep; Invariant 1/PC2 crash-atomicity citation; SDK Grounding drop write_indeterminate_marker). BC-1.18.011 v1.5→v1.6; BC-1.18.010 v1.7→v1.8. ARCH-INDEX v4.33→v4.34; BC-INDEX v5.92→v5.93; VP-INDEX v3.19→v3.20 (VP-133 description E-SHD-005 rescoping per POLICY 9); verification-architecture.md v1.33→v1.34; verification-coverage-matrix.md v1.31→v1.32. Input-hashes: ADR-052 5d73495 (PASS) / BC-1.18.011 4dfb5fc (circular-stale OWED #3) / BC-1.18.010 02f93ec (circular-stale OWED #3) / error-taxonomy a64f756 (PASS) / verif-arch 7e30fa6 (PASS) / verif-matrix 7e30fa6 (PASS). [D-1224-DRIFT-001] NEW: E-SHD-005 VP-leg gap — no dedicated VP; new steady-state-gate VP needed (E-12 routing, POLICY 1 append-only). [D-1222-DRIFT-001] prd.md §5.1 sync UNCHANGED OPEN. [D-1221-PG-001] Display-parity UNCHANGED OPEN. STATE.md VP count reconciled 26→141. BC-5.39.001 LOCAL streak 0/3 (adversary pass-5 next). TRAJECTORY: CRIT+HIGH 7→5→5→2 (plateau broken). POLICY 22 2 sign-off items: (i) macOS exec-TOCTOU sub-instruction gap; (ii) F8 APFS test RATIFICATION PREREQUISITE. OWED #2+#3 unchanged. Cluster-5 TDD BLOCKED. pipeline: PAUSED.** | S-25.02 F4 | 2026-09-13 |
