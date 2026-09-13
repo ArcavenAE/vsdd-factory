@@ -10511,3 +10511,79 @@ Session paused 2026-09-12 (D-1216): 2nd cross-vendor Codex closure-review of ADR
 ### Canonical 6-column row (STATE.md Decisions Log)
 
 | D-1217 | D-1217-S2502-ADR052-V12-REDESIGN-BURST | **ADR-052 v1.2 full redesign committed (state-manager, single-commit TD-VSDD-053; D-1217): 2026-09-12 paused session resumed; 8 findings from 2nd Codex closure-review (D-1216) closed in ADR-052 v1.2 (F1 native-admission-gate ALL mutation tools; F2 per-target completed_renames+reader-integration; F3 content-bearing lock+crash-recovery; F4 two-phase manifest validation+CONSUMED; F5 three-way activation parity; F6 skipped-control inventory; F7 pre-shell classifier; F8 CLAUDE.md amendment). BC-1.18.011 v1.1→v1.2; BC-1.18.010 v1.3→v1.4; error-taxonomy.md v1.18→v1.19. ARCH-INDEX v4.28→v4.29; BC-INDEX v5.88→v5.89. Input-hashes: ADR-052 593ef95 / BC-1.18.011 9ff5e29 / BC-1.18.010 7e56d92 / error-taxonomy 4f2e9a3. POLICY 22 ratification still OPEN; cluster-5 TDD still BLOCKED. pipeline: PAUSED. OWED: (a) 3rd Codex re-review + human POLICY 22 ratification; (b) 907-file hash sweep; (c) ADR-052↔BC re-settle.** | S-25.02 F4 | 2026-09-13 |
+
+---
+
+## D-1218: 3rd Cross-Vendor Codex Closure Review of ADR-052 v1.2
+
+**Date:** 2026-09-13
+**Decision ID:** D-1218
+**Codified by:** state-manager (single-commit TD-VSDD-053)
+**Phase:** S-25.02 F4 (Delta-Implementation), cluster-5 BLOCKED pending POLICY 22
+**Type:** Cross-vendor closure review record (NON-STREAK, decision-support) — NOT a fix burst; pipeline remains PAUSED
+
+### Context
+
+ADR-052 v1.2 full redesign was committed at D-1217 (2026-09-13) addressing 8 findings from the 2nd Codex closure-review (D-1216). This burst persists the 3rd cross-vendor Codex re-review of the v1.2 package as a durable factory artifact. The review verdict is NOT RATIFIABLE with 11 findings (10 HIGH + 1 MED), novelty HIGH. The trajectory (7→8→11 findings) is DIVERGING, indicating that incremental amendments to the in-place per-file-rename model will not achieve ratification quality. The direction decision is escalated to the human.
+
+### Background: D-1213 through D-1217 (decision-log SoT)
+
+- **D-1213:** S-25.02 cluster-5 F1 delta-analysis + CV-DIR item [CV-DIR-F2-OPEN] resolution activated ADR-052 v1.0 registration.
+- **D-1214:** 1st cross-vendor Codex closure-review of ADR-052 v1.0 — RATIFY-WITH-CHANGES (7 findings); architect produced v1.1.
+- **D-1215:** ADR-052 v1.1 revision package committed (state-manager, single-commit TD-VSDD-053).
+- **D-1216:** 2nd cross-vendor Codex closure-review of ADR-052 v1.1 — RATIFY-WITH-CHANGES (8 new findings; not ratifiable); architect v1.2 redesign dispatched but abandoned at session wrap; pipeline: in_progress→PAUSED.
+- **D-1217:** ADR-052 v1.2 full redesign committed (state-manager, single-commit TD-VSDD-053); 8 findings closed; BC-1.18.011 v1.1→v1.2; BC-1.18.010 v1.3→v1.4; error-taxonomy v1.18→v1.19; ARCH-INDEX v4.28→v4.29; BC-INDEX v5.88→v5.89. Committed @ 9b65872f.
+
+### 3rd Codex Review Findings (11 total: 10 HIGH + 1 MED)
+
+1. **F1 (HIGH):** Rename-before-COMMITTED window — reader observing absent COMMITTED after BC-INDEX.md rename gets redirect body, not legacy rows. Fix: generation-based atomic pointer.
+2. **F2 (HIGH):** Crash after rename but before journal update — replaced target + absent staging + no completed entry; retry cannot recover. Fix: pre-rename content hash + rename intent; accept matching destination as completed.
+3. **F3 (HIGH):** Admitted-writer drain insufficient — TOCTOU check runs once before first rename; writers admitted before lock creation can mutate after check. Fix: writer reservations held through mutation completion.
+4. **F4 (HIGH):** Stale-lock reclamation race — two reclaimers can both unlink; O_CREAT|O_EXCL exposes empty file before JSON written; no malformed/empty-lock disposition. Fix: OS advisory lock on stable inode; serialized reclamation protocol.
+5. **F5 (HIGH):** PREPARED-transaction takeover undefined — lock held by dead PID when activation_id matches PREPARED, but §5a/BC-1.18.011:85-86/error-taxonomy:84 say dead-PID = stale. Recovery and writer admission disagree. Fix: separate process ownership from maintenance intent.
+6. **F6 (HIGH):** Expiry can delete recovery record after renames — expiry check at PREPARED→COMMITTED, which is after all renames; new activation cannot recover old transaction. Fix: check authorization before first destructive step; retain transaction state until commit or safe rollback.
+7. **F7 (HIGH):** Bash admission undefined — config-driven targets have no path arguments; gate receives command string; Bash target-path classification algorithm absent. Fix: conservative Bash admission with explicit sanctioned-command classification.
+8. **F8 (MED):** Census and COMMITTED reruns blocked by manifest requirement — guard requires unexpired manifest for all permitted commands; --census requires no manifest; COMMITTED reruns promise exit 0 "regardless of manifest state". Fix: separate guard branches for read-only/terminal-state/new-activation/recovery.
+9. **F9 (HIGH):** CLEANED state undetermined — COMMITTED archived at CLEANED; absent COMMITTED after CLEANED = normal; reader and CLI state tables treat absent COMMITTED as legacy-read path; CLEANED not handled. Fix: permanent published-generation or terminal-success record at stable location.
+10. **F10 (HIGH):** Allowlist path mismatch — BC-1.18.010:83 requires shard-manifest.toml; BC-1.18.011:156 requires .a.md/.b.md sub-shards; ADR:535-540 permits entire shards/ dir — three different scopes. Fix: single authoritative allowlist covering all required paths.
+11. **F11 (HIGH):** Executable substitution window — hash check at guard layer; execution through Bash after interactive approval; replacement between check and exec can execute different bytes. Fix: immutable artifact + digest bound into activation record; prevent replacement until execution completes.
+
+### Root-Cause Analysis
+
+Findings 1, 2, 6, and 9 stem from the same in-place per-file-rename publication model. No amount of journaling or per-target state can provide an atomic view boundary when files are renamed one at a time. Codex recommendations across all 11 findings converge on:
+1. Generation-based atomic-pointer publication
+2. OS advisory lock on a stable inode (never unlinked for ownership)
+3. Immutable-executable digest binding
+
+### Decisions
+
+1. **3rd Codex review artifact persisted:** `adv-cv-adr052-v12-closure-2026-09-13.md` written to `cycles/v1.0-brownfield-backfill/`. NON-STREAK — BC-5.39.001 streak 3/3 UNCHANGED.
+
+2. **Trajectory classified DIVERGING:** 7 (D-1214) → 8 (D-1216) → 11 (D-1218). Incremental amendment path is exhausted. Structural redesign required.
+
+3. **Direction decision escalated to human:** Three options — (a) v1.3 atomic-pointer redesign, (b) research-first, (c) reconsider ADR-052 scope. No action taken on ADR-052 or BCs this burst. Record-only.
+
+4. **Pipeline state:** Remains PAUSED. ADR-052 stays at v1.2 committed @ 9b65872f (NOT ratifiable). POLICY 22 ratification OPEN. Cluster-5 TDD BLOCKED. OWED items #2 (907-file input-hash sweep) and #3 (ADR-052↔BC re-settle) remain.
+
+5. **No index changes:** No BC/VP/STORY/ARCH indexes changed this burst (record-only). BC-INDEX stays v5.89; ARCH-INDEX stays v4.29.
+
+### Summary Table
+
+| Aspect | Value |
+|--------|-------|
+| Review file | `adv-cv-adr052-v12-closure-2026-09-13.md` |
+| Verdict | NOT RATIFIABLE |
+| Findings | 11 total (10 HIGH + 1 MED) |
+| Novelty | HIGH |
+| Trajectory | 7 (D-1214) → 8 (D-1216) → 11 (D-1218) — DIVERGING |
+| Root-cause | In-place per-file-rename model |
+| Direction | Escalated to human (3 options) |
+| ADR-052 | v1.2 committed @ 9b65872f — NOT ratifiable |
+| BC-5.39.001 streak | 3/3 CONVERGED UNCHANGED |
+| POLICY 22 | OPEN (blocked) |
+| pipeline | PAUSED (unchanged) |
+| Owed | 907-file hash sweep; ADR-052↔BC re-settle post-ratification |
+
+### Canonical 6-column row (STATE.md Decisions Log)
+
+| D-1218 | D-1218-3RD-CODEX-ADR052-V12-NOT-RATIFIABLE | **3rd cross-vendor Codex closure-review of ADR-052 v1.2 PERSISTED (adv-cv-adr052-v12-closure-2026-09-13.md; NON-STREAK decision-support; D-1218): NOT RATIFIABLE — 11 findings (10 HIGH+1 MED), novelty HIGH. Trajectory DIVERGING: 7 (1st, D-1214) →8 (2nd, D-1216) →11 (3rd). Root-cause = in-place per-file-rename model; Codex recommendations converge on generation-based atomic-pointer publication + OS advisory lock on stable inode + immutable-executable digest binding. Direction decision escalated to human: (a) v1.3 atomic-pointer redesign, (b) research-first, (c) reconsider ADR-052 scope. ADR-052 remains v1.2 committed @ 9b65872f (NOT ratifiable). POLICY 22 ratification OPEN; cluster-5 TDD BLOCKED. No BC/VP/STORY/ARCH indexes changed. BC-5.39.001 streak 3/3 UNCHANGED. pipeline: PAUSED.** | S-25.02 F4 | 2026-09-13 |
