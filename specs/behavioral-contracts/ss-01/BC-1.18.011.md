@@ -1,7 +1,7 @@
 ---
 document_type: behavioral-contract
 level: L3
-version: "1.6"
+version: "1.7"
 status: draft
 producer: product-owner
 timestamp: 2026-09-05T00:00:00Z
@@ -14,7 +14,7 @@ inputs:
   - .factory/specs/behavioral-contracts/ss-01/BC-1.18.006.md
   - .factory/cycles/v1.0-brownfield-backfill/S-25.02-f2-architecture-delta.md
   - .factory/specs/behavioral-contracts/BC-INDEX.md
-input-hash: "4dfb5fc"
+input-hash: "07079ec"
 traces_to: .factory/specs/prd.md
 origin: greenfield
 extracted_from: null
@@ -105,13 +105,19 @@ size alone and require immediate sub-sharding at the same F4 activation moment.
 
 ## Postconditions
 
-1. **Content-preservation, byte-for-byte.** The concatenation of the ten (or more, once
-   second-level sub-shards exist) resulting shard files, in `SS-01`..`SS-10` order, plus
-   `BC-INDEX.md`'s own retained lean top-level body (`§Summary` + `§Subsystem Shard Manifest` +
-   cross-cutting invariants — BC-1.18.010 Postcondition 1's end-state), reproduces the ORIGINAL
-   (pre-split) `BC-INDEX.md`'s full per-BC-row content byte-for-byte — modulo the newly-introduced
-   `§Subsystem Shard Manifest` section itself, which is new structural metadata, not migrated
-   content. This is BC-1.18.008 Postcondition 6(a)'s exact analogue, applied to a content
+1. **Content-preservation (structured per-BC-row equivalence).** Extract all BC-X.YY.NNN table
+   rows from the staged shard files; sort them in canonical BC-ID order; compute SHA-256 of the
+   sorted row content. Compare against `source_body_row_sha256` from the txn record — the SHA-256
+   of the per-BC-row content from the ORIGINAL (pre-split) `BC-INDEX.md` body in canonical BC-ID
+   sort order, captured at quiescence (ADR-052 §Decision 5a drain step 5(c)). Excluded from BOTH
+   the staged-row extraction and the source hash: `§Summary`, `§Subsystem Shard Manifest`,
+   cross-cutting invariants, and non-row separator lines — only the BC-X.YY.NNN row entries
+   themselves are in scope, preserving the "modulo the newly-introduced §Subsystem Shard Manifest
+   section" intent of the original content-preservation obligation. A whole-concat SHA-256 against
+   `source_sha256` (the whole-file fingerprint) is UNSATISFIABLE: the staged lean body ADDS the
+   `§Subsystem Shard Manifest` section (extra bytes absent from the original), and content is
+   reordered — `source_sha256` is used ONLY by step 5 fingerprint recheck (Postcondition 3a),
+   NOT here. This is BC-1.18.008 Postcondition 6(a)'s exact analogue, applied to a content
    partition (by subsystem) instead of a time partition (by seal sequence). PC1 is verified
    at ADR-052 §Decision 7c step 3b against the staged generation files BEFORE the CURRENT.json
    pointer swap; step 3c aborts cleanly (txn → ABORTED, gate → OPEN) on any verification failure.
@@ -268,7 +274,7 @@ size alone and require immediate sub-sharding at the same F4 activation moment.
 
 | VP-NNN | Property | Proof Method |
 |--------|----------|-------------|
-| VP-132 | Content-preservation invariant — concatenation of all resulting first-level (and, where applicable, second-level) shard files in `SS-01`..`SS-10` order plus the retained lean top-level body reproduces the original monolithic `BC-INDEX.md` body byte-for-byte, modulo the new `§Subsystem Shard Manifest` section | proptest / golden-file round-trip against the live (or a synthetic fixture) `BC-INDEX.md` body |
+| VP-132 | Content-preservation invariant — BC-X.YY.NNN table rows extracted from all staged shard files and sorted in canonical BC-ID order produce a SHA-256 matching `source_body_row_sha256` from the txn record (the SHA-256 of the per-BC-row content from the original pre-split BC-INDEX.md body in canonical BC-ID sort order, excluding §Summary, §Subsystem Shard Manifest, cross-cutting invariants, and non-row separator lines); `source_sha256` (whole-file fingerprint) is used ONLY by step 5 fingerprint recheck, not by PC1 | proptest / golden-file round-trip against the live (or a synthetic fixture) `BC-INDEX.md` body |
 | VP-133 | Independent-census integrity invariant — every `BC-X.YY.NNN` ID in the pre-split census appears in EXACTLY ONE post-split shard (or sub-shard) file; the union of all shard row counts equals the pre-split census count; `BC-INDEX.md`'s post-split body contains zero per-BC rows | integration test (full-corpus census comparison against synthetic fixtures with known BC-ID sets, including a duplicated-row negative-control fixture) |
 | VP-133 | Atomicity-under-interruption invariant — a simulated crash at any staging step leaves `BC-INDEX.md`'s body either fully original or fully split, never a partial/corrupt intermediate state | fault-injection / integration test (simulated crash at each of N staging steps; assert post-recovery state is one of the two valid states) |
 | VP-133 | Idempotency invariant — running the migration twice against an already-split `BC-INDEX.md`, or resuming from a verified-complete staged state, does not re-split, re-duplicate, or corrupt any shard | integration test (double-invocation + resume-from-staged-checkpoint fixtures) |
@@ -354,7 +360,7 @@ S-25.02 — Artifact Sharding Layer 2: Size-Triggered Shard Rotation for Cycle A
 
 ## VP Anchors
 
-- VP-132, VP-133, VP-134 — allocated by formal-verifier (S-25.02 F2 verification-property fix-burst; VP-INDEX v3.03), analogous to VP-123/VP-124 (content-preservation + record-integrity; atomicity-under-interruption + idempotency) but keyed to BC-INDEX's ID-census model instead of decision-log's byte-count model, per the F2 architecture-delta doc §4a authorship input for this BC. VP-132 (proptest; content-preservation byte-for-byte), VP-133 (integration; independent-census integrity + crash-atomicity + fail-loud rollback CENSUS_MISMATCH_ABORT (process exit code) + idempotency + SS-05/SS-06 second-level sub-split census — four same-method obligations consolidated per the single-method-per-VP convention), VP-134 (static-check; no-new-Cohort-B-dependency). The six candidate properties enumerated in `## Verification Properties` above map to these three VPs: candidate 1 → VP-132; candidates 2/3/4/5 → VP-133; candidate 6 → VP-134.
+- VP-132, VP-133, VP-134 — allocated by formal-verifier (S-25.02 F2 verification-property fix-burst; VP-INDEX v3.03), analogous to VP-123/VP-124 (content-preservation + record-integrity; atomicity-under-interruption + idempotency) but keyed to BC-INDEX's ID-census model instead of decision-log's byte-count model, per the F2 architecture-delta doc §4a authorship input for this BC. VP-132 (proptest; content-preservation structured-row-equivalence), VP-133 (integration; independent-census integrity + crash-atomicity + fail-loud rollback CENSUS_MISMATCH_ABORT (process exit code) + idempotency + SS-05/SS-06 second-level sub-split census — four same-method obligations consolidated per the single-method-per-VP convention), VP-134 (static-check; no-new-Cohort-B-dependency). The six candidate properties enumerated in `## Verification Properties` above map to these three VPs: candidate 1 → VP-132; candidates 2/3/4/5 → VP-133; candidate 6 → VP-134.
 
 ## Traceability
 
@@ -373,6 +379,7 @@ S-25.02 — Artifact Sharding Layer 2: Size-Triggered Shard Rotation for Cycle A
 
 | Version | Date | Author | Change |
 |---------|------|--------|--------|
+| 1.7 | 2026-09-13 | product-owner | **ADR-052 v1.7 F1 PC1 structured-equivalence reconciliation (adversary pass-5 F-3 MED).** Rewrote Postcondition 1 from the "byte-for-byte concatenation" model to the structured per-BC-row-equivalence model per ADR-052 §Decision 7c step 3b / §Decision 5a drain step 5(c): PC1 now describes extracting BC-X.YY.NNN table rows from staged shard files, sorting in canonical BC-ID order, computing SHA-256, and comparing against `source_body_row_sha256` from the txn record. Explicitly calls out that `§Summary`, `§Subsystem Shard Manifest`, cross-cutting invariants, and non-row separator lines are excluded from both the staged-row extraction and the source hash — preserving the "modulo the manifest section" intent. Explicitly states that a whole-concat SHA-256 against `source_sha256` is UNSATISFIABLE (the staged lean body adds the §Subsystem Shard Manifest section, making the whole-concat SHA unequal to `source_sha256` by construction) and that `source_sha256` is used ONLY by step 5 fingerprint recheck (Postcondition 3a). Updated VP-132 description in Verification Properties table to the structured-row-equivalence formulation with the `source_body_row_sha256` / `source_sha256` scope distinction. Updated VP-132 label in VP Anchors from "(proptest; content-preservation byte-for-byte)" to "(proptest; content-preservation structured-row-equivalence)". input-hash recompute owed to state-manager (compute-input-hash --update). |
 | 1.6 | 2026-09-13 | product-owner | ADR-052 v1.7 re-hardening (F2/F3/F6/F7). (F2) Replaced HookResult/E-SHD-005 terminology in Canonical Test Vectors rows 3–4 and VP-133/VP-Anchors prose with correct process exit code terminology — CONTENT_PRESERVATION_ABORT (exit 2) for content-preservation failure, CENSUS_MISMATCH_ABORT (exit 2) for census/ID-set failure; the migration binary is Bash-invoked and emits process exit codes, not HookResult values; E-SHD-005 is scoped to the steady-state native gate (BC-1.18.006/BC-1.18.010) only. (F3) Corrected all path-bearing COMPLETED.json occurrences in Precondition 5, Invariant 3, Architecture Anchors, and Traceability ADR row to lowercase completed.json per ADR-052 §Decision 7c step 8. (F6) Amended Precondition 2 and Invariant 1 to disclose ADR-052 §Decision 7 NEW multi-file crash-atomicity machinery: removed the false claim that the migration "does not invent new atomic-write machinery"; Precondition 2 now states BC-1.18.006's write_atomic handles per-file writes while §Decision 7a (advisory flock + durable txn record), §Decision 7b (framed intent log + WAL boundary + matching-destination-hash recovery), and §Decision 7c (CURRENT.json pointer swap + completed.json terminal record) provide the multi-file atomicity envelope; Invariant 1 retitled to reflect write_atomic invocation (not reimplementation) plus §Decision 7 machinery disclosure. (F7) SDK Grounding: removed write_indeterminate_marker (CAP-041 INDETERMINATE quarantine-marker writer; not an atomic-write staging primitive; incorrectly cited in prior versions); added grep confirming last_amended_migrate::atomic_write::write_atomic is called in crates/factory-dispatcher/src/shard_manager.rs; updated Architecture Anchors first bullet to cite write_atomic by fully-qualified name. |
 | 1.5 | 2026-09-13 | product-owner | ADR-052 v1.5 re-hardening (3 amendments). (1) Invariant 3 — COMMITTING-window reader protocol corrected to generation-first/canonical-fallback (C-1 mirror): each file is accessible at `gen-<uuid>/` path (not yet moved to canonical) OR at its canonical path (already moved by step 7's progress); generation-first is correct for BOTH net-new shards AND in-place-overwrite targets such as BC-INDEX.md; citation updated from "canonical-first / generation-fallback (ADR-052 §Decision 7c reader protocol, C1 fix)" to "generation-first/canonical-fallback (ADR-052 §Decision 7c C-1 fix)". (2) EC-003 — corrected citation from "step 3b per ADR-052 §Decision 4e" to "ADR-052 §Decision 7c step 3b (referenced by §Decision 4e)" for precision (step 3b is defined in §7c; §4e references it for the resume-from-STAGING case); version pin "(v1.4)" removed from "H3 fix" label per H-4 POLICY 19 / TD-VSDD-091; stable form "§Decision 7c step 3b (H3 fix)" substituted. (3) Traceability ADR row — ADR-052 §Decision 4/5a/7a/7b/7c/8 added alongside existing ADR-051 citations, aligning Traceability with Architecture Anchors on governing ADRs (M-1). |
 | 1.4 | 2026-09-13 | product-owner | ADR-052 v1.4 re-hardening (5 amendments). (1) Postconditions 1 and 2: added explicit cross-reference to ADR-052 §Decision 7c step 3b — PC1 (content-preservation) and PC2 (independent census) are verified against the staged generation BEFORE the CURRENT.json pointer swap; step 3c aborts cleanly (txn → ABORTED, gate → OPEN) on failure. (2) Postcondition 3a (Amendment 7): corrected pointer-swap step index from "step 5" to "step 6" (step 5 = fingerprint recheck; step 6 = CURRENT.json pointer swap = the commit point). (3) Invariant 3: added COMMITTING-window reader protocol (C1 fix): during COMMITTING, new-generation content is accessible via canonical-first / generation-fallback — each file is at its canonical path (if already moved by step 7) OR at gen-uuid/ (not yet moved); rename(2) atomicity ensures ENOENT is not possible for any file during the committing window (ADR-052 §Decision 7c reader protocol). (4) EC-003 resume logic: added H3 fix note — resume-from-STAGING MUST re-run the full census (step 3b) before proceeding to the pointer swap; the census gate is not skippable on resume (ADR-052 §Decision 4e). (5) SDK Grounding Evidence re-grounded: the literal `total_bcs: 2005` stdout value replaced with structural form `total_bcs: <N>` (per POLICY 5 HEAD-reproducibility mandate; mirrors BC-1.18.010 v1.2's structural-form fix for the identical drift class — the value is 2006 at HEAD and will continue to drift; any future reader MUST re-execute the grep at HEAD for the current count). No state-name corrections required: no PREPARED occurrences exist in the v1.3 body (v1.3 already replaced all such occurrences with STAGING/COMMITTING/COMPLETED/ABORTED). |

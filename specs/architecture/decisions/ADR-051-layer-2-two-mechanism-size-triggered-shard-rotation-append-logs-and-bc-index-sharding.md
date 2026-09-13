@@ -788,14 +788,20 @@ convention for BC-1.18.008/009/010) governs the one-time B2 migration, modeled d
 BC-1.18.008's structure.** Postcondition obligations this BC MUST encode (enumerated here as the
 architect's authorship input to product-owner, per this dispatch's constraints):
 
-1. **Content-preservation, byte-for-byte.** The concatenation of the ten (or more, once
+1. **Content-preservation (per-BC-row).** The concatenation of the ten (or more, once
    second-level sub-shards exist) resulting shard files, in `SS-01`..`SS-10` order, plus
    `BC-INDEX.md`'s own retained lean top-level body (`§Summary` + `§Subsystem Shard Manifest` +
    cross-cutting invariants — BC-1.18.010 Postcondition 1's end-state), reproduces the ORIGINAL
    (pre-split) `BC-INDEX.md`'s full per-BC-row content byte-for-byte — modulo the newly-introduced
    `§Subsystem Shard Manifest` section itself, which is new structural metadata, not migrated
    content. This is BC-1.18.008 Postcondition 6(a)'s exact analogue, applied to a content
-   partition instead of a time partition.
+   partition instead of a time partition. *(v1.15 clarification: a literal whole-file-concatenation
+   SHA-256 against the original pre-split body is NOT a viable verification gate — the staged lean
+   body adds the new `§Subsystem Shard Manifest` section and content is reordered, making such a
+   gate mathematically unsatisfiable. This goal is instead VERIFIED as structured per-BC-row-set
+   equivalence per ADR-052 §Decision 7c step 3b: extract `BC-X.YY.NNN` table rows from all staged
+   shards, sort by canonical BC-ID, SHA-256 the sorted row content, and compare against
+   `source_body_row_sha256` captured during drain.)*
 2. **Independent-census integrity check — every BC row in EXACTLY one shard.** Before the split
    begins, capture an independent census: the complete set of `BC-X.YY.NNN` IDs present in the
    ORIGINAL (pre-split) `BC-INDEX.md` body (a fresh enumeration, not reused from any cached count),
@@ -2088,6 +2094,7 @@ location and the Decision 17 citation.
 
 | Version | Date | Author | Summary |
 |---|---|---|---|
+| 1.15 | 2026-09-13 | architect | Light reconciliation of §Decision 10 Postcondition 1's content-preservation statement to remove literal-whole-concat ambiguity introduced by ADR-052 v1.8 §Decision 7c step 3b. The "byte-for-byte" heading is renamed to "per-BC-row" and a v1.15 clarification note is appended to item 1 explaining that a literal whole-file-concatenation SHA-256 is NOT a viable gate (the staged lean body adds `§Subsystem Shard Manifest`; content is reordered) and that verification is instead performed as structured per-BC-row-set equivalence via `source_body_row_sha256` per ADR-052 §Decision 7c step 3b. Design intent unchanged — all per-BC-row content is preserved, modulo `§Summary`, `§Subsystem Shard Manifest`, and cross-cutting invariants. No decision content reversed. Refs: ADR-052 §Decision 7c step 3b. |
 | 1.14 | 2026-09-13 | architect | M-2 coupling removal (ADR-052 v1.5 fix-burst, 5th adversarial review finding M-2): §Decision 10 item 6's "at the SAME F4 activation moment mechanism A's own backfill (BC-1.18.008) runs" coupling removed. The B2 migration activates independently from mechanism A — per BC-1.18.011 Precondition 4 and ADR-052 §Decision 1, the two migrations activate independently and may run in any order. Replaced with: "as part of this SAME one-time B2 migration operation (independently of mechanism A's activation schedule — per BC-1.18.011 Precondition 4 and ADR-052 §Decision 1, the two migrations activate independently and may run in any order)." No decision content reversed; erratum-class correction. Refs: ADR-052 v1.5 §Decision 1, BC-1.18.011 Precondition 4. |
 | 1.13 | 2026-09-11 | architect | Withdrawal of §Decision 7 Obs-B crash-recovery self-heal bullet (adv re-cascade pass-1, F-C4H-P1-002). The pure byte-level tail-match mechanism the Obs-B bullet (added in v1.12) described is unimplementable: it cannot distinguish a crash-retry from a legitimate later rotation whose `move_items` coincidentally match the archive's tail — an undetectable false-positive class (F-C4H-P1-002). The implementer's proposed sentinel-file workaround was independently broken (F-C4H-P1-001 CRITICAL: sentinel never reset between rotations) and architect-rejected. Removed the entire Obs-B "B1 crash-recovery partial failure — transparent self-heal, no new error code" paragraph from §Decision 7. B1 archive crash-atomicity deferred to follow-up story S-25.05. **The Obs-A E-SHD-014 counter-divergence guard bullet is RETAINED unchanged.** Withdrawal-class; no decision reversed for Obs A. Refs: adv re-cascade pass-1 F-C4H-P1-001, F-C4H-P1-002, S-25.05. |
 | 1.12 | 2026-09-11 | architect | Cluster-4 hardening — Obs-A counter-divergence guard bullet added to §Decision 7 B1 subsection (erratum/elaboration-class, no decision reversed). B1 handler MUST check `RotationReport.mutated` after every `Ok(report)` return from `rotate_changelog_at`; `mutated==false` returns `HookResult::Error(E-SHD-014)` instead of `HookResult::Block`, closing the latent infinite-retry self-DoS the unconditional `Ok(_) => Block` match would produce if the serde item-count trigger and `rotate_changelog_at`'s internal `parse_frontmatter` line-scan ever returned inconsistent item counts. `E-SHD-014` is semantically distinct from `E-SHD-004` (the `Err` arm: I/O or validation failure). BC-side anchors: BC-1.18.009 EC-008, Inv-5 (v1.6). Erratum in same burst: original draft cited `E-SHD-008`, already allocated to BackstopProbeFailed (BC-1.18.006 EC-019); corrected to `E-SHD-014`, error-taxonomy.md v1.15 authoritative. (Obs-B crash-recovery self-heal bullet also added in this burst; withdrawn in v1.13 — see above.) Refs: s2502-cluster4-hardening-design.md, BC-1.18.009 v1.6. |

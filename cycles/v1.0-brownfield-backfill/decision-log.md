@@ -10914,3 +10914,64 @@ Cluster-5 TDD remains BLOCKED until POLICY 22 ratification (including F8 APFS pr
 ### Canonical 6-column row (STATE.md Decisions Log)
 
 | D-1224 | D-1224-ADR052-V17-LOCAL-ADV-PASS4-FIX-BURST | **ADR-052 v1.7 fix burst committed (state-manager, single-commit TD-VSDD-053; D-1224): in-house adversary LOCAL pass-4 = NOT-RATIFIABLE (2H F1,F2 + F3-F10); all 10 findings closed — F1 PC1 census gate restructured: per-BC-row structured-equivalence via source_body_row_sha256 (staged lean body adds §Subsystem Shard Manifest; whole-concat SHA vs source_sha256 unsatisfiable); F2 E-SHD-005 rescoped to STEADY-STATE native admission gate (BC-1.18.006/BC-1.18.010 HookResult; migration-binary contexts corrected to CENSUS_MISMATCH_ABORT/CONTENT_PRESERVATION_ABORT); F4 PreToolUse self-heals stuck-LOCKED gate (completed.json present + no active txn → LOCK_EX + gate→OPEN + test mandate); F5 dangling §Context ref inlined; F8 APFS durability test ELEVATED to RATIFICATION PREREQUISITE; F9 stale BC-Impact step-5 row corrected; F10 PID-reuse tuple (pid, process_start_time); F3/F6/F7 BC-owned routed PO (completed.json casing sweep; Invariant 1/PC2 crash-atomicity citation; SDK Grounding drop write_indeterminate_marker). BC-1.18.011 v1.5→v1.6; BC-1.18.010 v1.7→v1.8. ARCH-INDEX v4.33→v4.34; BC-INDEX v5.92→v5.93; VP-INDEX v3.19→v3.20 (VP-133 description E-SHD-005 rescoping per POLICY 9); verification-architecture.md v1.33→v1.34; verification-coverage-matrix.md v1.31→v1.32. Input-hashes: ADR-052 5d73495 (PASS) / BC-1.18.011 4dfb5fc (circular-stale OWED #3) / BC-1.18.010 02f93ec (circular-stale OWED #3) / error-taxonomy a64f756 (PASS) / verif-arch 7e30fa6 (PASS) / verif-matrix 7e30fa6 (PASS). [D-1224-DRIFT-001] NEW: E-SHD-005 VP-leg gap — no dedicated VP; new steady-state-gate VP needed (E-12 routing, POLICY 1 append-only). [D-1222-DRIFT-001] prd.md §5.1 sync UNCHANGED OPEN. [D-1221-PG-001] Display-parity UNCHANGED OPEN. STATE.md VP count reconciled 26→141. BC-5.39.001 LOCAL streak 0/3 (adversary pass-5 next). TRAJECTORY: CRIT+HIGH 7→5→5→2 (plateau broken). POLICY 22 2 sign-off items: (i) macOS exec-TOCTOU sub-instruction gap; (ii) F8 APFS test RATIFICATION PREREQUISITE. OWED #2+#3 unchanged. Cluster-5 TDD BLOCKED. pipeline: PAUSED.** | S-25.02 F4 | 2026-09-13 |
+
+## D-1225: ADR-052 v1.8 + ADR-051 v1.15 sibling-sweep fix burst (adversary pass-5 RATIFY-WITH-CHANGES)
+
+**Date:** 2026-09-13
+**Burst type:** spec fix burst (state-manager, single-commit TD-VSDD-053)
+**Adversary pass:** pass-5 LOCAL (in-house Claude, fresh context, reads only pass-4 Part A per Iron Law)
+**Verdict:** RATIFY-WITH-CHANGES (upgraded from NOT-RATIFIABLE)
+
+### Finding Table (pass-5)
+
+| Finding | Severity | Summary | Resolution |
+|---------|----------|---------|------------|
+| F-1 | HIGH | error-taxonomy.md missing CONTENT_PRESERVATION_ABORT entry | Added CONTENT_PRESERVATION_ABORT to error-taxonomy.md (v1.24→v1.25) |
+| F-2 | HIGH | ADR §Files-to-Change PC1 shard_manager.rs+tests rows had stale v1.6 whole-concat PC1 wording | Updated to per-BC-row structured-equivalence model (ADR-052 v1.7→v1.8 §Files-to-Change PC1) |
+| F-3 | MED | BC-1.18.011 §PC1 did not reflect ADR-052 v1.7/v1.8 structured-equivalence | BC-1.18.011 §PC1 updated to per-BC-row model (v1.6→v1.7) |
+| F-4 | MED | ADR §4e recovery table missing STAGING+expired manifest row (EXPIRY_ABORT path) | EXPIRY_ABORT clean-abort row added to §4e table (ADR-052 v1.8) |
+| Stray-1 | OBS (orch-caught) | ADR-051 §BC-Impact section used future tense for already-shipped items | Tense corrected in-place (ADR-051 v1.14→v1.15) |
+| Stray-2 | OBS (orch-caught) | VP-132 description stale in 4 docs: VP-INDEX, verification-architecture.md, verification-coverage-matrix.md, VP-132.md | VP-132 description realigned across all 4 docs (VP-INDEX v3.21; verif-arch v1.35; verif-matrix v1.33; VP-132.md v1.1) |
+
+### Codification
+
+**BC-5.39.001 LOCAL cascade:** pass-5 = RATIFY-WITH-CHANGES. Streak REMAINS 0/3 (RATIFY-WITH-CHANGES ≠ CLEAN). Adversary pass-6 next (fresh-context, reads only pass-5 Part A per Iron Law).
+
+**TRAJECTORY (CRIT+HIGH):** 7→5→5→2→2 — verdict upgraded NOT-RATIFIABLE→RATIFY-WITH-CHANGES; trajectory floor holds at 2.
+
+**NOTE:** ORCHESTRATOR ran two global sibling-sweep greps that caught VP-132.md and ADR-051 as stray sites. Per-agent sweeps missed these. [D-1225-PG-001] NEW sibling-sweep mechanical gate process-gap — this burst provides evidence strengthening the case for automated predicate-propagation lint.
+
+**Index advances this burst:**
+- ARCH-INDEX v4.35 → v4.36 (ADR-052 row v1.7→v1.8 body + ADR-051 row v1.14→v1.15)
+- BC-INDEX v5.93 → v5.94 (BC-1.18.011 v1.6→v1.7)
+- VP-INDEX v3.20 → v3.21 (VP-132 description realignment)
+- verification-architecture.md v1.34 → v1.35 (VP-132 POLICY 9 propagation)
+- verification-coverage-matrix.md v1.32 → v1.33 (VP-132 POLICY 9 propagation)
+- VP-132.md v1.0 → v1.1 (formal-verifier; already bumped)
+
+**Input-hashes (post-update):**
+- BC-1.18.011: `07079ec` (PASS — circular-stale OWED #3 noted; ADR-052 input not refreshable until POLICY 22 ratification)
+- error-taxonomy.md: `68425f5` (PASS — updated; includes BC-1.18.011 as input)
+- verification-architecture.md: `ebd6abd` (PASS — updated after version bump)
+- verification-coverage-matrix.md: `ebd6abd` (PASS — updated after version bump)
+- VP-INDEX.md: no `inputs:` field — skipped
+- VP-132.md: `0000000` placeholder, `inputs: []` genuinely empty — no-op
+- ADR-052: architect ran --update per specialist dispatch
+- ADR-051: no `inputs:` field — skipped
+
+**Drift items status:**
+- [D-1222-DRIFT-001] prd.md §5.1 MIG+MAINTENANCE sync: UNCHANGED OPEN — owed before POLICY 22 ratification.
+- [D-1221-PG-001] taxonomy Display-drift CI lint: UNCHANGED OPEN. NOTE: This burst further motivates follow-up — orchestrator needed two manual greps to catch stray sites.
+- [D-1224-DRIFT-001] E-SHD-005 VP-leg gap: UNCHANGED OPEN (new steady-state-gate VP needed, E-12 routing).
+- [D-1225-PG-001] NEW: sibling-sweep mechanical gate — ORCHESTRATOR needed two global greps to catch VP-132.md + ADR-051 stray sites that per-agent sweeps missed; confirms predicate-propagation lint gap.
+
+**POLICY 22 status:** OPEN with 2 sign-off items (unchanged):
+- (i) macOS exec-TOCTOU residual window + no-concurrent-cargo-build pre-flight.
+- (ii) APFS darwin-arm64 durability test: RATIFICATION PREREQUISITE — must complete before POLICY 22 ratification gate.
+Cluster-5 TDD remains BLOCKED until POLICY 22 ratification.
+
+**OWED (unchanged):** OWED #2 (907-file hash sweep); OWED #3 (ADR-052↔BC circular re-settle). prd.md §5.1 MIG/MAINTENANCE sync [D-1222-DRIFT-001] owed before ratification.
+
+### Canonical 6-column row (STATE.md Decisions Log)
+
+| D-1225 | D-1225-ADR052-V18-SIBLING-SWEEP-PASS5 | **ADR-052 v1.8 + ADR-051 v1.15 sibling-sweep fix burst committed (state-manager, single-commit TD-VSDD-053; D-1225): in-house adversary LOCAL pass-5 = RATIFY-WITH-CHANGES (2H F-1,F-2 + 2M F-3,F-4); all findings + 2 orch-caught stray sites closed — F-1 HIGH error-taxonomy.md CONTENT_PRESERVATION_ABORT (v1.24→v1.25); F-2 HIGH ADR §Files-to-Change PC1 updated to per-BC-row structured-equivalence (ADR-052 v1.7→v1.8); F-3 MED BC-1.18.011 §PC1 propagation (v1.6→v1.7); F-4 MED §4e STAGING+expired EXPIRY_ABORT row (ADR-052 v1.8); Stray-1 ADR-051 v1.14→v1.15 §BC-Impact tense (orch global grep); Stray-2 VP-132 realigned in 4 docs (VP-INDEX v3.21, verif-arch v1.35, verif-matrix v1.33, VP-132.md v1.1; orch global grep). ARCH-INDEX v4.35→v4.36; BC-INDEX v5.93→v5.94; VP-INDEX v3.20→v3.21; verification-architecture.md v1.34→v1.35; verification-coverage-matrix.md v1.32→v1.33. Input-hashes: BC-1.18.011 07079ec (PASS, circ-stale OWED #3) / error-taxonomy 68425f5 (PASS) / verif-arch ebd6abd (PASS) / verif-matrix ebd6abd (PASS). [D-1222-DRIFT-001] prd.md §5.1 UNCHANGED OPEN. [D-1221-PG-001] UNCHANGED OPEN. [D-1224-DRIFT-001] VP-leg UNCHANGED OPEN. [D-1225-PG-01] NEW: sibling-sweep mechanical gate process-gap. BC-5.39.001 LOCAL streak 0/3 (RATIFY-WITH-CHANGES ≠ CLEAN; pass-6 next). TRAJECTORY: CRIT+HIGH 7→5→5→2→2 (verdict upgraded NOT-RATIFIABLE→RATIFY-WITH-CHANGES; plateau at 2). NOTE: ORCHESTRATOR global greps caught VP-132.md + ADR-051 that per-agent sweeps missed. POLICY 22 2 sign-off items: (i) macOS exec-TOCTOU; (ii) APFS test RATIFICATION PREREQUISITE. OWED #2+#3 unchanged. Cluster-5 TDD BLOCKED. pipeline: PAUSED.** | S-25.02 F4 | 2026-09-13 |
