@@ -8899,3 +8899,23 @@ BC-5.39.001 LOCAL cluster-5 streak **0/3 — pass-1 (D-1221) NOT-RATIFIABLE; pas
 ### §8. BC-5.39.001 streak (D-1223 state)
 
 **LOCAL cluster-5 streak: 0/3** — pass-1 NOT-RATIFIABLE (D-1221), pass-2 NOT-RATIFIABLE (D-1222), pass-3 NOT-RATIFIABLE (D-1223); adversary pass-4 next. Cycle-level streak: 3/3 CONVERGED UNCHANGED.
+
+---
+
+## Archived Checkpoint: D-1225-ADR052-V18-SIBLING-SWEEP-PASS5 (v10.56→v10.57, 2026-09-13)
+
+*(Archived 2026-09-13 during D-1226-ADR052-V19-PASS6-DRAIN-GC-TTL v10.57→v10.58; replaced by new SRC reflecting ADR-052 v1.9 fix burst committed state. NOTE: D-1224 checkpoint was noted as "archived" in STATE.md v10.56 but was not present in this file — pre-existing gap from prior session context cutoff; D-1224 checkpoint reconstruction not attempted per production-grade principle.)*
+
+**SELF-SUFFICIENT RESUME CONTEXT.** ADR-052 v1.8 + ADR-051 v1.15 COMMITTED (D-1225; in-house adversary LOCAL pass-5 RATIFY-WITH-CHANGES 2H F-1,F-2 + 2M F-3,F-4 + 2 orch-caught stray sites; all findings closed; F-1 error-taxonomy CONTENT_PRESERVATION_ABORT; F-2 ADR §Files-to-Change PC1 per-BC-row model; F-3 BC-1.18.011 PC1 propagation; F-4 §4e STAGING+expired EXPIRY_ABORT row; VP-132 realigned in 4 docs; ADR-051 §BC-Impact tense fixed). BC-5.39.001 LOCAL streak 0/3. **NEXT = adversary pass-6 (fresh-context, reads only pass-5 Part A per Iron Law).** TRAJECTORY: CRIT+HIGH 7→5→5→2→2 (verdict upgraded NOT-RATIFIABLE→RATIFY-WITH-CHANGES; plateau at 2). PIPELINE REMAINS PAUSED.
+
+### §1. Position
+
+2026-09-13. S-25.02 F4 cluster-5 F1; ADR-052 v1.8 + ADR-051 v1.15 COMMITTED (D-1225) — in-house adversary LOCAL pass-5 = RATIFY-WITH-CHANGES (2H F-1,F-2 + 2M F-3,F-4 + 2 orch-caught stray sites); all findings closed. BC-5.39.001 LOCAL streak 0/3. NEXT = adversary pass-6 (fresh context, reads only pass-5 Part A). TRAJECTORY: CRIT+HIGH 7→5→5→2→2 (verdict upgraded NOT-RATIFIABLE→RATIFY-WITH-CHANGES). After 3-CLEAN: HUMAN POLICY 22 ratification (with 2 sign-off items + prd.md §5.1 sync). `pipeline:` PAUSED.
+
+### §2. Convergence
+
+BC-5.39.001 LOCAL cluster-5 streak **0/3 — pass-1 (D-1221) NOT-RATIFIABLE; pass-2 (D-1222) NOT-RATIFIABLE; pass-3 (D-1223) NOT-RATIFIABLE; pass-4 (D-1224) NOT-RATIFIABLE; pass-5 (D-1225) RATIFY-WITH-CHANGES (≠ CLEAN); pass-6 next.** Cycle-level streak: CONVERGED 3/3 (unchanged). ADR-052 LOCAL cascade: pass-1 done (D-1221), pass-2 done (D-1222), pass-3 done (D-1223), pass-4 done (D-1224), pass-5 done (D-1225); pass-6 next toward 3-CLEAN. TRAJECTORY: CRIT+HIGH 7→5→5→2→2 (verdict upgraded NOT-RATIFIABLE→RATIFY-WITH-CHANGES; plateau at 2). ADR-052 Codex cross-vendor track (NON-STREAK): paused per human direction — Codex held.
+
+### §8. BC-5.39.001 streak (D-1225 state)
+
+**LOCAL cluster-5 streak: 0/3** — pass-1 NOT-RATIFIABLE (D-1221), pass-2 NOT-RATIFIABLE (D-1222), pass-3 NOT-RATIFIABLE (D-1223), pass-4 NOT-RATIFIABLE (D-1224), pass-5 RATIFY-WITH-CHANGES (D-1225; ≠ CLEAN); adversary pass-6 next. Cycle-level streak: 3/3 CONVERGED UNCHANGED.

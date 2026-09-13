@@ -10975,3 +10975,63 @@ Cluster-5 TDD remains BLOCKED until POLICY 22 ratification.
 ### Canonical 6-column row (STATE.md Decisions Log)
 
 | D-1225 | D-1225-ADR052-V18-SIBLING-SWEEP-PASS5 | **ADR-052 v1.8 + ADR-051 v1.15 sibling-sweep fix burst committed (state-manager, single-commit TD-VSDD-053; D-1225): in-house adversary LOCAL pass-5 = RATIFY-WITH-CHANGES (2H F-1,F-2 + 2M F-3,F-4); all findings + 2 orch-caught stray sites closed — F-1 HIGH error-taxonomy.md CONTENT_PRESERVATION_ABORT (v1.24→v1.25); F-2 HIGH ADR §Files-to-Change PC1 updated to per-BC-row structured-equivalence (ADR-052 v1.7→v1.8); F-3 MED BC-1.18.011 §PC1 propagation (v1.6→v1.7); F-4 MED §4e STAGING+expired EXPIRY_ABORT row (ADR-052 v1.8); Stray-1 ADR-051 v1.14→v1.15 §BC-Impact tense (orch global grep); Stray-2 VP-132 realigned in 4 docs (VP-INDEX v3.21, verif-arch v1.35, verif-matrix v1.33, VP-132.md v1.1; orch global grep). ARCH-INDEX v4.35→v4.36; BC-INDEX v5.93→v5.94; VP-INDEX v3.20→v3.21; verification-architecture.md v1.34→v1.35; verification-coverage-matrix.md v1.32→v1.33. Input-hashes: BC-1.18.011 07079ec (PASS, circ-stale OWED #3) / error-taxonomy 68425f5 (PASS) / verif-arch ebd6abd (PASS) / verif-matrix ebd6abd (PASS). [D-1222-DRIFT-001] prd.md §5.1 UNCHANGED OPEN. [D-1221-PG-001] UNCHANGED OPEN. [D-1224-DRIFT-001] VP-leg UNCHANGED OPEN. [D-1225-PG-01] NEW: sibling-sweep mechanical gate process-gap. BC-5.39.001 LOCAL streak 0/3 (RATIFY-WITH-CHANGES ≠ CLEAN; pass-6 next). TRAJECTORY: CRIT+HIGH 7→5→5→2→2 (verdict upgraded NOT-RATIFIABLE→RATIFY-WITH-CHANGES; plateau at 2). NOTE: ORCHESTRATOR global greps caught VP-132.md + ADR-051 that per-agent sweeps missed. POLICY 22 2 sign-off items: (i) macOS exec-TOCTOU; (ii) APFS test RATIFICATION PREREQUISITE. OWED #2+#3 unchanged. Cluster-5 TDD BLOCKED. pipeline: PAUSED.** | S-25.02 F4 | 2026-09-13 |
+
+---
+
+## D-1226: ADR-052 v1.9 fix burst (adversary pass-6 RATIFY-WITH-CHANGES)
+
+**Date:** 2026-09-13
+**Burst type:** spec fix burst (state-manager, single-commit TD-VSDD-053)
+**Adversary pass:** pass-6 LOCAL (in-house Claude, fresh context, reads only pass-5 Part A per Iron Law)
+**Verdict:** RATIFY-WITH-CHANGES
+
+### Finding Table (pass-6)
+
+| Finding | Severity | Summary | Resolution |
+|---------|----------|---------|------------|
+| H1 | HIGH | Reservation GC used PID-liveness (unsound): per-event dispatcher could reclaim in-flight reservations, causing snapshot-mid-write data corruption | Changed GC criterion from PID-liveness to TTL-based (created_at + tool_use_id) in ADR-052 §Decision drain-GC (v1.8→v1.9) |
+| H2 | HIGH | E-SHD-005 citation in ADR-052 §Decision 7c erroneously anchored to migration binary; E-SHD-005 is scoped exclusively to the steady-state native admission gate | E-SHD-005 re-anchored to steady-state gate (ADR-052 v1.9); VP-132.md sibling note + error-taxonomy.md updated |
+| M1 | MED | VP-132.md sibling-VP note referenced E-SHD-005 as a VP-132 error code — VP-132 covers CONTENT_PRESERVATION_ABORT (process exit), not E-SHD-005 | VP-132.md v1.1→v1.2 sibling note updated (formal-verifier); VP-INDEX v3.21→v3.22 catalog row v1.2 annotation added |
+| M2 | MED | ADR-052 handoff description used present-tense for already-completed migration handoff | Corrected to past-tense in ADR-052 §Handoff (v1.9) |
+| M3 | MED | ADR-052 §Files-to-Change exit-1/exit-2 criterion was ambiguous between expected vs error | Clarified: exit-1 = expected (CENSUS_MISMATCH_ABORT), exit-2 = error (CONTENT_PRESERVATION_ABORT) per error-taxonomy.md v1.25→v1.26 (product-owner) |
+| L1 | LOW | Provenance inconsistency in ADR-052 §Provenance section | Fixed provenance wording in ADR-052 v1.9 |
+| L2 | LOW | §4e table row ordering issue | §4e reordered in ADR-052 v1.9 |
+| §Files-to-Change straggler | OBS (orch-caught) | H1 TTL-based GC fix landed in §Decision section of ADR-052 v1.8 but was NOT propagated to §Files-to-Change shard_manager.rs row — 3rd recurrence of fix-lands-in-§Decision-not-§Files-to-Change class | §Files-to-Change shard_manager.rs row updated with TTL-based GC directive (ADR-052 v1.9; orchestrator global grep caught this; per-agent sweeps missed it) |
+
+### Codification
+
+**BC-5.39.001 LOCAL cascade:** pass-6 = RATIFY-WITH-CHANGES. Streak REMAINS 0/3 (RATIFY-WITH-CHANGES ≠ CLEAN). Adversary pass-7 next (fresh-context, reads only pass-6 Part A per Iron Law).
+
+**TRAJECTORY (CRIT+HIGH):** 7→5→5→2→2→2 — plateau continues; LENGTH=4 tail: →2→2→2→2 pending pass-7.
+
+**§Files-to-Change straggler pattern (3rd recurrence):** Pass-5 caught F-1/F-2/F-3 in §Files-to-Change sites; pass-6 caught H2/M1 stray sites; this burst the §Files-to-Change shard_manager.rs row was not updated with the H1 TTL fix. All three recurrences required orchestrator global grep to catch — per-agent sweeps missed each. Motivates S-12.15 propagation-lint mechanical gate (E-12). Lesson recorded.
+
+**NOTE:** error-taxonomy.md v1.25→v1.26 written by product-owner (H2 E-SHD-005 re-anchoring + M3 exit-code criterion). ADR-052 v1.9 written by architect (H1 TTL GC + M2 handoff past-tense + L1 provenance + L2 §4e + §Files-to-Change sweep). VP-132.md v1.2 written by formal-verifier (M1 sibling-VP note). sidecar-learning.md folded in per D-1207-precedent convention.
+
+**Index advances this burst:**
+- ARCH-INDEX v4.36 → v4.37 (ADR-052 row v1.8→v1.9 body amendment + v1.9 inline annotation)
+- BC-INDEX v5.94 → UNCHANGED (BC-1.18.011/010 not modified this burst)
+- VP-INDEX v3.21 → v3.22 (VP-132 v1.2 catalog row annotation)
+
+**Input-hashes (post-check):**
+- ADR-052: `156d100` (PASS — confirmed current by --check; §Files-to-Change edits already reflected)
+- error-taxonomy.md: `68425f5` (PASS — confirmed current by --check; no change to tracked input files from H2/M3 edits)
+- VP-132.md: `0000000` placeholder, `inputs: []` genuinely empty — no-op
+
+**Drift items status:**
+- [D-1222-DRIFT-001] prd.md §5.1 MIG+MAINTENANCE sync: UNCHANGED OPEN — owed before POLICY 22 ratification.
+- [D-1224-DRIFT-001] E-SHD-005 VP-leg gap: UNCHANGED OPEN (new steady-state-gate VP needed, E-12 routing; the VP-132/VP-133 re-anchoring done this burst is necessary but not sufficient — a new VP for the steady-state gate remains owed).
+- [D-1225-PG-001] sibling-sweep mechanical gate: ADDRESSED by S-12.15 propagation-lint story opened this burst.
+
+**Follow-up story opened:** S-12.15 (predicate-propagation-lint gate, E-12 Engine Governance). Story_count 11→12.
+
+**POLICY 22 status:** OPEN with 2 sign-off items (unchanged):
+- (i) macOS exec-TOCTOU residual window + no-concurrent-cargo-build pre-flight.
+- (ii) APFS darwin-arm64 durability test: RATIFICATION PREREQUISITE — must complete before POLICY 22 ratification gate.
+Cluster-5 TDD remains BLOCKED until POLICY 22 ratification.
+
+**OWED (unchanged):** OWED #2 (907-file hash sweep); OWED #3 (ADR-052↔BC circular re-settle). prd.md §5.1 MIG/MAINTENANCE sync [D-1222-DRIFT-001] owed before ratification.
+
+### Canonical 6-column row (STATE.md Decisions Log)
+
+| D-1226 | D-1226-ADR052-V19-PASS6-DRAIN-GC-TTL | **ADR-052 v1.9 fix burst committed (state-manager, single-commit TD-VSDD-053; D-1226): in-house adversary LOCAL pass-6 = RATIFY-WITH-CHANGES (H1+H2 HIGH + M1/M2/M3 MED + L1/L2 LOW + §Files-to-Change straggler orch-caught); all findings closed — H1 HIGH drain GC changed from unsound PID-liveness to TTL-based (created_at+tool_use_id) in ADR-052 v1.9 (snapshot-mid-write soundness fix); H2 HIGH E-SHD-005 re-anchored to steady-state gate (error-taxonomy.md v1.25→v1.26; ADR-052 v1.9); M1 MED VP-132.md v1.1→v1.2 sibling note (formal-verifier) + VP-INDEX v3.21→v3.22 catalog annotation; M2 MED handoff past-tense (ADR-052 v1.9); M3 MED exit-code criterion (error-taxonomy.md v1.26); L1/L2 (ADR-052 v1.9); §Files-to-Change straggler shard_manager.rs TTL-directive (3rd recurrence: orch global grep; per-agent sweeps missed). ARCH-INDEX v4.36→v4.37; BC-INDEX v5.94 UNCHANGED; VP-INDEX v3.21→v3.22. Input-hashes: ADR-052 156d100 (PASS) / error-taxonomy 68425f5 (PASS) / VP-132.md inputs:[] no-op. [D-1222-DRIFT-001] prd.md §5.1 UNCHANGED OPEN. [D-1224-DRIFT-001] VP-leg UNCHANGED OPEN. S-12.15 propagation-lint story OPENED (E-12; story_count 11→12). BC-5.39.001 LOCAL streak 0/3 (RATIFY-WITH-CHANGES ≠ CLEAN; pass-7 next). TRAJECTORY: CRIT+HIGH 7→5→5→2→2→2 (plateau; LENGTH=4 tail →2→2→2→2). POLICY 22 2 sign-off items (i) macOS exec-TOCTOU; (ii) APFS test RATIFICATION PREREQUISITE — UNCHANGED. OWED #2+#3 unchanged. Cluster-5 TDD BLOCKED. pipeline: PAUSED.** | S-25.02 F5 | 2026-09-13 |
