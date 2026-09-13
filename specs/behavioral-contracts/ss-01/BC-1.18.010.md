@@ -1,7 +1,7 @@
 ---
 document_type: behavioral-contract
 level: L3
-version: "1.3"
+version: "1.4"
 status: draft
 producer: product-owner
 timestamp: 2026-09-05T00:00:00Z
@@ -13,7 +13,7 @@ inputs:
   - .factory/specs/behavioral-contracts/ss-01/BC-1.18.006.md
   - .factory/specs/behavioral-contracts/ss-01/BC-1.18.009.md
   - .factory/specs/verification-properties/VP-INDEX.md
-input-hash: "a5867e7"
+input-hash: "7e56d92"
 traces_to: .factory/specs/prd.md
 origin: greenfield
 extracted_from: null
@@ -144,20 +144,20 @@ specifies the end-state addressing scheme only, not the transition mechanics.
    this BC's own "zero-lookup" postcondition — the manifest is needed ONLY for whole-corpus scans
    and second-level (sub-sharded subsystem) lookups.
 2. **The BC-S-prefix→SS-NN mapping used for first-level addressing is validated against
-   ARCH-INDEX's Subsystem Registry at CI time and at migration activation time, never
-   independently hardcoded.** At runtime, `shard_manager.rs` reads the mapping from the config
-   entry only (a snapshot embedding the ARCH-INDEX commit SHA it was generated from, per
-   ADR-052 §Decision 10). Two parity checks enforce that the snapshot never diverges from
-   ARCH-INDEX: (a) a CI test (`arch_index_parity`) diffs the snapshot against HEAD ARCH-INDEX
-   on every commit; (b) at migration activation, the binary verifies the live ARCH-INDEX matches
-   the `approved_arch_index_sha` in the armed-activation manifest and fails CLOSED on mismatch.
-   A future ARCH-INDEX subsystem renumbering propagates to this BC's addressing logic by
-   regenerating the config snapshot from the new ARCH-INDEX commit, triggering a CI parity
-   failure and requiring an explicit config update with the new SHA. This satisfies the 'never
-   independently hardcoded' constraint: the snapshot is CI-validated, not independent. The CI
-   parity check is NECESSARY-BUT-NOT-SUFFICIENT for live correctness; the activation-time check
-   against `approved_arch_index_sha` is the sufficient condition, closing the gap between
-   "CI-validated at commit N" and "live at activation time."
+   ARCH-INDEX's Subsystem Registry at CI time and at migration activation time via an explicit
+   three-way parity check, never independently hardcoded.** At runtime, `shard_manager.rs` reads
+   the mapping from the config entry only (a snapshot embedding the `arch_index_sha` of the
+   ARCH-INDEX commit it was generated from, per ADR-052 §Decision 10). Three parity checks
+   enforce that the snapshot never diverges from ARCH-INDEX:
+   (a) CI test (`arch_index_parity`) diffs the snapshot against HEAD ARCH-INDEX on every commit;
+   (b) at migration activation (under exclusion), the binary performs a three-way check:
+       `config.arch_index_sha` == `manifest.approved_arch_index_sha` == live ARCH-INDEX SHA;
+       fails CLOSED if any pair diverges — including a stale binary (config at revision A)
+       invoked with a current manifest (revision B);
+   (c) stale-installed-config CI test verifies the binary's embedded snapshot `arch_index_sha`
+       matches the expected revision used in the test fixture.
+   A future ARCH-INDEX subsystem renumbering requires regenerating the config snapshot from the
+   new ARCH-INDEX commit and triggering a CI parity failure as the forcing function.
 3. **No BC row is ever present in both `BC-INDEX.md`'s body AND a `shards/BC-INDEX-SS-NN.md` file
    simultaneously.** After the first-level split (Postcondition 1), `BC-INDEX.md`'s body contains
    zero per-BC table rows; every row lives in exactly one shard file (or, post-second-level-split,
@@ -212,6 +212,16 @@ assignment, consistent with the sibling VP-128 row above. No property content ch
 
 - `crates/factory-dispatcher/src/shard_manager.rs` — the "per-subsystem body table" artifact-shape handler for B2's second-level sub-sharding trigger
 - `.factory/specs/architecture/ARCH-INDEX.md` §Subsystem Registry — the authoritative `BC-S Prefix`→`SS-NN` mapping this BC's first-level addressing reuses (POLICY 6)
+
+## Reader Integration
+
+During the B2 migration window (after the first target rename, before CLEANED), readers
+accessing BC-INDEX paths MUST consult the COMMITTED marker at
+`.factory/migration-state/migrate-bc-index-state.json` to determine the correct read path:
+- COMMITTED present: read from canonical shard paths (migration complete)
+- COMMITTED absent: read from legacy BC-INDEX.md path (migration in progress or not started)
+In steady state (after CLEANED), shard paths are always canonical. COMMITTED is archived to
+`.factory/migration-audit/` at CLEANED time; its absence in steady state is not an error.
 
 ## SDK Grounding Evidence
 
@@ -270,6 +280,7 @@ S-25.02 — Artifact Sharding Layer 2: Size-Triggered Shard Rotation for Cycle A
 
 | Version | Date | Author | Change |
 |---------|------|--------|--------|
+| 1.4 | 2026-09-13 | product-owner | ADR-052 v1.2 hardening (2 amendments): (1) Invariant 2 amended from two-parity to three-way parity: replaced "Two parity checks" with "Three parity checks" plus explicit three-way formula `config.arch_index_sha` == `manifest.approved_arch_index_sha` == live ARCH-INDEX SHA; added stale-binary detection description ("including a stale binary (config at revision A) invoked with a current manifest (revision B)"); added (c) stale-installed-config CI test; removed "NECESSARY-BUT-NOT-SUFFICIENT / sufficient condition" framing in favour of the new three-way check structure; `arch_index_sha` embedding field now cited as `arch_index_sha` (not generic "the ARCH-INDEX commit SHA"); updated closing sentence to "triggering a CI parity failure as the forcing function." (2) New §Reader Integration section added (2nd Codex F2 — not in v1.1): specifies that during the B2 migration window (after first target rename, before CLEANED), readers MUST consult the COMMITTED marker at `.factory/migration-state/migrate-bc-index-state.json` to determine read path — COMMITTED present: read from canonical shard paths; COMMITTED absent: read from legacy BC-INDEX.md; in steady state (after CLEANED), shard paths are always canonical; COMMITTED archived to `.factory/migration-audit/` at CLEANED time, its absence in steady state is not an error. |
 | 1.3 | 2026-09-12 | product-owner | ADR-052 v1.1 hardening: replaced Invariant 2 with the full config-snapshot-with-revision-binding specification. The prior text ("READ from ARCH-INDEX's Subsystem Registry, never independently hardcoded or duplicated") only stated what NOT to do; the replacement specifies the complete positive mechanism: the mapping is embedded as a `subsystem_prefixes` TOML snapshot in the `[[shard]]` config entry with a mandatory `arch_index_sha` binding (ADR-052 §Decision 10); two parity checks enforce the snapshot never diverges from ARCH-INDEX — (a) CI test `arch_index_parity` diffs snapshot vs. HEAD ARCH-INDEX on every commit (necessary-but-not-sufficient), and (b) at migration activation the binary verifies the live ARCH-INDEX matches `approved_arch_index_sha` in the armed-activation manifest and fails CLOSED on mismatch (the sufficient condition); a future subsystem renumbering propagates by regenerating the config snapshot and updating the SHA, triggering CI parity failure first; this satisfies the 'never independently hardcoded' constraint because the snapshot is CI-validated, not independent. ADR-052 added to inputs. |
 | 1.2 | 2026-09-05 | product-owner | Fix-burst amendment (adversary pass-2 finding F-P2-006, MEDIUM, POLICY 5 v1.3.6 HEAD-reproducibility mandate): re-grounded the `## SDK Grounding Evidence` §Summary-row grep to a STRUCTURAL-FORM assertion (the `BC-S Prefix`→`SS-NN`→count→shard-directory row shape, with the volatile count field redacted to `<N>` via a `sed` pass) instead of pasting a literal count digit that had already drifted from `133` (v1.1's citation) to `134` (live at authoring time) and drifts again to `135` within this SAME burst (BC-1.18.012's addition below) — closes the drift CLASS, not just this instance; future readers re-execute the grep at HEAD for the current count. No postcondition/invariant/VP content change. |
 | 1.1 | 2026-09-05 | product-owner | Fix-burst amendment (F-S2502-F2-002 + F-S2502-F2-003 + F-S2502-F2-007): Description/Postcondition 1/Invariant 3 amended to cross-reference the new BC-1.18.011 (governed one-time B2 migration BC) — this BC now explicitly states it specifies the END-STATE addressing scheme only, deferring transition mechanics (content-preservation, census, atomicity, rollback) to BC-1.18.011. Added a Related BCs row and an ADR Traceability citation for ADR-051 §Decision 10. VP-128's single-authoritative-row row Proof Method normalized from bare "consistency-validator scan" to "integration test (consistency-validator scan...)" per VP-INDEX v3.02's authoritative method assignment — no property content change. Added `## SDK Grounding Evidence` section. |

@@ -10443,3 +10443,71 @@ PR #832 (`feature/S-25.02-b1-rotation`, S-25.02 cluster-4 mechanism-B1 rotation,
 ### Canonical 6-column row (STATE.md Decisions Log)
 
 | D-1212 | D-1212-S2502-CLUSTER4-DELIVERY-MERGE-BURST | **S-25.02 Phase F4 cluster-4 (mechanism-B1 rotation, BC-1.18.009) DELIVERED — PR #832 squash-merged into develop as `ebd16f79` (base `08ad44b5`); feature branch `feature/S-25.02-b1-rotation` deleted. LOCAL BC-5.39.001 3-CLEAN CONVERGED pre-PR at `32350e2c` (passes A/B/C, D-1211). BC-1.18.009 `status`/`lifecycle_status` draft→active (POL-14); BC-INDEX v5.85→v5.86. Code↔spec: E-SHD-015 taxonomy row EXISTS (v1.17, BLK-C2-2) — RECONCILED; BC-1.18.009 missing EC-009 for SEC-002/E-SHD-015 → Drift Item [D-1212-DRIFT-001], route product-owner. SEC-001 (CWE-22) maps to existing EC-003/E-SHD-004 — covered. validate-pr-review-posted 3 structural defects → S-12.14 → Drift Item [D-1212-DRIFT-002]. merged_count 121→122. pipeline: in_progress. NEXT = cluster-5 (mechanism-B2 sharding, BC-1.18.010+011).** | S-25.02 F4 | 2026-09-11 |
+
+
+---
+
+## D-1217: ADR-052 v1.2 Full Redesign Package
+
+**Date:** 2026-09-13
+**Decision ID:** D-1217
+**Codified by:** state-manager (single-commit TD-VSDD-053)
+**Phase:** S-25.02 F4 (Delta-Implementation), cluster-5 BLOCKED pending POLICY 22
+**Type:** Spec-hardening burst — ADR-052 v1.1→v1.2 full redesign; BC re-hardening; 2026-09-12 paused session resumed
+
+### Context
+
+Session paused 2026-09-12 (D-1216): 2nd cross-vendor Codex closure-review of ADR-052 v1.1 returned RATIFY-WITH-CHANGES (not ratifiable); architect ADR-052 v1.2 redesign dispatch was abandoned mid-read at session wrap (wrote nothing to disk); pipeline: PAUSED. This burst resumes from that pause: architect wrote ADR-052 v1.2 + companion BC hardening to the working tree; state-manager commits all as one atomic burst.
+
+### Background: D-1213 through D-1216 (not in decision-log; STATE.md-only)
+
+- **D-1213:** S-25.02 cluster-5 F1 delta-analysis + CV-DIR item [CV-DIR-F2-OPEN] resolution activated ADR-052 v1.0 registration.
+- **D-1214:** 1st cross-vendor Codex closure-review of ADR-052 v1.0 — RATIFY-WITH-CHANGES; architect produced v1.1.
+- **D-1215:** ADR-052 v1.1 revision package committed (state-manager, single-commit TD-VSDD-053; BC-1.18.011 v1.0→v1.1, BC-1.18.010 v1.2→v1.3, error-taxonomy.md v1.16→v1.18). POLICY 22 ratification OPEN.
+- **D-1216:** 2nd cross-vendor Codex closure-review of ADR-052 v1.1 — RATIFY-WITH-CHANGES (8 new findings; not ratifiable); architect v1.2 redesign dispatched but abandoned at session wrap (wrote nothing to disk); pipeline: in_progress→PAUSED.
+
+### The 8 Findings (2nd Codex closure-review → ADR-052 v1.2)
+
+1. **F1 (HIGH):** Native admission gate covers only `^Bash$`-level — misses Edit/Write/MultiEdit. Fix: gate in `executor.rs` before `shard_cap_precheck` covering ALL mutation tools; TOCTOU drain protocol added.
+2. **F2 (HIGH):** PREPARED/COMMITTED race — "original untouched" claim contradicts per-target renames already in flight. Fix: `completed_renames` list in PREPARED; single TOCTOU check before FIRST rename; reader integration protocol (COMMITTED as read-path selector).
+3. **F3 (HIGH):** Advisory-only lock design fails on pre-PREPARED crashes. Fix: content-bearing lock file (PID+activation_id+timestamp); pre-PREPARED crash recovery path; stale-lock recovery specified.
+4. **F4 (HIGH):** Single-phase manifest validation window too wide. Fix: two-phase validation (pre-lock lightweight + under-exclusion: repo_root_sha, expected_total_bcs, three-way ARCH-INDEX parity, readiness); pre-publication expiry recheck; CONSUMED marking replaces deletion; three expiry-safe recovery modes.
+5. **F5 (MEDIUM):** Two-way parity misses stale-binary case. Fix: explicit three-way activation-time parity `config.arch_index_sha` == `manifest.approved_arch_index_sha` == live ARCH-INDEX SHA.
+6. **F6 (MEDIUM):** Skipped-control inventory inaccurate. Fix: brownfield-discipline description corrected; factory-branch-guard row added; validate-factory-path-staged corrected.
+7. **F7 (MEDIUM):** Full-command classifier after shell expansion too late. Fix: pre-shell classifier at guard layer; executable digest verification; negative tests specified.
+8. **F8 (MEDIUM):** CLAUDE.md amendment text incomplete. Fix: expanded to BC-INDEX.md + migration-state/ + activation/ + migration-audit/ + config targets; preconditions (a-e) separated from post-success (f-g); 4 guard amendments (vs 3 in v1.1).
+
+### Decisions
+
+1. **ADR-052 v1.2 committed:** Full redesign per the 8 findings above. POLICY 22 ratification still OPEN — cluster-5 TDD remains BLOCKED. Next action: 3rd cross-vendor Codex re-review of ADR-052 v1.2, then human POLICY 22 ratification gate.
+
+2. **BC-1.18.011 v1.1→v1.2:** 6 delta amendments propagating F1/F2/F3/F7 fixes: per-target `completed_renames` in PREPARED (Precondition 5); content-bearing lock file (Precondition 6); Postcondition 3a EXACTLY ONCE before first rename; Invariant 3 updated; Architecture Anchors updated (§Decision 4/5a/7/8).
+
+3. **BC-1.18.010 v1.3→v1.4:** 2 amendments propagating F2/F5 fixes: three-way parity in Invariant 2; NEW §Reader Integration section (COMMITTED marker as read-path selector during B2 migration window).
+
+4. **error-taxonomy.md v1.18→v1.19:** Companion amendment co-changed with ADR-052 v1.2 (architect per D-1217 downstream instruction F8).
+
+5. **Index bumps:** ARCH-INDEX v4.28→v4.29 (ADR-052 row marker v1.1→v1.2); BC-INDEX v5.88→v5.89 (BC-1.18.010 row v1.3→v1.4, BC-1.18.011 row v1.1→v1.2).
+
+6. **Input-hash refresh (targeted):** 4 artifacts updated — ADR-052 → 593ef95; BC-1.18.011 → 9ff5e29; BC-1.18.010 → 7e56d92; error-taxonomy.md → 4f2e9a3. Broader 907-file sweep OWED per prior commitment.
+
+7. **Pipeline state:** Remains PAUSED. OWED items: (a) 3rd Codex re-review + human POLICY 22 ratification; (b) 907-file input-hash sweep; (c) ADR-052↔BC circular input-hash re-settle after ratification.
+
+### Summary Table
+
+| Aspect | Value |
+|--------|-------|
+| ADR-052 | v1.1→v1.2 (full redesign, 8 findings closed) |
+| BC-1.18.011 | v1.1→v1.2 (6 delta amendments) |
+| BC-1.18.010 | v1.3→v1.4 (three-way parity + §Reader Integration) |
+| error-taxonomy.md | v1.18→v1.19 |
+| ARCH-INDEX | v4.28→v4.29 |
+| BC-INDEX | v5.88→v5.89 |
+| Input-hashes | ADR-052 593ef95 / BC-1.18.011 9ff5e29 / BC-1.18.010 7e56d92 / error-taxonomy 4f2e9a3 |
+| POLICY 22 | OPEN — 3rd Codex re-review + human ratification OWED |
+| pipeline | PAUSED (unchanged) |
+| Owed | 907-file hash sweep; ADR-052↔BC re-settle post-ratification |
+
+### Canonical 6-column row (STATE.md Decisions Log)
+
+| D-1217 | D-1217-S2502-ADR052-V12-REDESIGN-BURST | **ADR-052 v1.2 full redesign committed (state-manager, single-commit TD-VSDD-053; D-1217): 2026-09-12 paused session resumed; 8 findings from 2nd Codex closure-review (D-1216) closed in ADR-052 v1.2 (F1 native-admission-gate ALL mutation tools; F2 per-target completed_renames+reader-integration; F3 content-bearing lock+crash-recovery; F4 two-phase manifest validation+CONSUMED; F5 three-way activation parity; F6 skipped-control inventory; F7 pre-shell classifier; F8 CLAUDE.md amendment). BC-1.18.011 v1.1→v1.2; BC-1.18.010 v1.3→v1.4; error-taxonomy.md v1.18→v1.19. ARCH-INDEX v4.28→v4.29; BC-INDEX v5.88→v5.89. Input-hashes: ADR-052 593ef95 / BC-1.18.011 9ff5e29 / BC-1.18.010 7e56d92 / error-taxonomy 4f2e9a3. POLICY 22 ratification still OPEN; cluster-5 TDD still BLOCKED. pipeline: PAUSED. OWED: (a) 3rd Codex re-review + human POLICY 22 ratification; (b) 907-file hash sweep; (c) ADR-052↔BC re-settle.** | S-25.02 F4 | 2026-09-13 |

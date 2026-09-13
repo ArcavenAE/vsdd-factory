@@ -1,7 +1,7 @@
 ---
 document_type: behavioral-contract
 level: L3
-version: "1.1"
+version: "1.2"
 status: draft
 producer: product-owner
 timestamp: 2026-09-05T00:00:00Z
@@ -14,7 +14,7 @@ inputs:
   - .factory/specs/behavioral-contracts/ss-01/BC-1.18.006.md
   - .factory/cycles/v1.0-brownfield-backfill/S-25.02-f2-architecture-delta.md
   - .factory/specs/behavioral-contracts/BC-INDEX.md
-input-hash: "26d2920"
+input-hash: "9ff5e29"
 traces_to: .factory/specs/prd.md
 origin: greenfield
 extracted_from: null
@@ -66,24 +66,27 @@ size alone and require immediate sub-sharding at the same F4 activation moment.
    run in any order. They share an F4 activation window by operational convenience, not by
    specification.
 
-5. A durable phase-marker file at `.factory/migration-state/migrate-bc-index-state.json` is
-   written at each phase transition and survives crashes:
-   - PREPARED: all staging writes complete, source fingerprint recorded, all verification
-     checks pass — BC-INDEX.md original body untouched.
-   - COMMITTED: all atomic file replacements complete; this marker is the single commit-pointer
-     for the multi-file atomic operation (ADR-052 §Decision 7).
-   - CLEANED: staging temporaries removed.
-   EC-003 resume logic reads this marker to determine the correct entry point without
-   re-running the full split from scratch.
+5. A durable phase-marker file at `.factory/migration-state/migrate-bc-index-state.json`
+   is written at each phase transition and survives crashes:
+   - PREPARED: all staging writes complete, source fingerprint recorded, all under-exclusion
+     validation checks pass, `completed_renames` list initialized — BC-INDEX.md original body
+     untouched at this point (original content preserved in staging).
+   - COMMITTED: all atomic file replacements complete and per-target hashes verified; this
+     marker is the single commit-pointer for the multi-file atomic operation (ADR-052
+     §Decision 7). Written AFTER the last rename and dir-fsync.
+   - CLEANED: staging temporaries removed; terminal success state.
+   EC-003 resume logic reads the `completed_renames` field to determine which renames
+   succeeded and which must be retried; it does NOT re-run the full split from scratch.
 
 6. A WRITER-EXCLUSION maintenance boundary is in force during migration execution. The
    migration binary acquires an exclusive advisory lock file at
-   `.factory/migration-state/exclusive.lock` before any read of source files. Ordinary governed
-   writers (Edit/Write tool calls validated by the `validate-factory-path-staging` dispatcher
-   guard) check for this lock file and fail with E-MAINTENANCE-001 before writing to BC-INDEX
-   paths during a migration window. The lock is released only after the COMMITTED phase marker
-   is written (success) or on migration abort (cleanup). The `validate-factory-path-staging`
-   guard amendment (ADR-052 §Decision 5) implements the lock-check side of this invariant.
+   `.factory/migration-state/exclusive.lock` (containing PID + activation_id + timestamp per
+   ADR-052 §Decision 7a) before any read of source files. ALL mutation tool calls
+   (Edit/Write/MultiEdit/Bash) targeting BC-INDEX paths are blocked by the native admission
+   gate in `executor.rs` (ADR-052 §Decision 5a) when this lock file exists with an alive PID.
+   Any write that completes during the pre-lock window is detected by the TOCTOU guard
+   (ADR-052 §Decision 7c) which aborts the migration and requires re-activation. The lock is
+   released only after the COMMITTED phase marker is written (success) or on migration abort.
 
 ## Postconditions
 
@@ -122,14 +125,14 @@ size alone and require immediate sub-sharding at the same F4 activation moment.
    rename(2) + dir-fsync semantics per Pillai et al. OSDI'14). The dir-fsync is mandatory, not
    best-effort.
 
-3a. **Pre-commit source-fingerprint recheck (TOCTOU guard).** Immediately before the
-    atomic-replace step (PREPARED → COMMITTED transition), the migration binary re-verifies
-    that BC-INDEX.md's source content has not changed since the census (Postcondition 2). It
-    re-computes SHA-256 of the source and compares against the fingerprint recorded at census
-    time. If they differ, the migration ABORTS: Postcondition 4's rollback applies, the
-    PREPARED marker is deleted, and BC-INDEX.md's original body is left untouched. This closes
-    the TOCTOU window between census and write introduced by concurrent governed writers or
-    human edits.
+3a. **Pre-commit source-fingerprint recheck (TOCTOU guard).** This check is performed EXACTLY
+    ONCE, before the first rename in the atomic-replace sequence (not between individual
+    renames). The migration binary re-reads BC-INDEX.md's source content, computes SHA-256,
+    and compares against the `source_sha256` field recorded in the PREPARED marker. If they
+    differ: ABORT. The PREPARED marker is deleted. BC-INDEX.md's original body is left
+    untouched (no renames have occurred at this point). The migration requires re-activation.
+    This single-check design eliminates the v1.1 contradiction where a re-check after
+    BC-INDEX.md's own rename would find a fingerprint mismatch and incorrectly trigger abort.
 
 4. **Rollback on verification failure.** If EITHER the content-preservation check OR the
    independent-census check fails, the migration ABORTS: `BC-INDEX.md`'s original monolithic body
@@ -159,7 +162,7 @@ size alone and require immediate sub-sharding at the same F4 activation moment.
    migration-impact map confirms `regression-gate`/`convergence-tracker` do not read `BC-INDEX.md`.
    `BC-7.08.001`'s scope and gating conditions are UNCHANGED by this BC. Note: this postcondition
    governs B2/Cohort-B independence only. A/B2 scheduling independence (that mechanism A and B2
-   activate independently at F4) is governed by Precondition 4 [as amended by ADR-052 v1.1].
+   activate independently at F4) is governed by Precondition 4 [as amended by ADR-052 §Decision 1].
 
 8. **Relationships.** This BC depends on BC-1.18.010 (the end-state addressing scheme this
    migration produces) and BC-1.18.006 (reuses its atomic-write primitives) — the same "applies an
@@ -186,9 +189,10 @@ size alone and require immediate sub-sharding at the same F4 activation moment.
    FULL original monolithic form or the FULL split end-state form; it is never observed in a state
    where some subsystems are split and others are not (this BC operates on all ten subsystems, plus
    SS-05/SS-06's second-level sub-split, as one atomic unit — Postcondition 3/6). The all-or-nothing
-   guarantee is implemented via the single COMMITTED phase marker (Precondition 5 [as amended]):
-   before COMMITTED exists, the state is PREPARED (original body untouched, staging in progress) or
-   CLEAN (no migration in progress); after COMMITTED is written, the state is the split end-state.
+   guarantee is implemented via the COMMITTED phase marker (Precondition 5 [as amended]) and the
+   `completed_renames` tracking in PREPARED: before COMMITTED exists, the state machine is either
+   PREPARED (staging in progress, with zero or more completed renames tracked), or CLEAN (no
+   migration in progress); after COMMITTED is written, the state is the split end-state.
    The COMMITTED marker is the sole commit-point for the multi-file atomic operation; composing N
    independent `write_atomic` calls without this commit-pointer does not satisfy this invariant.
 
@@ -252,9 +256,10 @@ completion only (VP-side of the trace); no BC body/postcondition/version change.
 - `crates/factory-dispatcher/src/shard_manager.rs` — one-time migration entry point for the B2 body split, reusing BC-1.18.006's staging/atomic-replace primitives
 - `.factory/specs/behavioral-contracts/BC-INDEX.md` §Summary / `total_bcs` frontmatter field — the independent count-oracle this BC's census check (Postcondition 2) cross-checks against
 - `.factory/specs/architecture/ARCH-INDEX.md` §Subsystem Registry — the `BC-S Prefix`→`SS-NN` mapping this BC's per-subsystem partition boundaries follow (same mapping BC-1.18.010 Postcondition 2 reuses)
-- ADR-052 §Decision 4 — armed-activation manifest governing pre-mutation authorization (Precondition 4 [as amended])
-- ADR-052 §Decision 7 — crash-atomicity phase markers (PREPARED/COMMITTED/CLEANED) (Precondition 5 [as amended])
-- ADR-052 §Decision 8 — POLICY 22 exception declaration with enumerated skipped controls
+- ADR-052 §Decision 4 — armed-activation manifest governing pre-mutation authorization (two-phase validation: pre-lock and under-exclusion)
+- ADR-052 §Decision 5a — native admission gate in executor.rs covering ALL mutation tools
+- ADR-052 §Decision 7 — crash-atomicity phase markers + per-target completion tracking + content-bearing lock file with crash-recovery ownership protocol
+- ADR-052 §Decision 8 — POLICY 22 exception declaration with accurate skipped-control inventory and enumerated allowed write targets
 
 ## SDK Grounding Evidence
 
@@ -319,5 +324,6 @@ S-25.02 — Artifact Sharding Layer 2: Size-Triggered Shard Rotation for Cycle A
 
 | Version | Date | Author | Change |
 |---------|------|--------|--------|
+| 1.2 | 2026-09-13 | product-owner | ADR-052 v1.2 hardening (6 delta amendments over v1.1): Amendment 3 — Postcondition 7 scope-clarification reference updated from "ADR-052 v1.1" to "ADR-052 §Decision 1". Amendment 4 — Precondition 5 PREPARED/COMMITTED/CLEANED descriptions updated: PREPARED now includes `completed_renames` list initialized and "original content preserved in staging"; COMMITTED adds "per-target hashes verified" and "Written AFTER the last rename and dir-fsync"; CLEANED adds "terminal success state"; EC-003 sentence updated to "reads the `completed_renames` field to determine which renames succeeded and which must be retried; it does NOT re-run the full split from scratch." Amendment 5 — Precondition 6 corrected: lock file content added "(containing PID + activation_id + timestamp per ADR-052 §Decision 7a)"; "Ordinary governed writers (Edit/Write tool calls validated by the `validate-factory-path-staging` dispatcher guard)" replaced with "ALL mutation tool calls (Edit/Write/MultiEdit/Bash) targeting BC-INDEX paths are blocked by the native admission gate in `executor.rs` (ADR-052 §Decision 5a) when this lock file exists with an alive PID"; TOCTOU drain-protocol sentence added; `validate-factory-path-staging` guard sentence removed. Amendment 7 — Postcondition 3a rewritten: "EXACTLY ONCE, before the first rename" (not per-rename); compares against `source_sha256` field in PREPARED marker; "The migration requires re-activation" added; replaced closing sentence with v1.1 contradiction explanation. Amendment 8 — Invariant 3 updated: "single COMMITTED phase marker" replaced with "COMMITTED phase marker ... and the `completed_renames` tracking in PREPARED"; state machine description updated to "(staging in progress, with zero or more completed renames tracked)". Amendment 9 — Architecture Anchors updated: §Decision 4 description updated to "(two-phase validation: pre-lock and under-exclusion)"; new §Decision 5a anchor added; §Decision 7 description updated to include "per-target completion tracking + content-bearing lock file with crash-recovery ownership protocol"; §Decision 8 updated to "accurate skipped-control inventory and enumerated allowed write targets". No existing guarantee weakened. |
 | 1.1 | 2026-09-12 | product-owner | ADR-052 v1.1 hardening (9 amendments): Amendment 1 — removed A/B2 simultaneous-activation coupling from Precondition 4 ("at the SAME moment BC-1.18.008 runs" language deleted; each migration independently gated via its own armed-activation manifest per ADR-052 §Decision 4). Amendment 2 — Postcondition 6 last sentence "at the SAME F4 activation moment mechanism A's own backfill (BC-1.18.008) runs" replaced with "at F4 activation, as part of the same one-time B2 migration operation (independently of mechanism A's activation schedule)" (SS-05/SS-06 B2-internal atomicity preserved; only A/B2 simultaneous-activation coupling removed). Amendment 3 — appended Postcondition 7 scope clarification ("governs B2/Cohort-B independence only; A/B2 scheduling independence governed by Precondition 4 as amended"). Amendment 4 — new Precondition 5: durable phase-marker file at `.factory/migration-state/migrate-bc-index-state.json` (PREPARED/COMMITTED/CLEANED transitions, EC-003 resume logic). Amendment 5 — new Precondition 6: writer-exclusion advisory lock at `.factory/migration-state/exclusive.lock`, governed writers fail E-MAINTENANCE-001 during migration window, lock released on COMMITTED or abort (ADR-052 §Decision 5 guard). Amendment 6 — appended mandatory dir-fsync mandate to Postcondition 3 (each rename(2) followed by fsync on parent directory; mandatory, not best-effort; POSIX rename(2) + Pillai et al. OSDI'14). Amendment 7 — new Postcondition 3a: TOCTOU pre-commit source-fingerprint recheck immediately before PREPARED→COMMITTED transition (SHA-256 recompute vs. census-time fingerprint; abort + rollback + delete PREPARED marker on mismatch). Amendment 8 — appended COMMITTED-marker commit-pointer specification to Invariant 3 (sole commit-point for the multi-file atomic operation; N independent write_atomic calls without it do not satisfy all-or-nothing). Amendment 9 — added ADR-052 §Decision 4/7/8 to Architecture Anchors. ADR-052 added to inputs. No existing guarantee weakened. |
 | 1.0 | 2026-09-05 | product-owner | Initial creation (NEW BC, fix-burst addition per F-S2502-F2-002 HIGH, ADR-051 v1.1 Decision 10). Allocated as BC-1.18.011 — confirmed as the next free SS-01 slot against the live `ss-01/` directory (BC-1.18.001–010 all pre-existing) and BC-INDEX.md at authoring time; no collision. Governed one-time migration for mechanism B2's BC-INDEX body split: byte-for-byte content-preservation, independent-census integrity (every BC row in exactly one shard, cross-checked against `total_bcs`), staging+verify+atomic-replace crash-atomicity, fail-loud rollback on verification failure, idempotency against a partial prior attempt, and the SS-05/SS-06 second-level sub-split covered within the SAME one-time operation. Explicitly confirmed NO new Cohort-B sequencing dependency (unlike BC-1.18.008). Modeled directly on BC-1.18.008's structure per the F2 architecture-delta doc §4a authorship input. CAP-043 capability anchor. VP citations left `(pending)` for formal-verifier per the established project convention. ADR-051 §D10/§D7/§D8 citations. |
