@@ -2,7 +2,7 @@
 document_type: architecture-decision-record
 adr_id: ADR-052
 level: L3
-version: "1.5"
+version: "1.6"
 status: proposed
 date: 2026-09-13
 producer: architect
@@ -27,21 +27,25 @@ inputs:
   - .claude/settings.json
   - crates/factory-dispatcher/src/main.rs
   - plugins/vsdd-factory/hooks-registry.toml
-input-hash: "080d460"
+  - .factory/cycles/v1.0-brownfield-backfill/adv-local-adr052-pass3.md
+input-hash: "0ae730c"
 # input-hash: run compute-input-hash --update at state-manager registration burst
 ---
 
-# ADR-052: Native Migration CLI — Sanctioned Execution Path for Governed One-Time Shard Migrations (v1.4 Fix-Burst)
+# ADR-052: Native Migration CLI — Sanctioned Execution Path for Governed One-Time Shard Migrations
 
 ## Status
 
-PROPOSED — v1.4 NOT ratified per 5th adversarial review (1 CRITICAL + 4 HIGH + 7 MEDIUM
-findings; reader-protocol inverted for in-place-overwrite target, ADR not self-contained
-(dangling v1.2 refs), macOS mtime guard inert on successful exec, cross-process reservation
-UUID uncorrelated, load-bearing version pins). This v1.5 fix-burst resolves all ADR-owned
-findings (C-1, H-1, H-2, H-3, H-4, M-2, M-3, M-4, M-6) while preserving the
-atomic-pointer architecture. Human POLICY 22 ratification required before this ADR is
-treated as accepted. Cluster-5 TDD dispatch remains BLOCKED until ratification.
+PROPOSED — v1.5 NOT ratified per 6th adversarial review (local cascade pass-3, D-1223)
+(1 CRITICAL + 4 HIGH + 5 MEDIUM + 2 LOW findings; step 3b census gate was a tautology
+against its own intent-log hash; §4e table keyed on impossible "CURRENT.json status:staging"
+discriminator (CURRENT.json first written at step 6); completion-crash leaves gate
+permanently LOCKED because Branch 2 ALREADY_MIGRATED acquires no lock; Source/Origin and
+References cited non-existent adv-cv-adr052-v13-closure-2026-09-13.md; §Downstream
+Amendments 7/8/9 deferred with placeholder text). This v1.6 fix-burst resolves all
+findings at prose, code-sample, and predicate levels. Human POLICY 22 ratification
+required before this ADR is treated as accepted. Cluster-5 TDD dispatch remains BLOCKED
+until ratification.
 
 ## Context
 
@@ -77,11 +81,11 @@ admission gate context are unchanged from v1.2 §Context.
 
 ## Finding → Resolution (v1.3 + v1.4)
 
-All 11 findings from the 3rd Codex cross-vendor closure review (`adv-cv-adr052-v12-closure-2026-09-13.md`) are resolved by the v1.3 redesign. Nine additional findings from the 4th adversarial review (`adv-cv-adr052-v13-closure-2026-09-13.md`) are resolved by this v1.4 fix-burst:
+All 11 findings from the 3rd Codex cross-vendor closure review (`adv-cv-adr052-v12-closure-2026-09-13.md`) are resolved by the v1.3 redesign. Nine additional findings from the 4th adversarial review (local cascade pass-1, D-1221) are resolved by this v1.4 fix-burst:
 
 | Finding | Sev | Root cause in v1.2 | Resolution in v1.3 |
 |---------|-----|-------------------|-------------------|
-| F1 | HIGH | Per-file rename: reader between renames sees mixed generation; "COMMITTED absent → read legacy" heuristic is ambiguous after crash | §Decision 7c: single atomic CURRENT.json pointer swap; reader resolves pointer once, pins one generation; COMPLETED.json as permanent terminal record eliminates ambiguous-absence heuristic |
+| F1 | HIGH | Per-file rename: reader between renames sees mixed generation; "COMMITTED absent → read legacy" heuristic is ambiguous after crash | §Decision 7c: single atomic CURRENT.json pointer swap; reader resolves pointer once, pins one generation; completed.json as permanent terminal record eliminates ambiguous-absence heuristic |
 | F2 | HIGH | Crash after rename but before `completed_renames` append: staging gone, no record, retry cannot recover | §Decision 7b: framed checksummed intent log records per-target expected post-content hash + expected pre-state BEFORE first rename; recovery accepts matching destination hash as completion; fail closed on ambiguity |
 | F3 | HIGH | "Drain protocol" only detects writes already completed; admits writers before lock; nothing waits for in-flight writer to finish | §Decision 5a: real OPEN/DRAINING gate; writer reservations span PreToolUse→tool-completion; coordinator waits for active_writer_count=0 before snapshotting; fingerprint recheck kept as defense-in-depth |
 | F4 | HIGH | O_CREAT\|O_EXCL + unlink-reclaim: two reclaimers both classify inode as stale, one unlinks the other's live inode; empty/corrupt lock classified as "dead → unlink" | §Decision 7a: advisory flock(LOCK_EX) on stable pre-created never-unlinked inode; stale reclamation automatic on process death; fail closed on empty/corrupt metadata by acquire-first (never unlink) |
@@ -89,7 +93,7 @@ All 11 findings from the 3rd Codex cross-vendor closure review (`adv-cv-adr052-v
 | F6 | HIGH | Expiry recheck placed after all renames (§4d in v1.2); expiry can delete PREPARED after canonical content already changed; no authorized path for new activation to recover old transaction | §Decision 4d: authorization gate moved to immediately before CURRENT.json pointer swap (single pivot); post-pivot COMMITTING state retained regardless of expiry; completion-only recovery manifest bound to old activation_id + staged-generation hash + monotonic fencing generation |
 | F7 | HIGH | Admission gate conditions on "target path under protected directory" for Bash, but Bash commands yield no intrinsic target paths; unknown write effects undefined | §Decision 5c: conservative Bash admission block: while txn record exists in STAGING/COMMITTING state, block all Bash commands with unknown write effects; classify only sanctioned migration commands from config-driven target sets; canonicalization and alias rejection specified |
 | F8 | MED | Guard requires unexpired manifest for --census (no manifest needed) and COMMITTED reruns (terminal no-op needs no manifest); both paths blocked after manifest archival | §Decision 5c: four separate guard branches: read-only census, validated terminal-state no-op, new activation, and recovery; manifest requirement and flock acquisition apply only to new-activation and recovery branches |
-| F9 | HIGH | After CLEANED archives COMMITTED, absent COMMITTED is indistinguishable between "never ran" and "completed long ago"; reader and rerun logic cannot determine steady state | §Decision 7c: COMPLETED.json written at stable path after all target moves; permanent, never deleted, never archived; supersedes CURRENT.json for reader protocol; closes steady-state ambiguity |
+| F9 | HIGH | After CLEANED archives COMMITTED, absent COMMITTED is indistinguishable between "never ran" and "completed long ago"; reader and rerun logic cannot determine steady state | §Decision 7c: completed.json written at stable path after all target moves; permanent, never deleted, never archived; supersedes CURRENT.json for reader protocol; closes steady-state ambiguity |
 | F10 | HIGH | Allowed-paths list in §Decision 8 omits sub-shards (.a.md/.b.md), BC-INDEX.shard-manifest.toml, BC-INDEX-SS-05.manifest.toml; CLAUDE.md amendment uses "shards/" directory which is broader scope | §Decision 8: single authoritative allowlist enumerating all required migration output paths including sub-shards and manifest files; CLAUDE.md amendment generated from that exact same list with containment checks |
 | F11 | HIGH | Guard hashes binary at path, then shell executes same path by name; concurrent cargo build can replace binary between hash check and exec; TOCTOU window implicit | §Decision 11: Linux: open fd, hash through fd, execveat(fd, "", argv, envp, AT_EMPTY_PATH) — eliminates TOCTOU; macOS: fexecve unavailable per Apple documentation; decision: freeze build under maintenance lock + document residual window; requires human sign-off (see §Decision 11) |
 
@@ -120,6 +124,23 @@ All 11 findings from the 3rd Codex cross-vendor closure review (`adv-cv-adr052-v
 | M-3 | MED | ADR uses bare `E-MAINTENANCE` throughout; taxonomy canonical code is `E-MAINTENANCE-001` (error-taxonomy.md is SoT for codes) | `E-MAINTENANCE` replaced with `E-MAINTENANCE-001` throughout the ADR body, §5a drain language, §7a ordinary-writer blocking, and §Error Code Semantics table |
 | M-4 | MED | §Downstream BC-1.18.010 §Reader Integration carries stale "use gen-\<uuid\>/ paths for reads" v1.3 instruction alongside the v1.4 canonical-first correction; two conflicting instructions present; neither is the correct generation-first protocol | §Downstream BC-1.18.010 §Reader Integration: stale v1.3 text deleted; v1.4 canonical-first text replaced; single correct generation-first/canonical-fallback instruction retained, consistent with §Decision 7c C-1 fix |
 | M-6 | MED | §5a admits Bash mutations but never states when a Bash invocation creates/holds a durable reservation or whether quiescence waits on it; underspecified for the coordinator | §Decision 5a: explicit text added: every admitted Bash with write effect creates a `<tool_use_id>.reservation` file; §5c classifier determines write effect; quiescence waits for all Bash reservations; test mandate added |
+
+**v1.6 findings (6th adversarial review — local cascade pass-3, D-1223 — this fix-burst):**
+
+| Finding | Sev | Root cause in v1.5 | Resolution in v1.6 |
+|---------|-----|-------------------|-------------------|
+| C-1 | CRITICAL | Step 3b census gate is a tautology: step 3 sets `expected_post_hash = sha256(staging_file)`; step 3b PC1 checks `sha256(staged_file) == expected_post_hash` = sha256(x)==sha256(x) — always true, inert as a correctness gate. Does NOT perform BC-1.18.011 PC1 (byte-for-byte concat against `source_sha256`) nor PC2 (per-ID exactly-one-shard set membership). EC-001 (byte-identical concat with compensating dup+drop, same total count) passes undetected. | §Decision 7c step 3b: existing sha256(staged)==expected_post_hash check renamed "staging-file integrity" (what it actually is — guards against silent modification after staging sync); new PC1 added (reconstruct concatenation of staged shard files + retained lean body → compare SHA-256 against `source_sha256` from txn record); PC2 rewritten as per-ID set check (fresh enumeration of ID set from original-census; each ID must appear in EXACTLY ONE staged shard, ZERO in retained body; count comparison is necessary but not sufficient — EC-001 MUST abort). |
+| H-1 | HIGH | §4e recovery table keyed on "CURRENT.json status:staging" — impossible discriminator. CURRENT.json does not exist during STAGING (first written at step 6, the COMMITTING pivot). A STAGING crash (txn=STAGING, CURRENT.json absent, manifest present) matches no row correctly. | §Decision 4e: table re-keyed on TXN-RECORD state (STAGING / COMMITTING / COMPLETED / ABORTED) as the primary discriminator, per BC-1.18.011 Invariant 3. The impossible "CURRENT.json status:staging" row is deleted. |
+| H-2 | HIGH | Crash between step 8 (completed.json write) and gate→OPEN flip: gate=LOCKED, completed.json present, no live owner. Branch 2 ALREADY_MIGRATED path acquires no lock and performs no gate reconciliation; gate stays permanently LOCKED; all `.factory/specs/behavioral-contracts/` and `.factory/cycles/` mutations blocked forever. | §Decision 5c Branch 2: before exiting 0, MUST reconcile stale gate: acquire gate-state LOCK_EX; if gate ≠ OPEN and completed.json present with no active txn (txn absent, COMPLETED, or ABORTED): flip gate → OPEN; release gate lock; then exit 0 with `ALREADY_MIGRATED`. Fault-injection test mandate added. |
+| H-3 | HIGH | Source/Origin and References cite `adv-cv-adr052-v13-closure-2026-09-13.md` which does NOT exist. No source for 4th–6th reviews cited accurately. Status finding-count (v1.5: "7 MEDIUM") mismatches the 4 mediums in the v1.5 Finding→Resolution table. | Source/Origin: replaced non-existent file citation with real provenance: local cascade D-1221 (pass-1), D-1222 (pass-2), D-1223 (pass-3); adv-local-adr052-pass3.md (written this burst by state-manager). Status finding-count corrected to 1C+4H+5M+2L. References cleaned of non-existent file. inputs[] + adv-local-adr052-pass3.md. |
+| H-4 | HIGH | §Downstream Amendments 7/8/9 contained deferred-deferral placeholder text (the architect deferred providing the exact replacement text to a future dispatch). Product-owner cannot apply a placeholder; the text was a no-op instruction that blocked BC application. | §Downstream Amendments 7/8/9: placeholder removed; exact replacement text inlined, mirroring BC-1.18.011 v1.5 (CURRENT.json pointer swap as commit-point; intent log + matching-hash recovery; completed.json permanent terminal record; generation-first/canonical-fallback reader protocol; ADR-052 §Decision 7a/7b/7c citations). |
+| M-1 | MED | Admission discriminator ambiguous across four sites: §5a PreToolUse describes reading only gate_state; §7a, BC-1.18.011 PC6(b), and error-taxonomy say block is driven by TXN-RECORD state regardless of PID; sites are inconsistent. | §5a: explicit text added: PreToolUse checks BOTH gate_state AND txn-record state; gate_state is the durable proxy that persists the txn-state block between per-event binary invocations; admit iff gate_state=OPEN AND no active txn (STAGING or COMMITTING); either condition alone triggers E-MAINTENANCE-001. |
+| M-2 | MED | macOS `verify_and_exec_binary` Rust code sample omits the pre-execve mtime re-stat that §Decision 11 rationale item 4 mandates; prose-code gap from H-2(v1.4) closure. | §Decision 11 macOS code sample: mtime re-stat and comparison added immediately before `exec_by_pathname` call; code sample now matches the prose specification exactly. |
+| M-3 | MED | Census/content abort error identifier triple-coded: step 3c uses "applicable error code"; §Error Code Semantics has CENSUS_MISMATCH_ABORT and CONTENT_PRESERVATION_ABORT as separate codes; trigger definitions reference the old (tautological) PC1 definition. Binary surfaces process exit codes, not HookResult. | Step 3c, §Error Code Semantics, and step 3b body aligned: CONTENT_PRESERVATION_ABORT = process exit code for PC1 (byte-for-byte concat SHA-256 mismatch against source_sha256) failures; CENSUS_MISMATCH_ABORT = process exit code for PC2 (ID-set exactly-one-shard violation) and E-SHD-005 (shard boundary) failures; binary is a process, not a hook; triggers updated to match corrected definitions. |
+| M-4 | MED | Mechanism-A CLAUDE.md amendment scope uses `.factory/cycles/*/` wildcard, making POLICY-22 human-auditable scope non-literal; four exact config-driven target paths are known. | CLAUDE.md amendment text: `.factory/cycles/*/` wildcard replaced with the four exact append-log paths: `.factory/cycles/v1.0-brownfield-backfill/decision-log.md`, `.factory/cycles/v1.0-brownfield-backfill/burst-log.md`, `.factory/cycles/v1.0-brownfield-backfill/lessons.md`, `.factory/cycles/v1.0-brownfield-backfill/session-checkpoints.md`. |
+| M-5 | MED | Stale-reservation cleanup runs only at recovery startup; a crashed agent's reservation causes spurious DRAIN_TIMEOUT_ABORT on a first-run migration (not a recovery). | §5a drain procedure: stale-PID reservation GC promoted to step 1 of EVERY drain (before DRAINING flip), not only recovery startup. |
+| L-1 | LOW | H1 title contains "(v1.4 Fix-Burst)" version pin — stale; version lives in frontmatter only. | H1 title: "(v1.4 Fix-Burst)" stripped. |
+| L-2 | LOW | "completed.json" and "completed.json" used interchangeably in prose and code; canonical path is lowercase `completed.json` per §Decision 7c step 8 which writes `.factory/migration-state/completed.json`. | All path-bearing occurrences aligned to lowercase `completed.json`. |
 
 ---
 
@@ -242,19 +263,22 @@ pre-pivot steps, or the txn record `fencing_generation` does not match the manif
 
 #### 4e — Manifest consumption and recovery modes
 
-After migration reaches COMPLETED (COMPLETED.json written), the binary adds `consumed_at` to
+After migration reaches COMPLETED (completed.json written), the binary adds `consumed_at` to
 the manifest (atomic overwrite). State-manager archives manifest to `.factory/migration-audit/`.
 
-Re-run behavior is governed by CURRENT.json + COMPLETED.json state, NOT manifest presence:
+Re-run behavior is governed by TXN-RECORD state (primary discriminator per BC-1.18.011
+Invariant 3) + completed.json presence. CURRENT.json is NOT the discriminator here:
+it does not exist during STAGING (first written at step 6, the COMMITTING pivot) and
+"CURRENT.json status:staging" is an impossible state.
 
-| Stable state | Action |
-|---|---|
-| `COMPLETED.json` exists | Exit 0 with `ALREADY_MIGRATED`; no lock needed; no manifest needed |
-| CURRENT.json `status: committing` + valid manifest | Recovery: acquire flock; validate completion-only manifest or unexpired original; complete forward recovery |
-| CURRENT.json `status: committing` + manifest absent or expired | Abort with `RECOVERY_REQUIRES_REAUTHORIZATION`; human must issue completion-only manifest |
-| CURRENT.json `status: staging` + valid original manifest | Resume from staging: validate under exclusion; **RE-RUN full census against staged generation (EC-003 per H3 fix — step 3b must pass before proceeding)**; re-run authorization gate (step 4); proceed to fingerprint recheck (step 5) and pointer swap (step 6) |
-| CURRENT.json absent or `status: none` + manifest absent | Reject as unauthorized; exit non-zero |
-| `--census` flag | Read-only; no CURRENT.json, no manifest, no flock required |
+| TXN-RECORD state | completed.json / manifest | Action |
+|---|---|---|
+| completed.json exists (terminal) | completed.json present | Exit 0 with `ALREADY_MIGRATED`; no lock needed; no manifest needed; **reconcile stale gate first** (§Decision 5c Branch 2 H-2 fix: acquire gate LOCK_EX; if gate≠OPEN and no active txn: flip→OPEN; release; then exit 0) |
+| txn COMMITTING + valid manifest | CURRENT.json `status:committing` | Recovery: acquire flock; validate completion-only manifest or unexpired original; complete forward recovery |
+| txn COMMITTING + manifest absent or expired | CURRENT.json `status:committing` | Abort with `RECOVERY_REQUIRES_REAUTHORIZATION`; human must issue completion-only manifest |
+| txn STAGING + valid original manifest | CURRENT.json absent (pre-pivot) | Resume from staging: validate under exclusion; **RE-RUN full census against staged generation (EC-003 per H3 fix — step 3b must pass before proceeding)**; re-run authorization gate (step 4); proceed to fingerprint recheck (step 5) and pointer swap (step 6) |
+| no txn record + manifest absent | CURRENT.json absent | Reject as unauthorized; exit non-zero |
+| `--census` flag | any | Read-only; no txn record, no manifest, no flock required |
 
 ### Decision 5 — Dispatcher PreToolUse guard stack + native admission gate (v1.3 REDESIGNED)
 
@@ -283,13 +307,23 @@ this purpose: PostToolUse cannot recompute a random value generated in a prior p
 permanent reservation leaks that prevent quiescence. The count of files in this directory is
 the cross-process-durable `active_writer_count`. Quiescence = directory is empty.
 
-**Atomic admission protocol (closes H2 atomicity gap):**
+**Atomic admission protocol (closes H2 atomicity gap; v1.6 M-1 — explicit dual-check):**
 - **PreToolUse:** before admitting a mutation (Edit/Write/MultiEdit/Bash) targeting
   `.factory/specs/behavioral-contracts/` or `.factory/cycles/`:
   1. Acquire `LOCK_SH` flock on `.factory/migration-state/gate-state` file
   2. Read gate_state value
-  3. If gate_state = OPEN: create `reservations/<tool_use_id>.reservation` file; release `LOCK_SH`; proceed
-  4. If gate_state = DRAINING or LOCKED: release `LOCK_SH`; return E-MAINTENANCE-001 immediately
+  3. Check for an active txn record: scan `.factory/migration-state/txn-*.json` for state IN
+     (STAGING, COMMITTING)
+  4. If gate_state = OPEN AND no active txn: create `reservations/<tool_use_id>.reservation`
+     file; release `LOCK_SH`; proceed (admit)
+  5. If gate_state ≠ OPEN (DRAINING or LOCKED) OR active txn exists (STAGING or COMMITTING):
+     release `LOCK_SH`; return E-MAINTENANCE-001 immediately (block)
+  **Invariant (M-1 — dual-check):** Both conditions must be satisfied for admission: gate_state
+  MUST be OPEN AND no active txn may exist. `gate_state` is the durable cross-binary proxy that
+  persists txn blocking between per-event dispatcher invocations (the gate is set to LOCKED when
+  the txn is STAGING or COMMITTING). Checking both guards against the race window between gate
+  flip and txn record write. The txn record check is the authoritative "is maintenance in progress"
+  signal per §Decision 7a ordinary-writer blocking; gate_state is the fast-path durable proxy.
   The shared lock in step 1 blocks ONLY while the coordinator holds `LOCK_EX` to flip gate state.
   Between gate-state flips, parallel admissions proceed without blocking each other.
 
@@ -308,21 +342,28 @@ to the gate admission protocol above. Quiescence waits for ALL in-flight reserva
 including Bash ones.
 
 **Drain procedure (executed by maintenance coordinator before building staging generation):**
-1. Acquire advisory flock on `exclusive.lock` (§Decision 7a)
-2. Acquire `LOCK_EX` flock on `gate-state` file; write gate_state = DRAINING; release `LOCK_EX`
+1. **Stale-PID reservation GC (v1.6 M-5 — runs at start of EVERY drain, not only recovery):**
+   Scan `reservations/` directory for files whose creating PID is no longer alive (file content
+   = PID). Remove stale files. This prevents a crashed writer from causing spurious
+   DRAIN_TIMEOUT_ABORT on a first-run migration. This cleanup runs here (before DRAINING flip)
+   so it does not race with the quiescence check in step 3.
+2. Acquire advisory flock on `exclusive.lock` (§Decision 7a)
+3. Acquire `LOCK_EX` flock on `gate-state` file; write gate_state = DRAINING; release `LOCK_EX`
    (LOCK_EX blocks new PreToolUse admissions while the flip is in progress)
-3. Poll `reservations/` directory until empty; timeout at 30s → **ABORT: flip gate → OPEN
+4. Poll `reservations/` directory until empty; timeout at 30s → **ABORT: flip gate → OPEN
    (under LOCK_EX), release both flocks.** (H1 fix: abort path MUST flip gate → OPEN)
    (v1.5 L-4 LIVENESS NOTE: The 30s drain timeout is a safety net, not a production
    operating assumption. F4 activation SHOULD be scheduled when the system is quiescent with
    no concurrent agent Edit/Write/MultiEdit/Bash operations; the operator is responsible for
    choosing an activation window with no concurrent agent activity to avoid spurious
    DRAIN_TIMEOUT_ABORT.)
-4. Snapshot now-quiescent inputs (compute `source_sha256` of all source files)
-5. Acquire `LOCK_EX`; write gate_state = LOCKED; release `LOCK_EX`
-6. Write txn record with state=STAGING (§Decision 7a)
+5. Snapshot now-quiescent inputs (compute `source_sha256` of all source files; also capture
+   the original BC-INDEX.md body ID census — the complete set of `BC-X.YY.NNN` IDs — and
+   store in txn record for use by step 3b PC2)
+6. Acquire `LOCK_EX`; write gate_state = LOCKED; release `LOCK_EX`
+7. Write txn record with state=STAGING (§Decision 7a)
 
-**COMPLETED release:** When COMPLETED.json written (step 8), flip gate `LOCKED → OPEN` (under
+**COMPLETED release:** When completed.json written (step 8), flip gate `LOCKED → OPEN` (under
 `LOCK_EX` on gate-state file). This MUST succeed before the flock is released.
 
 **Abort gate-reset obligation (v1.4 — closes H1):** EVERY abort and rollback path MUST flip
@@ -340,12 +381,13 @@ the flock on `exclusive.lock` and finds gate_state = LOCKED or DRAINING MUST:
 - If active txn exists (STAGING or COMMITTING): gate is legitimately LOCKED; proceed with
   forward recovery per §Decision 4e and §Decision 7b
 
-**Stale reservation cleanup:** On recovery startup, before the drain procedure, scan the
-`reservations/` directory for files whose creating PID is no longer alive (file content = PID).
-Remove stale files (dead process never ran PostToolUse). This prevents a crashed writer from
-leaving a permanent reservation that blocks quiescence.
+**Stale reservation cleanup:** Stale-PID reservation GC runs at the START OF EVERY DRAIN
+(drain procedure step 1, above) — not only at recovery startup. This ensures a crashed
+writer's reservation does not cause spurious DRAIN_TIMEOUT_ABORT on a first-run migration.
+On crash recovery startup (separate from a first-run drain), the same GC also runs before
+re-attempting the drain.
 
-**Fault-injection test mandate (v1.4 — H1; v1.5 — H-3, M-6):** Tests MUST verify:
+**Fault-injection test mandate (v1.4 — H1; v1.5 — H-3, M-6; v1.6 — M-5):** Tests MUST verify:
 - Drain-timeout abort: gate returns to OPEN; next PreToolUse is admitted
 - Expiry abort at step 4: gate returns to OPEN; txn = ABORTED
 - Fingerprint abort at step 5: gate returns to OPEN; txn = ABORTED
@@ -358,7 +400,9 @@ leaving a permanent reservation that blocks quiescence.
 - (H-3) Stale-PID cleanup: a reservation file whose PID is no longer alive is removed by the
   recovery startup scan; subsequent drain correctly proceeds to quiescence
 - (M-6) Long-running admitted Bash with write effect creates a reservation; coordinator waits
-  for PostToolUse reservation removal before proceeding past step 3 of drain procedure
+  for PostToolUse reservation removal before proceeding past step 4 of drain procedure
+- (M-5) A crashed writer's stale reservation is cleaned up by drain step 1 GC on a FIRST-RUN
+  migration (not only on recovery); subsequent drain reaches quiescence and proceeds normally
 
 **Fingerprint recheck:** Retained at §Decision 7c step 5 as defense-in-depth after quiescence.
 Not the drain mechanism.
@@ -389,14 +433,27 @@ operates in four distinct branches:
 - Executable digest verification still applies (§Decision 11)
 - Pass immediately after digest check
 
-**Branch 2 — Terminal-state no-op (closes F8 COMMITTED-rerun gap):**
-- Trigger: `COMPLETED.json` exists at `.factory/migration-state/completed.json`
-- No manifest required; no flock required
-- Binary will exit 0 with `ALREADY_MIGRATED`; guard confirms this is the expected outcome
-- Pass immediately
+**Branch 2 — Terminal-state no-op (closes F8 COMPLETED-rerun gap; v1.6 H-2 — gate reconciliation):**
+- Trigger: `completed.json` exists at `.factory/migration-state/completed.json`
+- No migration manifest required; no exclusive.lock flock required
+- **Gate reconciliation before exit (H-2 fix):** Before exiting 0, the guard MUST check and
+  reconcile a stale gate to prevent a permanent LOCKED state from a crash between step 8
+  (completed.json write) and the COMPLETED gate→OPEN flip:
+  1. Acquire `LOCK_EX` on gate-state file
+  2. Read gate_state value
+  3. If gate_state ≠ OPEN AND completed.json present AND no active txn record exists
+     (txn absent, or txn state = COMPLETED or ABORTED): write gate_state = OPEN (atomic)
+  4. Release `LOCK_EX`
+  This reconciliation is a no-op when the gate is already OPEN (normal case). It is also a
+  no-op when an active STAGING or COMMITTING txn exists (gate is legitimately LOCKED).
+- Binary exits 0 with `ALREADY_MIGRATED`
+- **Fault-injection test mandate (H-2):** A test MUST simulate the crash window between
+  completed.json write and gate→OPEN flip. Verify that a subsequent Branch 2 invocation
+  reconciles gate → OPEN; verify that subsequent Edit/Write PreToolUse admissions are
+  accepted after this reconciliation.
 
 **Branch 3 — New activation:**
-- Trigger: no `COMPLETED.json` + no CURRENT.json with `status: committing`
+- Trigger: no `completed.json` + no CURRENT.json with `status: committing`
 - Full validation: exact command string match; metacharacter rejection; alternate-path rejection;
   manifest content validation (parseable, `migration_id` matches, not expired, `activation_id`
   is valid UUID); executable digest verification (§Decision 11)
@@ -427,10 +484,10 @@ The canonical project root is resolved via `git rev-parse --show-toplevel` at gu
 - `{root}/target/release/factory-dispatcher migrate-bc-index --extra-flag` → REJECTED
 - `{root}/target/release/factory-dispatcher` (no subcommand) → REJECTED
 - Any Bash command with `>` targeting `.factory/specs/behavioral-contracts/` while txn=STAGING or COMMITTING → REJECTED (F7/H4 test)
-- `{root}/target/release/factory-dispatcher migrate-bc-index` (when COMPLETED.json exists) → BRANCH-2 pass
+- `{root}/target/release/factory-dispatcher migrate-bc-index` (when completed.json exists) → BRANCH-2 pass
 - Abort during DRAINING (drain-timeout) → gate returns to OPEN; next PreToolUse mutation is admitted (H1 test)
 
-### Decision 6 — Audit trail: durable, tamper-evident record (NIST AU-9) (v1.5 H-1: inlined; COMPLETED.json replaces COMMITTED phase marker per v1.3 redesign)
+### Decision 6 — Audit trail: durable, tamper-evident record (NIST AU-9) (v1.5 H-1: inlined; completed.json replaces COMMITTED phase marker per v1.3 redesign)
 
 Census-to-stdout is correctness evidence for D-449(a); it is NOT an adequate audit record.
 NIST SP 800-53r5 AU-9 requires audit records to be tamper-evident and protected from
@@ -451,12 +508,12 @@ are required:
    State-manager captures the stdout verbatim as the D-449(a) burst-log Dim-2 attestation.
 
 2. **Durable audit record (NIST AU-9):** Immediately after the migration reaches COMPLETED
-   state (COMPLETED.json written at §Decision 7c step 8), state-manager commits to
+   state (completed.json written at §Decision 7c step 8), state-manager commits to
    factory-artifacts:
    - The captured census stdout as `migration-audit/migrate-bc-index-YYYY-MM-DD-census.txt`
      (or `backfill-append-logs-...`)
    - The armed-activation manifest (consumed copy from `.factory/activation/`)
-   - The COMPLETED.json terminal record
+   - The completed.json terminal record
    - The migration binary's `--version` output
 
    The factory-artifacts commit hash is recorded in STATE.md's burst-log for the activation
@@ -621,25 +678,60 @@ The pointer transition is the single atomic commit point for the entire multi-fi
    if exists else missing`. After all INTENT records: `fsync(intent_log_fd)`.
    **This is the WAL boundary: after this fsync, all renames are recoverable.**
 
-3b. **Pre-pivot content-preservation + census gate (v1.4 — closes H3; BC-1.18.011 PC1/PC2).**
+3b. **Pre-pivot content-preservation + census gate (v1.4 — closes H3; BC-1.18.011 PC1/PC2;
+    v1.6 C-1 — rewrites PC1 and PC2 to remove tautology).**
     Before the authorization gate, verify the staged generation is correct and complete.
     This step MUST execute before the irreversible CURRENT.json pointer swap at step 6.
-    - **Content-preservation (PC1):** For each staged file: verify
-      `sha256(staged_file) == expected_post_hash` (from intent log INTENT records). Ensures
-      no file was silently modified after staging sync. On any mismatch → step 3c (abort).
-    - **Independent census (PC2):** Count BC rows in all staged generation BC files.
-      Verify `staged_bc_count == expected_total_bcs` (from manifest + txn record).
-      On mismatch → step 3c (abort). Emit `E-SHD-005` with observed vs. expected counts.
-    - **Shard boundary invariants:** Verify each sub-shard file count is within shard capacity
-      bounds (E-SHD-005 scope). On violation → step 3c (abort).
 
-3c. **Census abort (on any step 3b gate failure):**
+    - **Staging-file integrity (distinct from PC1):** For each staged file, verify
+      `sha256(staged_file) == expected_post_hash` (from the INTENT record written in step 3).
+      This confirms no file was silently modified after the staging sync in step 2. On any
+      mismatch → step 3c (abort) with `CONTENT_PRESERVATION_ABORT`.
+      **NOTE (v1.6 C-1):** This check is a STAGING INTEGRITY guard, NOT content-preservation
+      (PC1). It compares a staged file's hash against its own intent-log entry — a necessary
+      but trivially-satisfiable check (sha256(x)==sha256(x) when the intent log was written
+      from the same file). It does not verify the split is semantically correct. PC1 and PC2
+      below are the real correctness gates.
+
+    - **Content-preservation (PC1 — BC-1.18.011 PC1):** Reconstruct and verify byte-for-byte:
+      concatenate all staged shard files in `SS-01`..`SS-10` order plus the staged retained lean
+      `BC-INDEX.md` body (the new header-only form per BC-1.18.010 Invariant 3). Compute
+      SHA-256 of this concatenation. Compare against `source_sha256` in the txn record (the
+      SHA-256 of the ORIGINAL pre-split `BC-INDEX.md` body captured at the quiescence snapshot
+      in §Decision 5a drain step 4). On any mismatch → step 3c (abort) with
+      `CONTENT_PRESERVATION_ABORT`. This is the byte-for-byte fidelity gate required by
+      BC-1.18.011 PC1: no row content may be altered, dropped, or reordered during the split.
+
+    - **Independent census (PC2 — BC-1.18.011 PC2):** Perform a fresh enumeration of ALL
+      `BC-X.YY.NNN` IDs in the ORIGINAL `BC-INDEX.md` body (the ID set captured at quiescence
+      and stored in the txn record). For each ID in this original-census set, verify:
+      (a) the ID appears in EXACTLY ONE staged shard file (`gen-<uuid>/shards/BC-INDEX-SS-NN.md`
+          or a sub-shard);
+      (b) the ID does NOT appear in the staged lean `BC-INDEX.md` retained body (zero
+          occurrences, per BC-1.18.010 Invariant 3).
+      Verify the union count of shard IDs equals the original-census count exactly.
+      **EC-001 MUST abort:** A byte-identical concatenation that nonetheless duplicates one ID
+      in two shards while dropping another ID with compensating count — so that total count
+      matches but the ID SET does not — is a FAILING migration (BC-1.18.011 Invariant 2: "no BC
+      row is ever counted twice or dropped"). Count comparison alone cannot detect EC-001; the
+      ID-set check is mandatory. On any violation → step 3c (abort) with `CENSUS_MISMATCH_ABORT`.
+
+    - **Shard boundary invariants (E-SHD-005):** Verify each sub-shard file count is within
+      shard capacity bounds. On violation → step 3c (abort) with `CENSUS_MISMATCH_ABORT`.
+
+3c. **Gate failure abort (on any step 3b check failure; v1.6 M-3 — exit code aligned):**
     - Delete staging generation directory `gen-<uuid>/`
     - Update txn record: state → ABORTED
     - Flip gate → OPEN (atomic write to gate_state file, under `LOCK_EX`) (H1 fix)
     - Release flock on `exclusive.lock`
-    - Exit non-zero with the applicable error code (E-SHD-005, content-preservation failure,
-      or census-mismatch abort code — see §Error Code Semantics)
+    - Exit non-zero with the applicable process exit code:
+      - `CONTENT_PRESERVATION_ABORT` (exit 2): staging-file integrity failure (sha256 mismatch
+        vs intent-log expected_post_hash) OR PC1 failure (byte-for-byte concat SHA-256 mismatch
+        vs source_sha256)
+      - `CENSUS_MISMATCH_ABORT` (exit 2): PC2 failure (ID-set exactly-one-shard violation,
+        including EC-001 dup+drop case) OR E-SHD-005 shard boundary violation
+    These are PROCESS EXIT CODES emitted by the migration binary, not HookResult values.
+    See §Error Code Semantics for full trigger, severity, and exit behavior.
 
 4. **Authorization gate check (§Decision 4d).** Verify expiry. If expired and state=STAGING:
    ABORT cleanly (update txn → ABORTED, **flip gate → OPEN** (H1 fix), release flock).
@@ -812,11 +904,13 @@ truth for both the binary's containment checks AND the CLAUDE.md amendment text 
   (generic pattern; covers BC-INDEX-SS-05.manifest.toml, BC-INDEX-SS-06.manifest.toml,
    and any other subsystem sub-manifest)
 
-# A migration targets (config-driven append-log files)
-.factory/cycles/*/  (v1.5 L-3: exact paths config-driven per §Decision 3; not hardcoded;
-  the `*/` wildcard does NOT mean "any path under .factory/cycles/" — validate_write_target()
-  MUST verify the path matches one of the config-specified exact append-log file paths, not
-  merely the prefix pattern)
+# A migration targets (four exact config-specified append-log files — v1.6 M-4)
+.factory/cycles/v1.0-brownfield-backfill/decision-log.md
+.factory/cycles/v1.0-brownfield-backfill/burst-log.md
+.factory/cycles/v1.0-brownfield-backfill/lessons.md
+.factory/cycles/v1.0-brownfield-backfill/session-checkpoints.md
+  (validate_write_target() MUST verify the exact path matches one of these four paths, not
+   merely the `.factory/cycles/` prefix; the wildcard form is NOT an accepted pattern)
 
 # Migration operational state (both migrations)
 .factory/migration-state/
@@ -880,8 +974,13 @@ ADR-052 EXCEPTION (POLICY 22 ratified): The governed one-time shard migration bi
   `.factory/specs/behavioral-contracts/shards/BC-INDEX.shard-manifest.toml`
   `.factory/specs/behavioral-contracts/shards/BC-INDEX-SS-<NN>.manifest.toml`
   (generic; covers all subsystem sub-manifests including SS-05 and SS-06)
-  `.factory/cycles/*/` (config-specified append-log targets)
-  `.factory/migration-state/` (flock inode, txn record, intent log, CURRENT.json, COMPLETED.json,
+  `.factory/cycles/v1.0-brownfield-backfill/decision-log.md`
+  `.factory/cycles/v1.0-brownfield-backfill/burst-log.md`
+  `.factory/cycles/v1.0-brownfield-backfill/lessons.md`
+  `.factory/cycles/v1.0-brownfield-backfill/session-checkpoints.md`
+  (these four are the config-specified append-log targets for mechanism A; validate_write_target()
+   verifies the exact path matches one of the above four, not merely the cycle prefix)
+  `.factory/migration-state/` (flock inode, txn record, intent log, CURRENT.json, completed.json,
                                 gate-state, reservation dir, staging generation)
   `.factory/activation/`
   `.factory/migration-audit/`
@@ -898,8 +997,8 @@ PRECONDITIONS (all must hold before any canonical-path mutation):
 (e) Native OPEN/DRAINING admission gate in `executor.rs` deployed (ADR-052 §Decision 5a);
     txn record state (STAGING/COMMITTING) blocks ordinary writers regardless of PID liveness.
 
-POST-SUCCESS OBLIGATIONS (after COMPLETED.json written):
-(f) Durable factory-artifacts commit records census stdout, activation manifest, COMPLETED.json,
+POST-SUCCESS OBLIGATIONS (after completed.json written):
+(f) Durable factory-artifacts commit records census stdout, activation manifest, completed.json,
     and binary version as NIST AU-9 audit record (ADR-052 §Decision 6).
 (g) State-manager archives activation manifest to `.factory/migration-audit/`.
 
@@ -1004,7 +1103,7 @@ Rationale:
 7. The residual window is intra-process (sub-millisecond under quiescent system) with no
    concurrent build running and the mtime guard active.
 
-**macOS implementation:**
+**macOS implementation (v1.6 M-2 — mtime re-stat added immediately before exec):**
 ```rust
 #[cfg(target_os = "macos")]
 fn verify_and_exec_binary(binary_path: &Path, ...) -> Result<(), ExecError> {
@@ -1013,10 +1112,24 @@ fn verify_and_exec_binary(binary_path: &Path, ...) -> Result<(), ExecError> {
     if computed != stored_digest {
         return Err(ExecError::DigestMismatch);
     }
+    // Record mtime immediately after digest check for pre-exec comparison.
+    let mtime_after_digest = stat_mtime(binary_path)?;
+
     // No fd-binding exec available on macOS; execute by pathname under held maintenance lock
     // DOCUMENTED RESIDUAL TOCTOU: a concurrent cargo build between hash and exec could
     // substitute different bytes. Mitigation: no concurrent build during F4 activation.
     // This residual risk requires human acknowledgment at ratification (see §Decision 11).
+
+    // Programmatic mtime guard: re-stat IMMEDIATELY BEFORE execve syscall.
+    // If mtime changed between digest check and this re-stat, a substitution may have
+    // occurred — abort BEFORE executing. This narrows the undetectable window from
+    // (digest-check → exec) to (pre-exec-re-stat → execve), which is sub-instruction
+    // under a quiescent system. Does NOT close the TOCTOU window cryptographically.
+    let mtime_pre_exec = stat_mtime(binary_path)?;
+    if mtime_pre_exec != mtime_after_digest {
+        return Err(ExecError::BinaryIntegrityFailure);
+    }
+
     exec_by_pathname(binary_path, ...)?
 }
 ```
@@ -1054,9 +1167,9 @@ and exit behavior to drive that addition.
 | `DRAIN_TIMEOUT_ABORT` | Coordinator waited 30 seconds for active writer reservations to drain to zero; quiescence not achieved | BLOCKED — migration deferred; gate returned to OPEN | exit 2 |
 | `ARCH_INDEX_PARITY_ABORT` | Three-way ARCH-INDEX parity check fails: config.arch_index_sha != manifest.approved_arch_index_sha OR != live ARCH-INDEX SHA | BLOCKED — abort before any staging work | exit 2 |
 | `COMPLETION_MANIFEST_REJECTION` | Completion-only recovery manifest fails validation: activation_id mismatch, staged_generation_id mismatch, fencing_generation mismatch, or allowed_steps includes pre-pivot steps | BLOCKED — abort recovery; require new completion-only manifest | exit 2 |
-| `CENSUS_MISMATCH_ABORT` | Pre-pivot census (step 3b) finds staged_bc_count != expected_total_bcs OR a BC row appears in zero or multiple shards (E-SHD-005) | BLOCKED — abort before pointer swap; txn → ABORTED; gate → OPEN | exit 2 |
-| `CONTENT_PRESERVATION_ABORT` | Pre-pivot content-preservation check (step 3b PC1) finds sha256(staged_file) != expected_post_hash for any staged file | BLOCKED — abort before pointer swap; txn → ABORTED; gate → OPEN | exit 2 |
-| `ALREADY_MIGRATED` | `COMPLETED.json` exists at `.factory/migration-state/completed.json` | NON-ERROR sentinel — migration previously completed; no action taken | exit 0 |
+| `CENSUS_MISMATCH_ABORT` | Pre-pivot census (step 3b PC2): any `BC-X.YY.NNN` ID from the original-census set appears in zero or more than one staged shard file (ID-set exactly-one-shard violation; detects EC-001 dup+drop even when total count is equal); OR E-SHD-005 shard boundary violation. Process exit code. | BLOCKED — abort before pointer swap; txn → ABORTED; gate → OPEN | exit 2 |
+| `CONTENT_PRESERVATION_ABORT` | Pre-pivot checks (step 3b): staging-file integrity failure (sha256(staged_file) != expected_post_hash for any staged file, indicating modification after staging sync); OR PC1 byte-for-byte content-preservation failure (SHA-256 of reconstructed shard concatenation + retained lean body does not match source_sha256 from txn record). Process exit code. | BLOCKED — abort before pointer swap; txn → ABORTED; gate → OPEN | exit 2 |
+| `ALREADY_MIGRATED` | `completed.json` exists at `.factory/migration-state/completed.json` | NON-ERROR sentinel — migration previously completed; no action taken | exit 0 |
 | `E-MAINTENANCE-001` | Mutation tool call attempted while gate state is DRAINING or LOCKED, OR while txn record exists with state STAGING or COMMITTING | BLOCKED — writer must retry after migration completes | exit 2 (guard layer) |
 
 **Note for product-owner:** Add one catalog row per code to `error-taxonomy.md`. The `exit 0`
@@ -1099,7 +1212,7 @@ the shared root cause in one structural change:
   rename/journal gap without requiring staging files to survive.
 - **F5** dissolves because the txn record is separate from the flock; recovery ownership is a
   separate acquisition that does not require clearing intent.
-- **F9** dissolves because COMPLETED.json is permanent and never archived; its presence is
+- **F9** dissolves because completed.json is permanent and never archived; its presence is
   unambiguous in all steady states.
 - **F6** collapses because there is now a SINGLE pivot point (CURRENT.json pointer swap) rather
   than N sequential renames, making the authorization gate placement unambiguous.
@@ -1146,7 +1259,7 @@ operationally honest: it documents the residual window rather than claiming fals
 
 - Resolves all 11 findings from the 3rd Codex cross-vendor closure review.
 - Atomic CURRENT.json pointer swap provides genuine all-or-nothing multi-file visibility.
-- COMPLETED.json as a permanent terminal record eliminates all reader/rerun steady-state
+- completed.json as a permanent terminal record eliminates all reader/rerun steady-state
   ambiguity and survives cleanup.
 - Framed checksummed intent log with matching-destination-hash recovery makes crash recovery
   both self-describing and idempotent.
@@ -1165,7 +1278,7 @@ operationally honest: it documents the residual window rather than claiming fals
 ### Negative
 
 - Significantly more implementation complexity than v1.2: staging generation dir, framed intent
-  log, advisory flock, txn record, CURRENT.json + COMPLETED.json pointer, platform-branched
+  log, advisory flock, txn record, CURRENT.json + completed.json pointer, platform-branched
   durability, guard-branch separation, fd-binding exec.
 - macOS/darwin-arm64 (primary operator platform) exec TOCTOU residual window requires human
   acknowledgment at POLICY 22 ratification; mitigated by programmatic mtime guard and hard
@@ -1205,10 +1318,17 @@ that made incremental amendment non-viable (diverging finding trajectory 7→8�
 - BC-1.18.011 `S-25.02` cluster-5 specification (governs B2 body-split migration)
 - BC-1.18.010 §Reader Integration (governs BC-INDEX reader protocol during migration window)
 - S-25.06 Rule 7 (governed mechanism-A backfill-split activation; corrected by §Decision 9)
-- `adv-cv-adr052-v13-closure-2026-09-13.md` — 4th adversarial review (9 ADR-owned findings,
-  2 CRITICAL + 5 HIGH + 2 MEDIUM), producing this v1.4 fix-burst
-- `adv-cv-adr052-v12-closure-2026-09-13.md` — 3rd Codex cross-vendor closure review
-  (D-1218, 11 findings NOT RATIFIABLE), driving the v1.3 redesign
+- In-house local adversary cascade — all passes recorded in decision log:
+  - External pass-1 (`adv-cv-adr052-cluster5-F1-2026-09-12.md`, D-1214): 1st RATIFY-WITH-CHANGES
+    (7 findings), producing v1.1 fix-burst
+  - External pass-2 (`adv-cv-adr052-v11-closure-2026-09-12.md`, D-1216): 2nd closure review
+    (8 findings), producing v1.2 redesign
+  - External pass-3 (`adv-cv-adr052-v12-closure-2026-09-13.md`, D-1218): 3rd Codex cross-vendor
+    (11 findings NOT RATIFIABLE), driving v1.3 full redesign
+  - Local pass-1 (D-1221): 4th review (9 ADR-owned findings, 2C+5H+2M), producing v1.4 fix-burst
+  - Local pass-2 (D-1222): 5th review (9 ADR-owned findings, 1C+4H+4M), producing v1.5 fix-burst
+  - Local pass-3 (`adv-local-adr052-pass3.md`, D-1223): 6th review (12 findings NOT RATIFIABLE,
+    1C+4H+5M+2L), producing this v1.6 fix-burst
 - `research-adr-052-v13-atomic-publication-2026-09-13.md` — research brief grounding
   the atomic-pointer architecture, advisory flock design, and F_FULLFSYNC / fexecve guidance
 - CLAUDE.md TD-FACTORY-HOOK-BYPASS-001 P0 — governing rule this ADR excepts via §Decision 8
@@ -1263,7 +1383,7 @@ Replace the Amendment 4 text from v1.2 with:
 >      authorization gate check pending.
 >    - State COMMITTING (the pivot): CURRENT.json pointer swap executed atomically; from this
 >      point forward recovery is mandatory; authorization expiry does NOT abort.
->    - State COMPLETED: all canonical path moves complete and hash-verified; COMPLETED.json
+>    - State COMPLETED: all canonical path moves complete and hash-verified; completed.json
 >      written at stable path; PERMANENT.
 >    EC-003 resume logic reads the intent log + txn record to determine which canonical path
 >    moves succeeded (matching-destination-hash rule) and resumes from first uncompleted move."
@@ -1303,11 +1423,70 @@ platforms) with:
 > This platform-branched durability guarantee is implemented in `sync_file_durable()` and
 > `sync_dir_best_effort()` per ADR-052 §Decision 7d."
 
-**Amendments 7, 8, 9 (TOCTOU guard, Invariant 3 commit-pointer, Architecture Anchors):**
-Replace v1.2 references to COMMITTED marker, `completed_renames`, and per-file rename sequence
-with references to: CURRENT.json pointer swap (commit point), intent log + matching-hash
-recovery, COMPLETED.json (permanent terminal record), and txn record state machine. Architect
-will provide exact replacement text in the next burst dispatch to product-owner.
+**Amendment 7 — Postcondition 3a: TOCTOU fingerprint recheck (v1.3 update; pointer-swap step
+corrected to step 6 per v1.4 M2):**
+
+Replace the Amendment 7 text from v1.2 with:
+
+> "3a. **Pre-commit source-fingerprint recheck (TOCTOU guard).** This check is performed EXACTLY
+>     ONCE, immediately before the CURRENT.json pointer swap (step 6 in ADR-052 §Decision 7c)
+>     — not before the first rename. The migration binary re-reads BC-INDEX.md's source content,
+>     computes SHA-256, and compares against the `source_sha256` field recorded in the txn record
+>     at quiescence. If they differ: ABORT. The txn record is set to state ABORTED. No canonical
+>     paths have been changed at this point (the pointer swap has not occurred). The migration
+>     requires re-activation. This single-check design eliminates the v1.1 contradiction where a
+>     re-check after BC-INDEX.md's own rename would find a fingerprint mismatch and incorrectly
+>     trigger abort."
+
+**Amendment 8 — Invariant 3 commit-pointer (v1.3 update; generation-first reader protocol added
+per v1.5 C-1):**
+
+Replace the Amendment 8 text from v1.2 with:
+
+> "3. **The migration is never partially applied.** At every observable point in time — before
+>    the migration runs, during staging, and after it completes — `BC-INDEX.md`'s body is either
+>    the FULL original monolithic form or the FULL split end-state form; it is never observed in
+>    a state where some subsystems are split and others are not. The all-or-nothing guarantee is
+>    implemented via the CURRENT.json atomic pointer swap and the intent log: before the CURRENT.json
+>    pointer swap (ADR-052 §Decision 7c step 6), the state machine is either STAGING (staging
+>    generation in progress, intent log recording per-target expected hashes) or has no txn record;
+>    after the CURRENT.json pointer swap transitions to COMMITTING, canonical readers see the
+>    migration as in-progress and access new-generation content via the generation-first /
+>    canonical-fallback protocol (ADR-052 §Decision 7c): try `gen-<uuid>/` path FIRST (file present
+>    = not yet moved to canonical = new content); fall back to canonical path if absent from gen dir
+>    (file already moved by step 7 progress = canonical now holds new content). This protocol is
+>    correct for BOTH net-new shard files AND in-place-overwrite targets such as BC-INDEX.md.
+>    ENOENT is impossible for any new-generation file during the COMMITTING window (rename(2)
+>    atomicity). The CURRENT.json atomic pointer swap is the sole commit-point for the multi-file
+>    atomic operation; composing N independent write_atomic calls without this commit-pointer does
+>    not satisfy this invariant. completed.json (written at §Decision 7c step 8) is the permanent
+>    terminal record; forward recovery uses the intent log + matching-destination-hash rule
+>    (ADR-052 §Decision 7b) to resume from the first uncompleted canonical path move."
+
+**Amendment 9 — Architecture Anchors (v1.3 update):**
+
+Replace the Amendment 9 text from v1.2 with the following complete Architecture Anchors section:
+
+> - `crates/factory-dispatcher/src/shard_manager.rs` — one-time B2 migration entry point reusing
+>   BC-1.18.006's staging/atomic-replace primitives
+> - `.factory/specs/behavioral-contracts/BC-INDEX.md` §Summary / `total_bcs` frontmatter field —
+>   the independent count-oracle this BC's census check (Postcondition 2) cross-checks against
+> - `.factory/specs/architecture/ARCH-INDEX.md` §Subsystem Registry — the BC-S Prefix→SS-NN
+>   mapping this BC's per-subsystem partition boundaries follow
+> - ADR-052 §Decision 4 — armed-activation manifest (two-phase validation: pre-lock and
+>   under-exclusion)
+> - ADR-052 §Decision 5a — native admission gate in executor.rs: OPEN/DRAINING gate with writer
+>   reservations (PreToolUse-acquire/PostToolUse-release); txn record state check (STAGING/COMMITTING)
+>   blocks ordinary writers regardless of PID liveness
+> - ADR-052 §Decision 7a — advisory flock on stable pre-created never-unlinked inode
+>   (`.factory/migration-state/exclusive.lock`); durable txn record separate from lock file with
+>   `fencing_generation` (AUDIT-ONLY) for recovery-owner claim
+> - ADR-052 §Decision 7b — framed checksummed intent log with per-target expected post-hash +
+>   pre-state; WAL boundary after intent fsync; matching-destination-hash recovery decision table
+> - ADR-052 §Decision 7c — single atomic CURRENT.json pointer swap (the commit point at step 6);
+>   completed.json as permanent terminal record; generation-first/canonical-fallback reader protocol
+> - ADR-052 §Decision 8 — POLICY 22 exception declaration with accurate skipped-control inventory
+>   and enumerated allowed write targets
 
 ### BC-1.18.010 required amendments (v1.3 updates)
 
@@ -1317,15 +1496,15 @@ will provide exact replacement text in the next burst dispatch to product-owner.
 
 Replace the §Reader Integration section with the following (v1.5 M-4: removes stale v1.3 "use gen-uuid/" and stale v1.4 "canonical-first" text; single correct instruction per §Decision 7c C-1 fix):
 
-> "During the B2 migration window (after CURRENT.json pointer swap, before COMPLETED.json
+> "During the B2 migration window (after CURRENT.json pointer swap, before completed.json
 > written), readers accessing BC-INDEX paths MUST use the following protocol:
 > 1. Check `.factory/migration-state/completed.json` — if exists: canonical paths are current.
 > 2. Check `.factory/migration-state/CURRENT.json` — if `status: committing`: for each
 >    required file, try `gen-<generation_id>/` path FIRST; if absent (already renamed to
 >    canonical), fall back to canonical path. (generation-first / canonical-fallback per
 >    ADR-052 §Decision 7c)
-> 3. If neither CURRENT.json nor COMPLETED.json exists: legacy BC-INDEX.md path is current.
-> In steady state (COMPLETED.json present), canonical paths are always authoritative."
+> 3. If neither CURRENT.json nor completed.json exists: legacy BC-INDEX.md path is current.
+> In steady state (completed.json present), canonical paths are always authoritative."
 
 ### error-taxonomy.md correction (v1.3 update — replaces v1.2 text)
 
@@ -1358,7 +1537,7 @@ product-owner. DO NOT edit BC bodies directly — route all changes via product-
 | Postcondition 3 (§Amendment 6) | "dir-fsync is mandatory, not best-effort" (applies to all platforms) | Replace with: Linux mandatory dir-fsync; macOS F_FULLFSYNC on file mandatory; dir-fsync best-effort only on APFS |
 | Postcondition 3a (§Amendment 7) | Single TOCTOU check before first rename; abort leaves BC-INDEX.md untouched | Update: fingerprint check still single; but now occurs before CURRENT.json pointer swap (step 5 in §Decision 7c), not before first rename |
 | Invariant 3 (§Amendment 8) | "COMMITTED marker is the sole commit-point"; references `completed_renames` | Replace with: CURRENT.json pointer swap (atomic rename) is the sole commit-point; forward recovery uses intent log + matching-hash rule |
-| Architecture Anchors (§Amendment 9) | References §Decision 7a PID+activation_id lock file; §Decision 7 per-file rename sequence | Replace with: §Decision 7a advisory flock + txn record; §Decision 7b intent log; §Decision 7c CURRENT.json pointer swap + COMPLETED.json |
+| Architecture Anchors (§Amendment 9) | References §Decision 7a PID+activation_id lock file; §Decision 7 per-file rename sequence | Replace with: §Decision 7a advisory flock + txn record; §Decision 7b intent log; §Decision 7c CURRENT.json pointer swap + completed.json |
 
 **v1.4 additional changes to BC-1.18.011 (product-owner must apply):**
 
@@ -1417,9 +1596,9 @@ Product-owner to update EC-003's §4e citation to "ADR-052 §Decision 7c step 3b
 
 | Section | v1.2 text (to replace) | v1.3 change required |
 |---|---|---|
-| §Reader Integration | "COMMITTED absent → read legacy BC-INDEX.md"; COMMITTED archived at CLEANED | Replace entire section with v1.3 reader protocol (COMPLETED.json check first; CURRENT.json generation pinning second; legacy only if neither exists) |
-| §Reader Integration steady state | "after CLEANED, shard paths are canonical; COMMITTED archived" | Replace: COMPLETED.json is permanent + authoritative; no archiving of any terminal record |
-| Invariant 3 (if present) | References COMMITTED marker as commit-pointer | Update to: CURRENT.json pointer swap is the commit-point; COMPLETED.json is the terminal record |
+| §Reader Integration | "COMMITTED absent → read legacy BC-INDEX.md"; COMMITTED archived at CLEANED | Replace entire section with v1.3 reader protocol (completed.json check first; CURRENT.json generation pinning second; legacy only if neither exists) |
+| §Reader Integration steady state | "after CLEANED, shard paths are canonical; COMMITTED archived" | Replace: completed.json is permanent + authoritative; no archiving of any terminal record |
+| Invariant 3 (if present) | References COMMITTED marker as commit-pointer | Update to: CURRENT.json pointer swap is the commit-point; completed.json is the terminal record |
 
 **v1.4 additional changes to BC-1.18.010 (product-owner must apply):**
 
@@ -1447,10 +1626,12 @@ per v1.3 correction above).
 
 ## References
 
-- `adv-cv-adr052-v12-closure-2026-09-13.md` — 3rd Codex cross-vendor closure review (11 findings, D-1218) that prompted this v1.3 redesign
-- `research-adr-052-v13-atomic-publication-2026-09-13.md` — research brief grounding this v1.3 architecture (atomic publication, intent log, advisory flock, F_FULLFSYNC, fexecve/execveat)
+- `adv-local-adr052-pass3.md` — local cascade pass-3 (D-1223, this burst): 12 findings NOT RATIFIABLE (1C+4H+5M+2L), producing this v1.6 fix-burst
+- `adv-cv-adr052-v12-closure-2026-09-13.md` — 3rd Codex cross-vendor closure review (11 findings, D-1218) that prompted the v1.3 redesign
+- `research-adr-052-v13-atomic-publication-2026-09-13.md` — research brief grounding the v1.3 architecture (atomic publication, intent log, advisory flock, F_FULLFSYNC, fexecve/execveat)
 - `adv-cv-adr052-v11-closure-2026-09-12.md` — 2nd Codex closure review, 8 findings (D-1216)
 - `adv-cv-adr052-cluster5-F1-2026-09-12.md` — 1st Codex RATIFY-WITH-CHANGES verdict (7 findings, D-1214)
+- Decision log D-1221 (local pass-1, 9 findings, producing v1.4), D-1222 (local pass-2, 9 findings, producing v1.5), D-1223 (local pass-3, 12 findings, producing v1.6)
 - `research-adr-052-assumption-validation-2026-09-12.md` — prior research Q1-Q5 validation
 - `BC-1.18.011` — migration BC; §Downstream to Product-Owner specifies amendments
 - `BC-1.18.010` — §Reader Integration amendment + Invariant 2 amendment
@@ -1483,8 +1664,8 @@ per v1.3 correction above).
 | `plugins/vsdd-factory/hooks/validate-factory-path-staging.sh` (or WASM) | 4-branch classifier; conservative Bash admission; executable digest verification + fd-binding per §Decision 11 | devops-engineer |
 | `plugins/vsdd-factory/hooks/validate-factory-path-staged.sh` (or WASM) | Recognize governed migration subcommands; pass through | devops-engineer |
 | `crates/factory-dispatcher/src/executor.rs` | OPEN/DRAINING gate with writer reservations (PreToolUse-acquire/PostToolUse-release); durable reservation dir `.factory/migration-state/reservations/` (H2 v1.4); atomic admission under gate_state flock; every abort path flips gate → OPEN (H1 v1.4); crash-recovery gate reconciliation; stale reservation cleanup; txn record state check blocking mutations | implementer (cluster-5 TDD) |
-| `crates/factory-dispatcher/src/shard_manager.rs` | Full v1.4 migration implementation: advisory flock; txn record; intent log (framed+checksummed); step 3b pre-pivot census gate (H3); CURRENT.json pointer swap + canonical-first/generation-fallback reader (C1); COMPLETED.json; 4-branch recovery; platform-branched durability (F_FULLFSYNC on macOS); fd-binding exec on Linux with /proc dependency note; programmatic mtime guard on macOS (M5); all abort paths flip gate → OPEN (H1); fencing_generation AUDIT-ONLY (M1) | implementer (cluster-5 TDD) |
-| `crates/factory-dispatcher/tests/` | v1.4 test suite: advisory flock; txn record state machine; intent log write+recovery+fault-injection; step 3b census gate (PC1/PC2/E-SHD-005); CURRENT.json pointer swap + canonical-first reader (C1); COMPLETED.json permanence; all abort paths → gate OPEN (H1); reservation dir cross-process quiescence (H2); 4-branch guard logic; conservative Bash admission (txn=STAGING or COMMITTING); digest mismatch abort; Linux execveat AT_EMPTY_PATH; macOS mtime guard + freeze-build; platform durability; validate_write_target() dot-lowercase + rejection of hyphen-uppercase (C2 ratification test) | implementer (cluster-5 TDD) |
+| `crates/factory-dispatcher/src/shard_manager.rs` | Full v1.6 migration implementation: advisory flock; txn record; intent log (framed+checksummed); step 3b pre-pivot census gate — staging-integrity + PC1 (byte-for-byte reconstruct vs source_sha256) + PC2 (per-ID exactly-one-shard set check; EC-001 dup+drop detection); CURRENT.json pointer swap + generation-first/canonical-fallback reader; completed.json; 4-branch recovery; platform-branched durability (F_FULLFSYNC on macOS); fd-binding exec on Linux with /proc dependency note; programmatic mtime guard on macOS (M-2: mtime re-stat immediately before exec); stale-PID GC at start of every drain (M-5); all abort paths flip gate → OPEN; fencing_generation AUDIT-ONLY | implementer (cluster-5 TDD) |
+| `crates/factory-dispatcher/tests/` | v1.6 test suite: advisory flock; txn record state machine; intent log write+recovery+fault-injection; step 3b census gate (staging-integrity + PC1 concat-SHA vs source_sha256 + PC2 ID-set + EC-001 dup+drop + E-SHD-005); CURRENT.json pointer swap + generation-first reader; completed.json permanence; all abort paths → gate OPEN; Branch 2 gate reconciliation (H-2 fault injection: crash between step 8 and gate→OPEN, then ALREADY_MIGRATED reconciles gate); reservation dir cross-process quiescence (H-2); stale-PID GC on first-run drain (M-5); 4-branch guard logic; conservative Bash admission (txn=STAGING or COMMITTING); digest mismatch abort; Linux execveat AT_EMPTY_PATH; macOS mtime guard (pre-exec re-stat) + freeze-build; platform durability; validate_write_target() dot-lowercase + rejection of hyphen-uppercase (C2 ratification test) | implementer (cluster-5 TDD) |
 | `crates/factory-dispatcher/tests/darwin_arm64_durability_test.rs` | Empirical darwin-arm64 directory-fsync durability characterization test (required to validate APFS dir-fsync behavior; flags whether dir-fsync provides any power-loss protection beyond F_FULLFSYNC alone) | implementer (cluster-5 TDD) — darwin-arm64 CI required |
 | `.factory/activation/factory-dispatcher.sha256` | SHA-256 of built binary | devops-engineer (cluster-5 activation) |
 | `.factory/activation/` | Created at F4 by state-manager | state-manager |
@@ -1495,9 +1676,10 @@ per v1.3 correction above).
 
 | Version | Date | Author | Change |
 |---|---|---|---|
-| 1.5 | 2026-09-13 | architect | Fix-burst resolving 9 ADR-owned findings from 5th adversarial review (1 CRITICAL + 4 HIGH + 7 MEDIUM). C-1 — Reader protocol regression fixed: v1.4's canonical-first/generation-fallback inverted to generation-first/canonical-fallback; generation-first is correct for BOTH net-new shards AND BC-INDEX.md (in-place overwrite target whose canonical path holds OLD monolithic body until step 7's rename); fault-injection reader test mandate added. H-1 — ADR made self-contained: §Decision 6 audit-trail decision inlined from v1.2 (COMPLETED.json substituted for COMMITTED phase marker per v1.3 redesign); §Decision 8 skipped-control inventory table inlined from v1.2; §Downstream Amendments 1–3 fully inlined from v1.2; no "see v1.2 §" dangling references remain. H-2 — mtime guard corrected: re-stat moved to IMMEDIATELY BEFORE execve call; previous "after exec returns" fired only on exec failure (execve never returns on success); "Human sign-off required" updated with corrected residual-risk semantics (sub-instruction window, not digest-check-to-exec window). H-3 — Reservation UUID corrected: PreToolUse creates `<tool_use_id>.reservation` using stable harness tool-invocation ID shared across Pre/Post hook pair; PostToolUse removes it by same tool_use_id without shared in-process state; test mandates added (Pre-creates/Post-removes; stale-PID cleanup). H-4 — Load-bearing version pins removed: CLAUDE.md amendment text updated from "ADR-052 v1.4 EXCEPTION" to "ADR-052 EXCEPTION"; all "see v1.2 §" refs inlined (H-1); BC-impact handoff directs PO to use stable §Decision N form throughout. M-2 — ADR-051 §Decision 10 amended: "at the SAME F4 activation moment mechanism A's backfill runs" coupling removed; B2 sub-split occurs within same one-time B2 operation independently of mechanism A schedule; ADR-051 bumped to v1.14. M-3 — E-MAINTENANCE corrected to E-MAINTENANCE-001 throughout (error-taxonomy.md SoT). M-4 — §Downstream BC-1.18.010 §Reader Integration: stale v1.3 "use gen-uuid/ paths" instruction deleted; single correct generation-first/canonical-fallback instruction kept consistent with C-1. M-6 — Bash admission and reservation: explicit text added to §5a that admitted Bash mutations with write effect create `<tool_use_id>.reservation`; §5c classifier determines write-effect; quiescence waits for all Bash reservations; test mandate added. Observations: L-2 validate_write_target() positive test cases added for BC-INDEX.md and BC-INDEX.shard-manifest.toml; L-3 mechanism-A wildcard bounded by config-driven exact paths documented; L-4 30s drain-timeout liveness note added. BC impact for product-owner: C-1 generation-first reader update (BC-1.18.010 §Reader Integration + BC-1.18.011 Invariant 3); H-4 version-pin cleanup (BC-1.18.010/011 + error-taxonomy); M-1 ADR-052 traceability row to BC-1.18.011 Architecture Anchors; L-1 error-taxonomy header audit; L-5 BC-1.18.011 EC-003 step citation correction. inputs: fix: removed non-existent adv-cv-adr052-v13-closure-2026-09-13.md. |
+| 1.6 | 2026-09-13 | architect | Fix-burst resolving all 12 findings from 6th adversarial review (local cascade pass-3, D-1223): 1 CRITICAL + 4 HIGH + 5 MEDIUM + 2 LOW. C-1 — Step 3b census gate was a tautology: renamed sha256(staged)==expected_post_hash check as staging-integrity (what it actually is, not PC1); added true PC1 (reconstruct concatenation → compare SHA-256 against source_sha256 from txn record); rewrote PC2 as per-ID set check (each ID in EXACTLY ONE shard, ZERO in retained body; count comparison alone insufficient — EC-001 dup+drop case must abort). H-1 — §4e table re-keyed on TXN-RECORD state (STAGING/COMMITTING/COMPLETED/ABORTED) per BC-1.18.011 Invariant 3's discriminator; impossible "CURRENT.json status:staging" row deleted. H-2 — Branch 2 ALREADY_MIGRATED path now reconciles stale gate before exit 0: acquire gate LOCK_EX; if gate≠OPEN and completed.json present with no active txn: flip→OPEN; fault-injection test mandate added. H-3 — Source/Origin and References: removed all citations to non-existent adv-cv-adr052-v13-closure-2026-09-13.md; replaced with real provenance (local cascade D-1221/D-1222/D-1223; adv-local-adr052-pass3.md being written this burst); Status finding-count corrected. H-4 — §Downstream Amendments 7/8/9 placeholder text replaced with exact replacement text mirroring BC-1.18.011 v1.5 (CURRENT.json pointer swap as commit-point; intent log recovery; completed.json permanent terminal record). M-1 — §5a PreToolUse: explicit text that admission checks BOTH gate_state AND txn-record state; gate_state is the durable proxy; either gate≠OPEN OR active txn (STAGING/COMMITTING) → E-MAINTENANCE-001. M-2 — macOS verify_and_exec_binary code sample: mtime re-stat added immediately before exec_by_pathname call (prose-code gap from H-2 v1.4 closure). M-3 — step 3c and §Error Code Semantics aligned: CONTENT_PRESERVATION_ABORT for PC1 (concat-vs-source_sha256) failures; CENSUS_MISMATCH_ABORT for PC2 (ID-set) and E-SHD-005 (boundary) failures; binary surfaces process exit codes, not HookResult. M-4 — CLAUDE.md amendment: .factory/cycles/*/ wildcard replaced with the four exact append-log paths (decision-log.md, burst-log.md, lessons.md, session-checkpoints.md in v1.0-brownfield-backfill). M-5 — Stale-reservation GC moved to start of EVERY drain (step 1 of drain procedure), not only recovery startup. L-1 — H1 title: "(v1.4 Fix-Burst)" version pin stripped. L-2 — Casing: all path-bearing references aligned to lowercase completed.json. inputs[] + adv-local-adr052-pass3.md. |
+| 1.5 | 2026-09-13 | architect | Fix-burst resolving 9 ADR-owned findings from 5th adversarial review (1 CRITICAL + 4 HIGH + 7 MEDIUM). C-1 — Reader protocol regression fixed: v1.4's canonical-first/generation-fallback inverted to generation-first/canonical-fallback; generation-first is correct for BOTH net-new shards AND BC-INDEX.md (in-place overwrite target whose canonical path holds OLD monolithic body until step 7's rename); fault-injection reader test mandate added. H-1 — ADR made self-contained: §Decision 6 audit-trail decision inlined from v1.2 (completed.json substituted for COMMITTED phase marker per v1.3 redesign); §Decision 8 skipped-control inventory table inlined from v1.2; §Downstream Amendments 1–3 fully inlined from v1.2; no "see v1.2 §" dangling references remain. H-2 — mtime guard corrected: re-stat moved to IMMEDIATELY BEFORE execve call; previous "after exec returns" fired only on exec failure (execve never returns on success); "Human sign-off required" updated with corrected residual-risk semantics (sub-instruction window, not digest-check-to-exec window). H-3 — Reservation UUID corrected: PreToolUse creates `<tool_use_id>.reservation` using stable harness tool-invocation ID shared across Pre/Post hook pair; PostToolUse removes it by same tool_use_id without shared in-process state; test mandates added (Pre-creates/Post-removes; stale-PID cleanup). H-4 — Load-bearing version pins removed: CLAUDE.md amendment text updated from "ADR-052 v1.4 EXCEPTION" to "ADR-052 EXCEPTION"; all "see v1.2 §" refs inlined (H-1); BC-impact handoff directs PO to use stable §Decision N form throughout. M-2 — ADR-051 §Decision 10 amended: "at the SAME F4 activation moment mechanism A's backfill runs" coupling removed; B2 sub-split occurs within same one-time B2 operation independently of mechanism A schedule; ADR-051 bumped to v1.14. M-3 — E-MAINTENANCE corrected to E-MAINTENANCE-001 throughout (error-taxonomy.md SoT). M-4 — §Downstream BC-1.18.010 §Reader Integration: stale v1.3 "use gen-uuid/ paths" instruction deleted; single correct generation-first/canonical-fallback instruction kept consistent with C-1. M-6 — Bash admission and reservation: explicit text added to §5a that admitted Bash mutations with write effect create `<tool_use_id>.reservation`; §5c classifier determines write-effect; quiescence waits for all Bash reservations; test mandate added. Observations: L-2 validate_write_target() positive test cases added for BC-INDEX.md and BC-INDEX.shard-manifest.toml; L-3 mechanism-A wildcard bounded by config-driven exact paths documented; L-4 30s drain-timeout liveness note added. BC impact for product-owner: C-1 generation-first reader update (BC-1.18.010 §Reader Integration + BC-1.18.011 Invariant 3); H-4 version-pin cleanup (BC-1.18.010/011 + error-taxonomy); M-1 ADR-052 traceability row to BC-1.18.011 Architecture Anchors; L-1 error-taxonomy header audit; L-5 BC-1.18.011 EC-003 step citation correction. inputs: fix: removed non-existent adv-cv-adr052-v13-closure-2026-09-13.md. |
 | 1.4 | 2026-09-13 | architect | Fix-burst resolving 9 ADR-owned findings from 4th adversarial review (2 CRITICAL + 5 HIGH + 2 MEDIUM). C1 — Reader no-content window: reader protocol changed to canonical-first / generation-dir-fallback during committing; gen-uuid/ clarified as CONTENT-IMMUTABLE (not moved-out-immutable); readers never see ENOENT during step 7 progress. C2 — F10 allowlist normalization: dot-lowercase BC-INDEX-SS-NN.a.md / .b.md / .c.md; generic BC-INDEX-SS-NN.manifest.toml; validate_write_target() accepts dot-letter pattern; CLAUDE.md amendment regenerated; ratification-time test mandate added. H1 — Abort gate-stuck: every abort path now atomically flips gate to OPEN; crash-recovery reconciles stale LOCKED/DRAINING with no active txn to OPEN; fault-injection test mandate added. H2 — Cross-process writer reservation: per-event dispatcher model stated; active_writer_count replaced by durable reservation dir .factory/migration-state/reservations/; PreToolUse admission atomic under gate_state lock; coordinator polls dir for emptiness. H3 — Missing pre-pivot census gate: new step 3b (content-preservation + census gate) inserted between intent-log WAL and authorization gate; verifies PC1+PC2+E-SHD-005; on failure: ABORT, txn ABORTED, gate OPEN; resume-from-STAGING RE-RUNs census (EC-003). H4 — PREPARED state name: all PREPARED occurrences in §5c and F5/F7 rows replaced with STAGING; §7a enum STAGING\|COMMITTING\|COMPLETED\|ABORTED is authoritative. M1 — Fencing token audit-only: fencing_generation downgraded from enforcement to AUDIT-ONLY metadata; flock provides actual mutual exclusion; prove-authority language removed. M2 — Pivot step contradiction: §4d corrected to reference step 6 (not step 4) for pointer swap; auth gate=step 4, fingerprint=step 5, pointer swap=step 6; BC-1.18.011 PC3a step correction noted for PO. M5 — macOS primary operator platform: darwin-arm64 identified as primary runtime with residual TOCTOU; Linux is where TOCTOU is eliminated; no-concurrent-build elevated to hard checklist with programmatic mtime guard; /proc dependency documented. Error Code Semantics section added. BC Impact handoff expanded with v1.4-specific changes. |
-| 1.3 | 2026-09-13 | architect | Full redesign per D-1218 (3rd Codex cross-vendor closure review, 11 findings, NOT RATIFIABLE). Adopts atomic-pointer architecture from research-adr-052-v13-atomic-publication-2026-09-13.md. Closes all 11 findings: F1/F9 — single atomic CURRENT.json pointer swap over immutable staging generation; COMPLETED.json as permanent terminal record; eliminates ambiguous-absence heuristic. F2 — framed checksummed intent log with per-target expected post-hash + pre-state; matching-destination-hash recovery; fail-closed recovery decision table; fault-injection test mandate. F3 — real OPEN/DRAINING admission gate with PreToolUse-acquire/PostToolUse-release writer reservations; wait for active_writer_count=0 before snapshot; no non-atomic shared→exclusive flock upgrade. F4 — advisory flock on stable pre-created never-unlinked inode; fail-closed on empty/corrupt metadata by acquire-first; automatic stale reclamation via kernel on process death. F5 — durable txn record separate from flock; ordinary writers blocked by txn state (STAGING/COMMITTING) regardless of PID liveness; recovery-owner bumps fencing_generation to claim ownership; releasing flock never deletes txn record. F6 — authorization gate moved to immediately before CURRENT.json pointer swap (single pivot); post-pivot COMMITTING state retained regardless of expiry; completion-only recovery manifest bound to old activation_id + staged-generation hash + fencing generation (replaces fresh activation). F7 — conservative Bash admission: block unknown-write-effect commands while txn record in STAGING/COMMITTING; classify sanctioned commands from config-driven target sets; canonicalization + alias rejection. F8 — four guard branches: census (no manifest), terminal-state no-op (COMPLETED.json check), new activation (full validation), recovery (completion-only manifest); manifest/flock required only for new activation and recovery branches. F10 — single authoritative allowed-write-targets list; CLAUDE.md amendment generated from that exact list with containment check at every write; sub-shards (.a.md/.b.md), BC-INDEX.shard-manifest.toml, BC-INDEX-SS-05.manifest.toml added. F11 — Linux: fexecve/execveat(AT_EMPTY_PATH) for fd-binding exec; macOS: fexecve UNAVAILABLE per Apple docs; decision: freeze build under maintenance lock + documented residual TOCTOU; human sign-off required at ratification. Platform durability: Linux fsync+dir-fsync (mandatory); macOS F_FULLFSYNC on file (mandatory per Apple docs); APFS directory-fsync best-effort only (Apple docs inconclusive); darwin-arm64 empirical durability test required. Corrects v1.2 Amendment 6 which incorrectly treated dir-fsync as mandatory on all platforms. |
+| 1.3 | 2026-09-13 | architect | Full redesign per D-1218 (3rd Codex cross-vendor closure review, 11 findings, NOT RATIFIABLE). Adopts atomic-pointer architecture from research-adr-052-v13-atomic-publication-2026-09-13.md. Closes all 11 findings: F1/F9 — single atomic CURRENT.json pointer swap over immutable staging generation; completed.json as permanent terminal record; eliminates ambiguous-absence heuristic. F2 — framed checksummed intent log with per-target expected post-hash + pre-state; matching-destination-hash recovery; fail-closed recovery decision table; fault-injection test mandate. F3 — real OPEN/DRAINING admission gate with PreToolUse-acquire/PostToolUse-release writer reservations; wait for active_writer_count=0 before snapshot; no non-atomic shared→exclusive flock upgrade. F4 — advisory flock on stable pre-created never-unlinked inode; fail-closed on empty/corrupt metadata by acquire-first; automatic stale reclamation via kernel on process death. F5 — durable txn record separate from flock; ordinary writers blocked by txn state (STAGING/COMMITTING) regardless of PID liveness; recovery-owner bumps fencing_generation to claim ownership; releasing flock never deletes txn record. F6 — authorization gate moved to immediately before CURRENT.json pointer swap (single pivot); post-pivot COMMITTING state retained regardless of expiry; completion-only recovery manifest bound to old activation_id + staged-generation hash + fencing generation (replaces fresh activation). F7 — conservative Bash admission: block unknown-write-effect commands while txn record in STAGING/COMMITTING; classify sanctioned commands from config-driven target sets; canonicalization + alias rejection. F8 — four guard branches: census (no manifest), terminal-state no-op (completed.json check), new activation (full validation), recovery (completion-only manifest); manifest/flock required only for new activation and recovery branches. F10 — single authoritative allowed-write-targets list; CLAUDE.md amendment generated from that exact list with containment check at every write; sub-shards (.a.md/.b.md), BC-INDEX.shard-manifest.toml, BC-INDEX-SS-05.manifest.toml added. F11 — Linux: fexecve/execveat(AT_EMPTY_PATH) for fd-binding exec; macOS: fexecve UNAVAILABLE per Apple docs; decision: freeze build under maintenance lock + documented residual TOCTOU; human sign-off required at ratification. Platform durability: Linux fsync+dir-fsync (mandatory); macOS F_FULLFSYNC on file (mandatory per Apple docs); APFS directory-fsync best-effort only (Apple docs inconclusive); darwin-arm64 empirical durability test required. Corrects v1.2 Amendment 6 which incorrectly treated dir-fsync as mandatory on all platforms. |
 | 1.2 | 2026-09-13 | architect | Full redesign per D-1216 (2nd Codex RATIFY-WITH-CHANGES 8 findings). Resolves: F1 — native admission gate added in `executor.rs` covering ALL mutation tools (Edit/Write/MultiEdit/Bash) before shard_cap_precheck, replacing the `^Bash$`-only guard-level check; drain protocol via TOCTOU abort. F2 — per-target completion tracking in PREPARED marker + single TOCTOU check before first rename (not repeated between renames) resolves COMMITTED-after-last-rename vs "original untouched" contradiction; reader integration protocol specified (COMMITTED marker as read-path selector for BC-1.18.010). F3 — content-bearing lock file with PID+activation_id separates persistent maintenance intent from OS advisory lock; pre-PREPARED crash recovery path defined; stale-lock recovery specified. F4 — two-phase manifest validation: pre-lock (lightweight) then under-exclusion (repo_root_sha, expected_total_bcs, three-way ARCH-INDEX parity, readiness); pre-publication expiry recheck before COMMITTED; manifest CONSUMED marking replaces deletion (resolves "absent=rejected" vs "already-migrated=exit0" contradiction); three expiry-safe recovery modes defined. F5 — explicit three-way activation-time parity check: config.arch_index_sha == manifest.approved_arch_index_sha == live ARCH-INDEX SHA; catches stale-binary case (revision A config + revision B manifest + revision B live). F6 — accurate skipped-control inventory: brownfield-discipline description corrected to ".reference/ write protection"; factory-branch-guard row added with explicit waiver; validate-factory-path-staged PostToolUse Bash corrected from "bypassed" to "MUST be amended." F7 — full-command pre-shell classifier moved to guard layer (validate-factory-path-staging + destructive-command-guard) with executable digest verification; removed impossible "binary rejects metacharacters post-shell-parse" claim; negative tests specified. F8 — CLAUDE.md amendment text expanded to include BC-INDEX.md + migration-state/ + activation/ + migration-audit/ + config-specified mech-A targets; preconditions (a-e) separated from post-success obligations (f-g); CLAUDE.md rule referenced by text anchor not line number; 4 guard amendments listed (vs 3 in v1.1). Downstream to Product-Owner: Amendment 5 corrected (Edit/Write → ALL mutation tools via native admission gate); error-taxonomy.md correction added; BC-1.18.010 §Reader Integration section added. NOT RATIFIED per D-1218. |
 | 1.1 | 2026-09-12 | architect | Full revision per D-1214 (1st Codex RATIFY-WITH-CHANGES 7 findings + research Q1-Q5). Mechanism changed from Option C (hardened standing allowlist) to Option B (one-time interactive Bash approval at F4, no settings.json change). Option A re-evaluated honestly. Declares explicit narrowly-authorized policy exception (§Decision 8). Activation-manifest authorization mechanism added (§Decision 4). 9 PreToolUse `^Bash$` dispatcher guards enumerated (§Decision 5). Audit trail upgraded to factory-artifacts commit satisfying NIST AU-9 (§Decision 6). Crash-atomicity phase markers, TOCTOU pre-commit guard, dir-fsync mandate added (§Decision 7). Config snapshot bound to ARCH-INDEX revision with activation-time parity check (§Decision 10). BC-1.18.011 Amendments 1-9 and BC-1.18.010 Invariant 2 amendment specified. NOT RATIFIED per D-1216. |
 | 1.0 | 2026-09-12 | architect | Initial authoring. Resolves CV-DIR-F2 (impossible execution path). Specifies Bash-tool-with-allowlist as sanctioned invocation path for both mechanism-A (S-25.06) and mechanism-B2 (BC-1.18.011) migrations. NOT RATIFIED per D-1214. |

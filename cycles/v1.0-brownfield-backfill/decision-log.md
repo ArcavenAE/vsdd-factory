@@ -10782,3 +10782,64 @@ Cluster-5 TDD remains BLOCKED until POLICY 22 ratification.
 ### Canonical 6-column row (STATE.md Decisions Log)
 
 | D-1222 | D-1222-ADR052-V15-LOCAL-ADV-PASS2-FIX-BURST | **ADR-052 v1.5 + ADR-051 v1.14 fix burst committed (state-manager, single-commit TD-VSDD-053; D-1222): in-house adversary LOCAL pass-2 = NOT-RATIFIABLE (1C+4H+7M); all 12 findings closed — C-1 reader protocol INVERTED generation-first/canonical-fallback (v1.4 canonical-first was regression for BC-INDEX.md in-place overwrite target); H-1 self-contained skipped-control inventory inlined + dangling refs removed; H-2 mtime re-stat immediately pre-execve (corrected residual-risk: sub-instruction stat→execve gap); H-3 tool_use_id reservations (stable harness ID, no in-process shared state); H-4 version pins removed (stable §Decision N form); M-1 ADR-052 traceability row +BC-1.18.011 Architecture Anchors; M-2 ADR-051 §D10 item 6 activation-coupling removed (ADR-051 v1.13→v1.14); M-3 E-MAINTENANCE-001 corrected throughout; M-4 stale reader instruction removed from §Downstream BC-1.18.010; M-6 Bash reservation documented §5a; L-1..L-5+inputs-fix. BC-1.18.010 v1.6→v1.7; BC-1.18.011 v1.4→v1.5; error-taxonomy.md v1.21→v1.22. ARCH-INDEX v4.31→v4.32 (SS-01 shard_manager.rs added M-5); BC-INDEX v5.91→v5.92. Input-hashes: ADR-052 080d460 (PASS) / BC-1.18.010 9c03116 (PASS) / BC-1.18.011 5da155e (cascade-stale circular dep pre-existing OWED #3) / error-taxonomy c86c32c (PASS) / ADR-051 no-inputs. [D-1222-DRIFT-001] NEW drift item: prd.md §5.1 does NOT enumerate MIG+MAINTENANCE error categories — owed before POLICY 22 ratification (cluster-5 PRD sync, E-12). [D-1221-PG-001] CONFIRMED STILL OPEN: MIG codes inherit same Display-parity risk (L-6 adversary pass-2 re-flag); anchor S-12.13 unchanged. BC-5.39.001 LOCAL streak 0/3 (pass-3 next). POLICY 22 OPEN — TWO sign-off items with CORRECTED semantics: (i) macOS exec-TOCTOU sub-instruction stat→execve gap + no-concurrent-cargo-build pre-flight; (ii) APFS darwin-arm64 durability test. OWED #2+#3 unchanged. Cluster-5 TDD BLOCKED. pipeline: PAUSED.** | S-25.02 F4 | 2026-09-13 |
+
+## D-1223: ADR-052 v1.6 Deep-Consolidated Fix Burst — In-House Adversary LOCAL Pass-3 (1C+4H Closed)
+
+**Decision ID:** D-1223
+**Slug:** D-1223-ADR052-V16-LOCAL-ADV-PASS3-FIX-BURST
+**Context:** S-25.02 F4 cluster-5 F1; ADR-052 cascade
+**Date:** 2026-09-13
+**Author:** state-manager
+
+### Context
+
+ADR-052 v1.5 was committed at D-1222. The in-house LOCAL adversary cascade continued with pass-3 (fresh-context, reads only pass-2 Part A per Iron Law). The adversary returned NOT-RATIFIABLE with 1 CRIT + 4 HIGH + 5 MED + 2 LOW (12 findings total). The pass-3 adversary review is now persisted as `adv-local-adr052-pass3.md` (closing finding H-3).
+
+Architect closed the CRIT finding (C-1) and HIGH findings (H-1..H-4) via ADR-052 v1.6, a deep-consolidated fix addressing all findings at prose + code sample + predicate level. This is the deepest-level fix burst in the ADR-052 cascade — the census gate tautology (C-1) required redesigning both PC1 and PC2 at a structural level.
+
+### Findings Summary
+
+| ID | Severity | Description | Resolution |
+|----|----------|-------------|------------|
+| C-1 | CRIT | Step 3b "content-preservation (PC1)" was a self-referential tautology: `expected_post_hash = sha256(staging_file)` then `verify sha256(staged)==expected_post_hash` — trivially always TRUE regardless of content. BC-1.18.011 PC1 byte-for-byte reconstruction and PC2/PC2a exactly-one-shard census NOT enforced; EC-001 (dup-one/drop-one, same count) would pass the pivot. Governance-integrity gate inert. | PC1 rewritten: reconstruct concatenation from intent log, compare SHA-256 vs `source_sha256` from txn record (NOT vs a re-hash of the staging file itself). PC2 rewritten as per-ID set check: each ID in EXACTLY ONE shard, ZERO in retained body; count comparison alone insufficient — EC-001 dup+drop case must now abort with CENSUS_MISMATCH_ABORT. ADR-052 v1.6 §Decision 3 (PC1+PC2 step 3b). |
+| H-1 | HIGH | §4e resume table keys on `CURRENT.json status:staging`, which is never written (CURRENT.json first written at step-6 pivot); STAGING crash matches no row. | §4e table re-keyed on txn-record state discriminator (STAGING/COMMITTING/COMPLETED/ABORTED) per BC-1.18.011 Invariant 3; the impossible "CURRENT.json status:staging" row deleted. ADR-052 v1.6 §4e. |
+| H-2 | HIGH | Crash between `completed.json` write and gate→OPEN flip leaves gate permanently LOCKED; ALREADY_MIGRATED fast-path never acquires flock so never reconciles. | Branch-2 ALREADY_MIGRATED path now: acquire LOCK_EX; if gate≠OPEN and `completed.json` present with no active txn — flip→OPEN; fault-injection test mandate added. Terminal-no-op path reconciles stale gate before exit 0. ADR-052 v1.6 §4 Branch-2. |
+| H-3 | HIGH | ADR body cited non-existent `adv-cv-adr052-v13-closure-2026-09-13.md`; no source file for in-house passes (passes not persisted). | `adv-local-adr052-pass3.md` persisted at `cycles/v1.0-brownfield-backfill/` (this burst). ADR `inputs[]` updated: `adv-local-adr052-pass3.md` added; non-existent `adv-cv-adr052-v13-closure-2026-09-13.md` removed. Source/Origin section finding-count corrected to 1C+4H+5M+2L. |
+| H-4 | HIGH | §Downstream Amendments 7/8/9 deferred exact text to "next burst" (placeholder). | §Downstream Amendments 7/8/9 fully inlined with exact replacement text mirroring BC-1.18.011 v1.5 (CURRENT.json pointer swap as commit-point; intent log recovery; `completed.json` permanent terminal record). ADR-052 v1.6 §Downstream. |
+| M-1 | MED | Admission discriminator ambiguity: §5a described gate_state as the only discriminator; txn-record state parity not stated. | §5a amended: admission checks BOTH gate_state AND txn-record state; gate_state is the durable proxy; either gate≠OPEN OR active txn (STAGING/COMMITTING) → E-MAINTENANCE-001. |
+| M-2 | MED | macOS `verify_and_exec_binary` code sample omits pre-execve mtime re-stat (prose-code gap from H-2 v1.4 closure — prose had it, code sample did not). | Code sample updated: mtime re-stat added immediately before `exec_by_pathname` call. |
+| M-3 | MED | Census abort triple-coded: `E-SHD-005` vs `CENSUS_MISMATCH_ABORT` vs `CONTENT_PRESERVATION_ABORT` — inconsistent alignment across steps and predicates. | Aligned: CONTENT_PRESERVATION_ABORT for PC1 failures; CENSUS_MISMATCH_ABORT for PC2 (ID-set) and E-SHD-005 (boundary) failures; binary surfaces process exit codes, not HookResult. |
+| M-4 | MED | CLAUDE.md amendment text used `*/` wildcard for append-log paths — not human-auditable; 4 exact paths not enumerated. | CLAUDE.md amendment amended: `*/` wildcard replaced with 4 exact append-log paths (`decision-log.md`, `burst-log.md`, `lessons.md`, `session-checkpoints.md` in `v1.0-brownfield-backfill`). |
+| M-5 | MED | Stale-reservation GC only at recovery startup — not at every drain. | Stale-reservation GC moved to start of EVERY drain (step 1 of drain procedure), not only recovery startup. |
+| L-1 | LOW | H1 title stale "(v1.4 Fix-Burst)" version pin. | H1 title version pin stripped. |
+| L-2 | LOW | Casing inconsistency: COMPLETED.json vs completed.json throughout. | All path-bearing references aligned to lowercase `completed.json`. |
+| process-gap | PROCESS | BC→ADR "verified at step 3b" cross-ref never mechanically checked (same class as D-1221-PG-001 / S-12.13). | Existing [D-1221-PG-001] + S-12.13 anchor already covers this class. No new item required. |
+
+### Codification
+
+**BC-5.39.001 LOCAL cascade:** pass-3 = NOT-RATIFIABLE. Streak REMAINS 0/3. ADR-052 v1.6 fix burst closes all 12 findings. Adversary pass-4 next (fresh-context, reads only pass-3 Part A per Iron Law).
+
+**HARD STOP gate (per human direction):** if adversary pass-4 does NOT drop below ~3 CRIT+HIGH total, orchestrator MUST escalate to human for a scope/expertise decision rather than looping.
+
+**Index advances this burst:**
+- ARCH-INDEX v4.32 → v4.33 (ADR-052 row v1.5→v1.6; summary: census gate now byte-for-byte + ID-set enumeration; §4e re-keyed on txn state; completion-crash gate reconciliation; provenance fixed; Amendments 7/8/9 inlined)
+- BC-INDEX UNCHANGED (BC-1.18.010 v1.7 / BC-1.18.011 v1.5 — no BC body changes this burst; architect confirmed)
+
+**Input-hashes (post-update):**
+- ADR-052: `0ae730c` (PASS — updated; now includes adv-local-adr052-pass3.md in inputs; prior 080d460 was without this file)
+- error-taxonomy.md: `c86c32c` (PASS — already current; no changes this burst)
+- BC-1.18.010: `9c03116` (PASS — unchanged from D-1222; no BC changes this burst)
+- BC-1.18.011: `5da155e` (cascade-stale circular dep pre-existing OWED #3 — noted, not chased)
+
+**POLICY 22 status:** OPEN. Sign-off items NOW FOUR (expanded from two per D-1222 CORRECTED semantics; H-4 + M-4 resolutions surface two additional items):
+- (i) macOS exec-TOCTOU residual window — sub-instruction stat→execve gap + no-concurrent-cargo-build pre-flight
+- (ii) APFS directory-fsync durability darwin-arm64 test
+- (iii) CLAUDE.md amendment — 4 exact append-log paths (not wildcard; human must review and approve)
+- (iv) 4 dispatcher-guard amendments at cluster-5 activation (architectural sign-off)
+Cluster-5 TDD remains BLOCKED until POLICY 22 ratification.
+
+**OWED (unchanged):** OWED #2 (907-file hash sweep); OWED #3 (ADR-052↔BC circular re-settle). Cluster-5 TDD BLOCKED. prd.md §5.1 MIG/MAINTENANCE sync [D-1222-DRIFT-001] owed before ratification.
+
+### Canonical 6-column row (STATE.md Decisions Log)
+
+| D-1223 | D-1223-ADR052-V16-LOCAL-ADV-PASS3-FIX-BURST | **ADR-052 v1.6 deep-consolidated fix burst committed (state-manager, single-commit TD-VSDD-053; D-1223): in-house adversary LOCAL pass-3 = NOT-RATIFIABLE (1C+4H+5M+2L); all 12 findings closed — C-1 census gate tautology FIXED: PC1 now reconstruct+compare vs source_sha256 (not self-hash); PC2 now per-ID exactly-one-shard set enumeration (EC-001 dup+drop caught); H-1 §4e re-keyed on txn-record state discriminator (STAGING/COMMITTING/COMPLETED/ABORTED; impossible CURRENT.json-status:staging row deleted); H-2 ALREADY_MIGRATED terminal-path acquires LOCK_EX + reconciles stale gate before exit 0; H-3 adv-local-adr052-pass3.md persisted + inputs[] updated; H-4 §Downstream Amendments 7/8/9 fully inlined; M-1 admission gate_state+txn-state parity; M-2 macOS code sample pre-execve mtime re-stat; M-3 census/preservation abort code alignment; M-4 CLAUDE.md wildcard→4 exact append-log paths; M-5 stale-reservation GC at every drain; L-1 H1 title pin stripped; L-2 completed.json casing unified. ADR-052 input-hash 080d460→0ae730c (adv-local-adr052-pass3.md added). error-taxonomy.md v1.22→v1.23 (trigger alignment). ARCH-INDEX v4.32→v4.33. BC-INDEX UNCHANGED v5.92. BC-5.39.001 LOCAL streak 0/3 (adversary pass-4 next; HARD STOP if pass-4 ≥3 CRIT+HIGH). POLICY 22 OPEN — FOUR sign-off items: (i) macOS exec-TOCTOU sub-instruction stat→execve gap + no-concurrent-cargo-build pre-flight; (ii) APFS darwin-arm64 durability test; (iii) CLAUDE.md amendment 4 exact append-log paths; (iv) 4 dispatcher-guard amendments. [D-1222-DRIFT-001] prd.md §5.1 sync OWED pre-ratification (unchanged). OWED #2+#3 unchanged. Cluster-5 TDD BLOCKED. pipeline: PAUSED.** | S-25.02 F4 | 2026-09-13 |

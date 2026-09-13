@@ -823,6 +823,26 @@ S-25.05 (E-25; P2; 8 pts; depends_on [S-25.02]); (b) recurring E-SHD Message-For
 E-SHD-014) → push → pr-manager 9-step PR to develop → merge → worktree cleanup. Tracked
 follow-ups (non-blocking): Obs-B crash-atomicity → S-25.05; E-SHD-lint-gate → S-12.13.**
 
+## S-25.02 F4 Cluster-5 Adversarial Reviews (mechanism-B2 BC-INDEX body-table sharding, BC-1.18.010+011 — LOCAL cascade)
+
+> **Gate:** local-equivalent convergence track for S-25.02 Feature Mode Phase F4 (delta-implementation)
+> cluster-5 (mechanism-B2 BC-INDEX body-table sharding, BC-1.18.010+011). Same in-house LOCAL BC-5.39.001
+> cascade convention as cluster-1/3/4. Scope: ADR-052 spec convergence; POLICY 22 ratification gates
+> cluster-5 TDD dispatch. NOT the cycle-level gate (cycle-level BC-5.39.001 streak stays 3/3 CONVERGED,
+> UNCHANGED throughout this table).
+
+| Pass | Verdict | Findings | Streak | Notes |
+|------|---------|----------|--------|-------|
+| **1** | **NOT-RATIFIABLE** | 12 (2C+5H+5M) | **0/3** | In-house LOCAL adversary, fresh context, ADR-052 v1.3 base (post-Codex redesign). All 12 findings closed by ADR-052 v1.4 fix burst (D-1221). BC-5.39.001 LOCAL streak: 0/3 — RESET. |
+| **2** | **NOT-RATIFIABLE** | 12 (1C+4H+7M) | **0/3** | In-house LOCAL adversary, fresh context, reads only pass-1 Part A. All 12 findings closed by ADR-052 v1.5 + ADR-051 v1.14 fix burst (D-1222). BC-5.39.001 LOCAL streak: 0/3 — REMAINS RESET. |
+| **3** | **NOT-RATIFIABLE** | 12 (1C+4H+5M+2L) | **0/3** | In-house LOCAL adversary, fresh context, reads only pass-2 Part A. All 12 findings closed by ADR-052 v1.6 deep-consolidated fix burst (D-1223): C-1 census gate tautology → real byte-for-byte+ID-set; H-1 §4e txn-state re-key; H-2 terminal-path gate reconciliation; H-3 provenance persisted (`adv-local-adr052-pass3.md`); H-4 §Downstream Amendments 7/8/9 inlined; MEDs at prose+code+predicate level. BC-5.39.001 LOCAL streak: 0/3 — REMAINS. Pass-4 next. HARD STOP if pass-4 ≥3 CRIT+HIGH. |
+
+**Convergence Status (S-25.02 F4 cluster-5 LOCAL cascade): IN PROGRESS — BC-5.39.001 streak 0/3.
+Pass-3 (D-1223) NOT-RATIFIABLE (1C+4H+5M+2L); all 12 findings closed by ADR-052 v1.6. Adversary
+pass-4 next (fresh-context, reads only pass-3 Part A per Iron Law). HARD STOP gate per human
+direction: if pass-4 does NOT drop below ~3 CRIT+HIGH, orchestrator escalates for scope/expertise
+decision. POLICY 22 ratification OPEN (4 sign-off items). Cluster-5 TDD BLOCKED until ratification.**
+
 ## Artifact Size Budgets (IP-003 / D-835)
 
 | Artifact | Soft Cap | Hard Cap | Current Lines | Compaction Destination | Codified |

@@ -8858,3 +8858,24 @@ BC-1.18.010 **v1.6** / BC-1.18.011 **v1.4** (draft). BC-INDEX **v5.91**. ARCH-IN
 **LOCAL cluster-5 streak: 0/3 — RESET** (pass-1 = NOT-RATIFIABLE D-1221; adversary pass-2 next). Cycle-level streak: 3/3 CONVERGED UNCHANGED.
 
 *(Archived 2026-09-13 during D-1222-ADR052-V15-LOCAL-ADV-PASS2-FIX-BURST v10.53→v10.54; replaced by new SRC reflecting ADR-052 v1.5 + ADR-051 v1.14 committed state.)*
+
+---
+
+## Archived Checkpoint: D-1222-ADR052-V15-LOCAL-ADV-PASS2-FIX-BURST (v10.53→v10.54, 2026-09-13)
+
+*(Archived 2026-09-13 during D-1223-ADR052-V16-LOCAL-ADV-PASS3-FIX-BURST v10.54→v10.55; replaced by new SRC reflecting ADR-052 v1.6 deep-consolidated fix committed state.)*
+
+**SELF-SUFFICIENT RESUME CONTEXT.** ADR-052 v1.5 + ADR-051 v1.14 COMMITTED (D-1222; in-house adversary LOCAL pass-2 NOT-RATIFIABLE 1C+4H+7M, all 12 findings closed). BC-5.39.001 LOCAL streak 0/3. **NEXT = adversary pass-3 (fresh-context, reads only pass-2 Part A per Iron Law)** toward 3-CLEAN. PIPELINE REMAINS PAUSED. New: [D-1222-DRIFT-001] prd.md §5.1 MIG+MAINTENANCE sync owed before POLICY 22 ratification.
+
+### §1. Position
+
+2026-09-13. S-25.02 F4 cluster-5 F1; ADR-052 v1.5 + ADR-051 v1.14 COMMITTED (D-1222) — in-house adversary LOCAL pass-2 = NOT-RATIFIABLE (1C+4H+7M); all 12 findings closed. BC-5.39.001 LOCAL streak 0/3. NEXT = adversary pass-3 (fresh context, reads only pass-2 Part A). After 3-CLEAN: HUMAN POLICY 22 ratification (with 2 sign-off items + prd.md §5.1 sync). `pipeline:` PAUSED.
+
+### §2. Convergence
+
+BC-5.39.001 LOCAL cluster-5 streak **0/3 — pass-1 (D-1221) NOT-RATIFIABLE; pass-2 (D-1222) NOT-RATIFIABLE; pass-3 next.** Cycle-level streak: CONVERGED 3/3 (unchanged). ADR-052 LOCAL cascade: pass-1 done (D-1221), pass-2 done (D-1222); pass-3 next toward 3-CLEAN. ADR-052 Codex cross-vendor track (NON-STREAK): paused — Codex held.
+
+### §8. BC-5.39.001 streak (D-1222 state)
+
+**LOCAL cluster-5 streak: 0/3** — pass-1 NOT-RATIFIABLE (D-1221), pass-2 NOT-RATIFIABLE (D-1222); adversary pass-3 next. Cycle-level streak: 3/3 CONVERGED UNCHANGED.
+
