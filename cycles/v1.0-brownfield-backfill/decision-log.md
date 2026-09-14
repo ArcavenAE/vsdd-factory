@@ -11148,3 +11148,61 @@ Cluster-5 TDD remains BLOCKED until POLICY 22 ratification.
 ### Canonical 6-column row (STATE.md Decisions Log)
 
 | D-1228 | D-1228-ADR052-V111-PASS8-FLOCK-SELF-HEAL-REGRESSION | **ADR-052 v1.11 + BC-1.18.010 v1.9 + BC-1.18.011 v1.8 + error-taxonomy v1.28 fix burst committed (state-manager, single-commit TD-VSDD-053; D-1228): in-house adversary LOCAL pass-8 = NOT-RATIFIABLE (1 HIGH + 2 MED + 2 LOW); all findings closed — HIGH-1 REGRESSION: v1.10 generalized self-heal predicate matched live coordinator mid-drain → concurrent writer could reopen gate → writer-exclusion break; fixed via flock(exclusive.lock, LOCK_EX\|LOCK_NB) first-check before reconcile + EWOULDBLOCK→E-MAINTENANCE-001, no gate flip + drain txn=STAGING written at step 2.5 BEFORE DRAINING flip (reorder); MED-1 reader open-with-ENOENT-fallback (§7c step 2a TOCTOU) propagated to §BC-Impact blockquote + BC-1.18.010 v1.9 + BC-1.18.011 v1.8; MED-2 BC-1.18.010 provenance past-tense; LOW-1 residual v1.2 self-refs; LOW-2 table-cell pipe escaped. ARCH-INDEX v4.38→v4.39; BC-INDEX v5.94→v5.95; VP-INDEX v3.22 UNCHANGED. Input-hashes: ADR-052 f4f12f6 (PASS) / BC-1.18.010 6e2d3a3 (updated) / BC-1.18.011 e027627 (updated) / error-taxonomy 605cc2e (updated). NOTE: 2nd fix-induced concurrency-core regression (pass-4 C-1 reader-inversion was 1st); orchestrator global-grep sweeps caught stale reader blockquote + unescaped table-cell pipe that per-agent sweeps missed (S-12.15 propagation-gap). [D-1222-DRIFT-001] prd.md §5.1 UNCHANGED OPEN. [D-1224-DRIFT-001] VP-leg UNCHANGED OPEN. BC-5.39.001 LOCAL streak 0/3 (NOT-RATIFIABLE ≠ CLEAN; pass-9 next toward 3-CLEAN). TRAJECTORY: CRIT+HIGH 7→5→5→2→2→2→1→1 (plateau; tail LENGTH=4 →2→2→1→1). POLICY 22 2 sign-off items (i) macOS exec-TOCTOU; (ii) APFS test RATIFICATION PREREQUISITE — UNCHANGED. OWED #2+#3 unchanged. Cluster-5 TDD BLOCKED. pipeline: PAUSED.** | S-25.02 F5 | 2026-09-13 |
+
+---
+
+## D-1229 — ADR-052 v1.12 + BC-INDEX F1 corrective re-transcription + error-taxonomy v1.29 fix burst (pass-9)
+
+**Date:** 2026-09-13
+**Burst type:** spec fix burst (state-manager, single-commit TD-VSDD-053)
+**Adversary pass:** pass-9 LOCAL (in-house Claude, fresh context, reads only pass-8 Part A per Iron Law)
+**Verdict:** NOT-RATIFIABLE
+
+### Finding Table (pass-9)
+
+| Finding | Severity | Summary | Resolution |
+|---------|----------|---------|------------|
+| F1 | HIGH | BC-INDEX transcription error (state-manager): D-1228 state-manager mis-transcribed the reader direction in BC-1.18.010 v1.9 + BC-1.18.011 v1.8 INDEX catalog cells and v5.95 changelog entry as canonical-first + invented a both-ENOENT CONTENT_PRESERVATION_ABORT abort clause that appears in neither BC bodies nor ADR §Decision 7c | Corrective re-transcription: all three BC-INDEX locations corrected to actual generation-first/canonical-fallback (open gen-<uuid>/<file>; on ENOENT open canonical path; files move one-directionally gen→canonical via atomic rename(2); required file never absent from both paths during COMMITTING window — invented clause deleted); BC-INDEX v5.95→v5.96; NO BC version change |
+| F2 | HIGH | §4e null-STAGING crash sub-state unhandled: v1.11 drain step 2.5 writes txn=STAGING with generation_id=null BEFORE snapshot (drain step 5) and generation UUID assignment (§7c step 1); crash between these leaves null-STAGING with no staged generation directory and null source hashes; EC-003 resume path unconditionally aborts CONTENT_PRESERVATION_ABORT on null source_body_row_sha256 — 3rd fix-induced concurrency/recovery regression in this cascade | §Decision 4e: partition STAGING row on generation_id presence: (a) generation_id=null→DISCARD (delete partial txn, gate→OPEN, EXPIRY_ABORT; MUST NOT census; MUST NOT compare null hashes); (b) generation_id=set AND staged dir present→existing EC-003 resume; fault-injection test mandate added §Decision 5a (ADR-052 v1.12) |
+| F3 | MED | Residual/inverted reader wording in §Downstream + §BC Impact: (a) §Downstream blockquote existence-check language not open-with-ENOENT-fallback; (b) §BC Impact v1.4 Invariant-3 Applied cell had inverted canonical-first direction (known v1.4 regression); (c) stale BC-1.18.010 v1.8 provenance labels; (d) §BC Impact v1.5 C-1 Applied description still used existence-check language | §Downstream blockquote step 2: open(gen-<generation_id>/<file>); on ENOENT, open(canonical/<file>). §BC Impact v1.4 Invariant-3 Applied cell: corrected from canonical-first to generation-first/canonical-fallback. §BC Impact v1.5 C-1 Applied descriptions: open-with-ENOENT-fallback. Stale headers updated BC-1.18.010 v1.8→v1.9 (ADR-052 v1.12) |
+| F4 | MED | §4e ABORTED disposition absent; txn-selection ambiguity when multiple txn-*.json exist; terminal-txn GC policy unspecified — unbounded accumulation in .factory/migration-state/ | §Decision 4e: explicit ABORTED row (treated as no active txn; fresh activation permitted); txn-selection disambiguation rule (match activation_id vs current manifest; highest created_at fallback); GC/archival policy (terminal records archived to .factory/migration-audit/txn-archive/ at next audit burst) (ADR-052 v1.12) |
+| F5 | LOW | error-taxonomy.md v1.28 ALREADY_MIGRATED row Message Format cell: `COMPLETED.json` capitalized; canonical path is `.factory/migration-state/completed.json` (all lowercase); ADR-052 §Error Code Semantics ALREADY_MIGRATED row uses lowercase | error-taxonomy.md v1.28→v1.29: `COMPLETED.json` → `completed.json` in ALREADY_MIGRATED Message Format cell |
+| F6 | LOW | §5c Branch 2 gate reconciliation lacked flock(exclusive.lock, LOCK_EX\|LOCK_NB) pre-check; §Decision 5a step 3.5 and crash-recovery paragraph both require flock-acquirable precondition; Branch 2 silently diverged creating inconsistent reconciliation protocol | §Decision 5c Branch 2: new pre-step 0 — attempt flock(exclusive.lock, LOCK_EX\|LOCK_NB); on EWOULDBLOCK exit 0 ALREADY_MIGRATED WITHOUT reconciling gate; on acquired proceed with gate reconciliation; parity with step 3.5 + crash-recovery path (ADR-052 v1.12) |
+
+### Codification
+
+**BC-5.39.001 LOCAL cascade:** pass-9 = NOT-RATIFIABLE. Streak REMAINS 0/3 (NOT-RATIFIABLE ≠ CLEAN). Adversary pass-10 next (fresh-context, reads only pass-9 Part A per Iron Law).
+
+**TRAJECTORY REVERSED (CRIT+HIGH):** 7→5→5→2→2→2→1→1→2 — reversal at pass-9; 3rd fix-induced concurrency/recovery regression (F2 null-STAGING crash sub-state introduced by v1.11 drain step 2.5 ordering).
+
+**NOTE (3rd fix-induced concurrency regression):** F2 represents the 3rd fix-induced concurrency/recovery regression in this cascade: (1st) pass-4 C-1 canonical-first reader inversion; (2nd) pass-8 flock self-heal generalization regression; (3rd) pass-9 null-STAGING crash sub-state from v1.11 drain step 2.5 ordering. The common pattern: each fix introduces a new subtle ordering or partitioning gap in the crash-recovery state machine. Prose-only adversarial review is measurably NOT converging the concurrency/recovery state machine surface — the same surface area keeps producing regressions. Human directed KEEP-GRINDING the prose 3-CLEAN loop for the 2nd time (acknowledging trajectory reversal + 3rd concurrency regression). Definitive fix path: formal model (TLA+/Kani) or implementation-phase fault-injection testing; prose review insufficient for state-machine convergence.
+
+**NOTE (F1 BC-INDEX state-manager mis-transcription):** F1 was a state-manager error at D-1228: the BC-INDEX reader-protocol changelog cells described the INVERTED direction (canonical-first) and invented a both-ENOENT abort clause. The actual applied BC bodies + ADR §Decision 7c specify generation-first/canonical-fallback with the ENOENT-safe invariant (files never absent from both paths during COMMITTING window). Corrected here as corrective re-transcription (NO BC version change).
+
+**Index advances this burst:**
+- ARCH-INDEX v4.39 → v4.40 (ADR-052 row v1.11→v1.12 body amendment)
+- BC-INDEX v5.95 → v5.96 (F1 corrective re-transcription; BC-1.18.010 v1.9 + BC-1.18.011 v1.8 cells corrected — NO BC body version change)
+- VP-INDEX v3.22 → UNCHANGED
+- STORY-INDEX UNCHANGED
+
+**Input-hashes (post-check):**
+- ADR-052: a9d309a (PASS — --check verified; architect set this at v1.12)
+- error-taxonomy.md: PASS (--check verified; v1.29 casing fix)
+- BC-1.18.010 body: UNCHANGED (cell-only correction in BC-INDEX; no BC body edit)
+- BC-1.18.011 body: UNCHANGED (cell-only correction in BC-INDEX; no BC body edit)
+
+**Drift items status:**
+- [D-1222-DRIFT-001] prd.md §5.1 MIG+MAINTENANCE sync: UNCHANGED OPEN — owed before POLICY 22 ratification.
+- [D-1224-DRIFT-001] E-SHD-005 VP-leg gap: UNCHANGED OPEN.
+- [D-1225-PG-001] sibling-sweep → S-12.15: UNCHANGED OPEN.
+
+**POLICY 22 status:** OPEN with 2 sign-off items (unchanged):
+- (i) macOS exec-TOCTOU residual window + no-concurrent-cargo-build pre-flight.
+- (ii) APFS darwin-arm64 durability test: RATIFICATION PREREQUISITE — must complete before POLICY 22 ratification gate.
+Cluster-5 TDD remains BLOCKED until POLICY 22 ratification.
+
+**OWED (unchanged):** OWED #2 (907-file hash sweep). prd.md §5.1 MIG/MAINTENANCE sync [D-1222-DRIFT-001] owed before ratification.
+
+### Canonical 6-column row (STATE.md Decisions Log)
+
+| D-1229 | D-1229-ADR052-V112-PASS9-NULL-STAGING-F1-BC-INDEX-TRANSCRIPTION | **ADR-052 v1.12 + BC-INDEX F1 corrective re-transcription + error-taxonomy v1.29 fix burst committed (state-manager, single-commit TD-VSDD-053; D-1229): in-house adversary LOCAL pass-9 = NOT-RATIFIABLE (2 HIGH + 2 MED + 2 LOW); all 6 findings closed — F1 HIGH BC-INDEX transcription [state-manager]: corrective re-transcription of BC-1.18.010 v1.9 + BC-1.18.011 v1.8 INDEX catalog cells and v5.95 changelog entry — inverted canonical-first + invented both-ENOENT CONTENT_PRESERVATION_ABORT abort clause deleted; corrected to actual generation-first/canonical-fallback per BC bodies + ADR §Decision 7c; BC-INDEX v5.95→v5.96. F2 HIGH §4e null-STAGING crash sub-state (v1.11 drain step 2.5 writes txn=STAGING with generation_id=null BEFORE snapshot; crash leaves null-STAGING with no staged gen dir; EC-003 census unconditionally aborts CONTENT_PRESERVATION_ABORT on null hashes; fixed by generation_id partition: null→DISCARD/EXPIRY_ABORT, set→EC-003 resume; fault-injection test mandate §5a). F3 MED §Downstream/§BC Impact residual inverted reader wording + stale provenance labels (generation-first/canonical-fallback corrected; BC-1.18.010 v1.8→v1.9 labels updated). F4 MED §4e ABORTED disposition + txn-selection disambiguation + terminal-txn GC/archival policy. F5 LOW error-taxonomy v1.29 ALREADY_MIGRATED casing (completed.json lowercase). F6 LOW §5c Branch 2 flock parity (pre-reconcile flock(exclusive.lock, LOCK_EX\|LOCK_NB) added; on EWOULDBLOCK exit 0 without gate flip). NOTE: TRAJECTORY REVERSED (1→2); 3rd fix-induced concurrency/recovery regression; human directed KEEP-GRINDING 2nd time. ARCH-INDEX v4.39→v4.40; BC-INDEX v5.95→v5.96; VP-INDEX v3.22 UNCHANGED. Input-hashes: ADR-052 a9d309a (PASS); error-taxonomy (PASS). [D-1222-DRIFT-001] prd.md §5.1 UNCHANGED OPEN. [D-1224-DRIFT-001] VP-leg UNCHANGED OPEN. OWED #2 unchanged (907-file hash sweep). BC-5.39.001 LOCAL streak 0/3 (NOT-RATIFIABLE ≠ CLEAN; pass-10 next). TRAJECTORY REVERSED: CRIT+HIGH 7→5→5→2→2→2→1→1→2 (tail LENGTH=4 →2→1→1→2). POLICY 22 OPEN — 2 sign-off items: (i) macOS exec-TOCTOU; (ii) APFS RATIFICATION PREREQUISITE — UNCHANGED. Cluster-5 TDD BLOCKED. pipeline: PAUSED.** | S-25.02 F4 | 2026-09-13 |

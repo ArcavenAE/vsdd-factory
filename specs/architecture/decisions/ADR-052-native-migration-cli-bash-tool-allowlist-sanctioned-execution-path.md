@@ -2,7 +2,7 @@
 document_type: architecture-decision-record
 adr_id: ADR-052
 level: L3
-version: "1.11"
+version: "1.12"
 status: proposed
 date: 2026-09-13
 producer: architect
@@ -28,7 +28,7 @@ inputs:
   - crates/factory-dispatcher/src/main.rs
   - plugins/vsdd-factory/hooks-registry.toml
   - .factory/cycles/v1.0-brownfield-backfill/adv-local-adr052-pass3.md
-input-hash: "f4f12f6"
+input-hash: "a9d309a"
 # input-hash: run compute-input-hash --update at state-manager registration burst
 ---
 
@@ -36,14 +36,17 @@ input-hash: "f4f12f6"
 
 ## Status
 
-PROPOSED — v1.10 NOT ratified per 11th adversarial review (local cascade pass-8)
-(1 HIGH writer-exclusion regression + 2 MED protocol gaps + 1 LOW stale self-references —
-step 3.5 self-heal reopens gate during LIVE coordinator mid-drain: flock check on exclusive.lock
-absent, so gate ∈ {DRAINING,LOCKED} + no-txn matches reconciliation predicate even while live
-coordinator holds exclusive.lock; reader protocol uses existence-check-then-use (TOCTOU-racy);
-BC-1.18.010 provenance tables still imperative after v1.10 LOW-2 sibling-sweep miss; residual
-"unchanged from v1.2" self-references in §Decision 9/10 headings, §Decision 1 body, §5b body).
-This v1.11 fix-burst resolves all ADR-owned findings. Human POLICY 22 ratification required
+PROPOSED — v1.11 NOT ratified per 12th adversarial review (local cascade pass-9)
+(1 HIGH null-STAGING crash sub-state unhandled in §4e + 2 MED reader/provenance wording gaps +
+1 LOW §5c Branch 2 flock-parity —
+v1.11 drain step 2.5 null-txn sub-state: crash between step 2.5 (txn=STAGING, generation_id=null)
+and §7c step 1 (generation UUID assigned) leaves null-generation STAGING; §4e single STAGING row
+routes to EC-003 census but no generation exists and PC1 would compare against null
+source_body_row_sha256; §Downstream + §BC Impact reader wording uses existence-check or inverted
+canonical-first language contradicting §Decision 7c step 2a open-with-ENOENT-fallback; §5c Branch 2
+gate reconciliation lacks flock-acquirable precondition that step 3.5 and crash-recovery paragraph
+require for parity).
+This v1.12 fix-burst resolves all ADR-owned findings. Human POLICY 22 ratification required
 before this ADR is treated as accepted — two explicit sign-off items:
 (1) exec-TOCTOU residual window on macOS; (2) APFS dir-fsync durability test must complete as
 ratification prerequisite. Cluster-5 TDD dispatch remains BLOCKED until ratification.
@@ -192,6 +195,15 @@ All 11 findings from the 3rd Codex cross-vendor closure review (`adv-cv-adr052-v
 | MED-2 | MED | §BC Impact "BC-1.18.010 — changes applied to match v1.3–v1.5" table still had header "v1.3 change required" and imperative cells ("Replace entire section with…", "Replace: completed.json…", "Update to:…"). The "v1.4 additional changes to BC-1.18.010" table had header "v1.4 change required" and imperative cell ("v1.5 M-4: replace BOTH stale instructions with…"). These were NOT swept when the BC-1.18.011 + error-taxonomy tables were converted to past-tense in v1.10 LOW-2. | §BC Impact BC-1.18.010 main table: column header "v1.3 change required" → "Applied (BC-1.18.010 v1.8)"; all three imperative cells converted to past-tense provenance form. §BC Impact BC-1.18.010 v1.4 additional changes table: column header "v1.4 change required" → "Applied (BC-1.18.010 v1.8)"; imperative cell converted to past-tense. Sibling sweep of v1.10 LOW-2 complete. |
 | LOW-1 | LOW | §Decision 9 heading carried "(unchanged from v1.2)", §Decision 10 heading carried "(unchanged from v1.2)", §Decision 1 body carried "(unchanged from v1.2)" at end of Options sentence, §5b body opened with "The same 4 guards as v1.2 require amendment" — four sites the v1.8 strip missed (v1.8 stripped these from bold-section labels and Decision 1/2/3 headings but not these locations). The referenced content is inlined in-file so the self-references are dead. | Strip "(unchanged from v1.2)" from §Decision 9 heading and §Decision 10 heading; strip "(unchanged from v1.2)" from §Decision 1 body; replace "The same 4 guards as v1.2 require amendment" with "The following 4 guards require amendment" in §5b. Legitimate historical explanatory mentions in §Rationale and changelog left untouched. |
 
+**v1.12 findings (12th adversarial review — local cascade pass-9, D-1229 — this fix-burst):**
+
+| Finding | Sev | Root cause in v1.11 | Resolution in v1.12 |
+|---------|-----|-------------------|-------------------|
+| F2 | HIGH | §4e null-STAGING crash sub-state unhandled: v1.11 drain step 2.5 writes txn=STAGING with `generation_id=null`, `source_sha256=null`, `source_body_row_sha256=null` BEFORE snapshot (drain step 5) and generation UUID assignment (§7c step 1). A crash between step 2.5 and §7c step 1 leaves txn=STAGING with NO staged generation directory and null hashes. §4e's single "txn STAGING + valid manifest" row routes to EC-003 (resume: RE-RUN full census against staged generation, step 3b must pass before proceeding) — but there is no generation directory to census, and PC1 at step 3b would attempt to compare staged rows against `source_body_row_sha256=null` from the txn record, yielding an unconditional CONTENT_PRESERVATION_ABORT on every resume attempt. The recovery path is structurally wrong for this sub-state. | §Decision 4e: split the "txn STAGING + valid original manifest" row into two sub-rows keyed on `generation_id` presence: (a) `txn=STAGING AND generation_id=null` (pre-snapshot / pre-generation crash): DISCARD — delete the partial null txn record, flip gate → OPEN, exit `EXPIRY_ABORT`. No canonical paths changed; state fully recoverable under a fresh activation. MUST NOT attempt EC-003 census; MUST NOT compare PC1 against null `source_body_row_sha256`. (b) `txn=STAGING AND generation_id set AND staged generation dir present`: the existing EC-003 resume path — RE-RUN full census (step 3b), proceed to authorization gate (step 4), fingerprint recheck (step 5), pointer swap (step 6). Exhaustiveness scope note updated to reflect the `generation_id` partition. Fault-injection test mandate added to §Decision 5a. |
+| F3 | MED | Residual/inverted reader wording in §Downstream + §BC Impact: (a) §Downstream BC-1.18.010 §Reader Integration blockquote step 2 says "try `gen-<generation_id>/` path FIRST; if absent (already renamed to canonical), fall back to canonical path" — existence-check language ("if absent"), not the race-free open-with-ENOENT-fallback form required by §Decision 7c step 2a. (b) §BC Impact v1.4 additional changes Invariant-3 "Applied (BC-1.18.011 v1.7)" cell says "new-generation content is accessible via canonical-first / generation-fallback protocol; ENOENT is not possible" — the INVERTED direction (canonical-first = v1.4 known regression, corrected in v1.5 C-1) described in an Applied column, directly contradicting §Decision 7c and BC-1.18.011 Invariant 3. (c) "BC-1.18.010 v1.8" provenance labels in §Downstream header and §BC Impact table headers are stale: BC-1.18.010 was updated to v1.9 when the v1.11 MED-1 open-with-ENOENT-fallback handoff was applied. (d) §BC Impact v1.5 C-1 entry still uses "if absent" existence-check language. | §Downstream BC-1.18.010 §Reader Integration blockquote step 2: changed from "try gen FIRST; if absent … fall back to canonical" to "`open(gen-<generation_id>/<file>)`; on ENOENT, `open(canonical/<file>)`." §BC Impact v1.4 additional changes Invariant-3 Applied cell: corrected from "canonical-first / generation-fallback; ENOENT is not possible" to "generation-first / open-with-ENOENT-fallback: `open(gen-<uuid>/<file>)`; on ENOENT → `open(canonical/<file>)`. ENOENT-safe: files move one-directionally gen→canonical via rename(2); required file never absent from both paths during COMMITTING window." §BC Impact v1.5 C-1 applied descriptions: updated from "if absent, fall back" to "open-with-ENOENT-fallback" language. §Downstream header and §BC Impact table headers: "BC-1.18.010 v1.8" → "BC-1.18.010 v1.9". |
+| F4 | MED | §4e ABORTED disposition absent + txn-selection ambiguity + terminal-txn GC unspecified: (a) Every abort writes txn=ABORTED and retains the file indefinitely; a fresh re-activation writes a new `txn-<newuuid>.json`; §4e has no row for the case where an ABORTED txn record exists alongside a new activation attempt, leaving re-activation behavior undefined. (b) Multiple `txn-*.json` files can coexist (one per prior activation attempt); §4e has no disambiguation rule for which record governs admission/recovery. (c) Terminal txn records (ABORTED/COMPLETED) accumulate in `.factory/migration-state/` with no documented GC or archival policy — unbounded file growth. | §Decision 4e: (a) Added explicit ABORTED disposition row: "`txn=ABORTED` (any terminal ABORTED record)" → "treated as no active txn; fresh activation permitted; no recovery action required; record retained until GC archival per policy below." (b) Added txn-selection disambiguation rule below the table: when multiple `txn-*.json` exist, select the record whose `activation_id` matches the CURRENT manifest's `activation_id`; if no current manifest: select highest `created_at`; ABORTED records not matching the current manifest are inert for recovery. (c) Added GC/archival policy: terminal records (ABORTED/COMPLETED) archived to `.factory/migration-audit/txn-archive/` by state-manager at the next successful migration completion audit burst; ABORTED records MUST NOT be deleted before archival. |
+| F6 | LOW | §5c Branch 2 gate reconciliation acquires gate LOCK_EX without first verifying `flock(exclusive.lock, LOCK_EX\|LOCK_NB)` acquirability. §Decision 5a step 3.5 and the "Crash-recovery gate reconciliation" paragraph both require the flock-acquirable precondition before gate manipulation; Branch 2 silently diverges, creating an inconsistent reconciliation protocol. Benign today (Branch 2 triggers only when `completed.json` present — terminal state — so no live coordinator can legitimately hold `exclusive.lock`), but a parity gap that could admit a writer if Branch-2 trigger conditions are ever broadened. | §Decision 5c Branch 2: gate reconciliation now first attempts `flock(exclusive.lock, LOCK_EX\|LOCK_NB)` as a new pre-step (step 0) before acquiring gate LOCK_EX. On EWOULDBLOCK: log a warning ("unexpected: completed.json present but exclusive.lock held"); exit 0 with `ALREADY_MIGRATED` WITHOUT reconciling gate (benign: `completed.json` terminal state is authoritative; gate self-heals at next PreToolUse step 3.5). On acquired: proceed with gate reconciliation steps 1–4 (existing logic); release `exclusive.lock` after step 4. Rationale documented inline: parity with step 3.5 and crash-recovery paragraph; safe against future Branch-2 trigger broadening. Fault-injection test mandate updated. Note: all literal `\|` inside this section's markdown table cells are escaped. |
+
 ---
 
 ## Decision
@@ -323,19 +335,38 @@ it does not exist during STAGING (first written at step 6, the COMMITTING pivot)
 
 | TXN-RECORD state | completed.json / manifest | Action |
 |---|---|---|
-| completed.json exists (terminal) | completed.json present | Exit 0 with `ALREADY_MIGRATED`; no lock needed; no manifest needed; **reconcile stale gate first** (§Decision 5c Branch 2 H-2 fix: acquire gate LOCK_EX; if gate≠OPEN and no active txn: flip→OPEN; release; then exit 0) |
+| completed.json exists (terminal) | completed.json present | Exit 0 with `ALREADY_MIGRATED`; no lock needed; no manifest needed; **reconcile stale gate first** (§Decision 5c Branch 2 H-2/v1.12 F6 fix: attempt `flock(exclusive.lock, LOCK_EX\|LOCK_NB)`; on acquired: acquire gate LOCK_EX; if gate≠OPEN and no active txn: flip→OPEN; release gate LOCK_EX; release `exclusive.lock`; then exit 0. On EWOULDBLOCK: skip gate reconciliation; exit 0 with `ALREADY_MIGRATED`) |
 | txn COMMITTING + valid manifest | CURRENT.json `status:committing` | Recovery: acquire flock; validate completion-only manifest or unexpired original; complete forward recovery |
 | txn COMMITTING + manifest absent or expired | CURRENT.json `status:committing` | Abort with `RECOVERY_REQUIRES_REAUTHORIZATION`; human must issue completion-only manifest |
-| txn STAGING + valid original manifest | CURRENT.json absent (pre-pivot) | Resume from staging: validate under exclusion; **RE-RUN full census against staged generation (EC-003 per H3 fix — step 3b must pass before proceeding)**; re-run authorization gate (step 4); proceed to fingerprint recheck (step 5) and pointer swap (step 6) |
-| txn STAGING + manifest absent or expired | CURRENT.json absent (pre-pivot) | Clean-abort: delete staging generation, update txn record → ABORTED, flip gate → OPEN, exit `EXPIRY_ABORT`. (§4d clean-abort logic applied to the case where the manifest is absent or expired at resume time rather than expiring during the run. No canonical paths were changed; state is fully recoverable after a fresh activation.) |
+| txn STAGING + `generation_id=null` + valid manifest **(v1.12 F2 — pre-generation crash sub-state)** | CURRENT.json absent (pre-pivot, no gen dir exists) | **DISCARD**: delete the partial null txn record; flip gate → OPEN; exit `EXPIRY_ABORT`. No canonical paths changed; state fully recoverable under a fresh activation. **MUST NOT** attempt EC-003 census — no staging generation directory exists. **MUST NOT** compare PC1 against null `source_body_row_sha256`. Re-activate from scratch under a fresh manifest. |
+| txn STAGING + `generation_id` set + staged gen dir present + valid original manifest | CURRENT.json absent (pre-pivot) | Resume from staging: validate under exclusion; **RE-RUN full census against staged generation (EC-003 per H3 fix — step 3b must pass before proceeding)**; re-run authorization gate (step 4); proceed to fingerprint recheck (step 5) and pointer swap (step 6) |
+| txn STAGING + manifest absent or expired (any `generation_id`) | CURRENT.json absent (pre-pivot) | Clean-abort: delete staging generation (if present), discard partial txn record → ABORTED, flip gate → OPEN, exit `EXPIRY_ABORT`. (§4d clean-abort logic. No canonical paths were changed; state is fully recoverable after a fresh activation.) |
+| txn ABORTED (terminal) **(v1.12 F4 — explicit ABORTED disposition)** | any | Treated as no active txn; fresh activation permitted; no recovery action required. ABORTED record retained until GC archival (see GC policy below). |
 | no txn record + manifest absent | CURRENT.json absent | Reject as unauthorized; exit non-zero |
 | `--census` flag | any | Read-only; no txn record, no manifest, no flock required |
 
-**Scope note (v1.9 L2):** This table covers re-run and recovery behavior only. First-run
-activation (no txn record + valid manifest present, no prior migration attempted) is handled by
-§Decision 5c Branch 3 (New activation) and intentionally has no row in this table. The "no txn
-record + manifest absent" row handles the distinct case where both the txn record and the
-manifest are absent — that is an unauthorized invocation, not a first-run activation.
+**Txn-selection disambiguation rule (v1.12 F4):** When multiple `txn-*.json` files exist in
+`.factory/migration-state/` (one per prior activation attempt), recovery and admission select
+the record whose `activation_id` matches the CURRENT manifest's `activation_id`. If no current
+manifest is present: select the record with the highest `created_at` timestamp. An ABORTED
+record whose `activation_id` does not match the current manifest is inert for recovery purposes
+(it does not trigger STAGING/COMMITTING blocking — those require state IN (STAGING, COMMITTING)).
+
+**Terminal-txn GC/archival policy (v1.12 F4):** Terminal txn records (state ABORTED or
+COMPLETED) SHALL be archived to `.factory/migration-audit/txn-archive/` by state-manager at the
+next successful migration completion audit burst (the NIST AU-9 audit commit per §Decision 6).
+Until archived, terminal records are inert: ABORTED records do not block admission; COMPLETED
+records are superseded by `completed.json`. ABORTED records MUST NOT be deleted before archival
+— they preserve the crash-debug audit trail for any failed activation attempt.
+
+**Scope note (v1.9 L2 / v1.12 F2):** This table covers re-run and recovery behavior only.
+First-run activation (no txn record + valid manifest present, no prior migration attempted) is
+handled by §Decision 5c Branch 3 (New activation) and intentionally has no row in this table.
+The "no txn record + manifest absent" row handles the distinct case where both the txn record
+and the manifest are absent — that is an unauthorized invocation, not a first-run activation.
+The STAGING row is now partitioned by `generation_id` presence (v1.12 F2): generation_id=null
+means crash between drain step 2.5 and §7c step 1 (pre-generation); generation_id set means
+crash after generation was assigned (normal resume path).
 
 ### Decision 5 — Dispatcher PreToolUse guard stack + native admission gate (v1.3 REDESIGNED)
 
@@ -635,6 +666,16 @@ legitimate tool calls.
   gate=DRAINING, a concurrent PreToolUse step 3.5 sees `gate=DRAINING + txn=STAGING (active)
   AND exclusive.lock EWOULDBLOCK` — both guards independently block reconciliation. Verify
   drain timeout abort (step 4) correctly sets txn→ABORTED and THEN flips gate→OPEN.
+- (v1.12 F2) Null-generation crash recovery: simulate crash between drain step 2.5 (txn record
+  written with state=STAGING, `generation_id=null`, `source_sha256=null`,
+  `source_body_row_sha256=null`) and §7c step 1 (generation UUID generated, gen dir created).
+  Resulting state: txn=STAGING, generation_id=null, no gen dir, gate=LOCKED. Verify that
+  recovery: (1) detects generation_id=null in the txn record; (2) discards the partial null
+  txn record; (3) flips gate → OPEN; (4) exits `EXPIRY_ABORT`. VERIFY it does NOT: (5) attempt
+  EC-003 census (no gen dir exists — census would fail with ENOENT or empty result); (6) compare
+  PC1 against null `source_body_row_sha256` (which would yield unconditional
+  `CONTENT_PRESERVATION_ABORT`). Post-recovery: verify a fresh activation with a new manifest
+  proceeds normally from drain step 1.
 
 **Fingerprint recheck:** Retained at §Decision 7c step 5 as defense-in-depth after quiescence.
 Not the drain mechanism.
@@ -665,24 +706,40 @@ operates in four distinct branches:
 - Executable digest verification still applies (§Decision 11)
 - Pass immediately after digest check
 
-**Branch 2 — Terminal-state no-op (closes F8 COMPLETED-rerun gap; v1.6 H-2 — gate reconciliation):**
+**Branch 2 — Terminal-state no-op (closes F8 COMPLETED-rerun gap; v1.6 H-2 — gate reconciliation; v1.12 F6 — flock-parity):**
 - Trigger: `completed.json` exists at `.factory/migration-state/completed.json`
-- No migration manifest required; no exclusive.lock flock required
-- **Gate reconciliation before exit (H-2 fix):** Before exiting 0, the guard MUST check and
-  reconcile a stale gate to prevent a permanent LOCKED state from a crash between step 8
-  (completed.json write) and the COMPLETED gate→OPEN flip:
+- No migration manifest required
+- **Gate reconciliation before exit (H-2 fix; v1.12 F6 flock-parity):** Before exiting 0, the
+  guard MUST check and reconcile a stale gate. Gate reconciliation now requires the same
+  flock-acquirable precondition as step 3.5 and the "Crash-recovery gate reconciliation"
+  paragraph, for parity (v1.12 F6):
+  0. **(v1.12 F6)** Attempt `flock(exclusive.lock, LOCK_EX|LOCK_NB)`.
+     - **If EWOULDBLOCK:** A live coordinator holds the lock. Unexpected when `completed.json`
+       is present (terminal state means no live coordinator should hold it) — log a warning:
+       "unexpected: completed.json present but exclusive.lock held." Do NOT reconcile the gate;
+       it will self-heal via the next PreToolUse step 3.5. Proceed directly to exit 0 with
+       `ALREADY_MIGRATED`.
+     - **If acquired (returns 0):** No live coordinator. Proceed to gate reconciliation steps 1–4.
   1. Acquire `LOCK_EX` on gate-state file
   2. Read gate_state value
   3. If gate_state ≠ OPEN AND completed.json present AND no active txn record exists
      (txn absent, or txn state = COMPLETED or ABORTED): write gate_state = OPEN (atomic)
-  4. Release `LOCK_EX`
+  4. Release `LOCK_EX`; release `exclusive.lock` flock fd (step 0 acquisition)
   This reconciliation is a no-op when the gate is already OPEN (normal case). It is also a
   no-op when an active STAGING or COMMITTING txn exists (gate is legitimately LOCKED).
+  **Parity note (v1.12 F6):** This "acquire exclusive.lock → acquire gate LOCK_EX → re-read
+  → flip if no active txn → release" discipline matches step 3.5 sub-steps a→h and the
+  "Crash-recovery gate reconciliation" paragraph. Benign under current semantics (Branch 2
+  triggers only when completed.json is present — terminal state — so EWOULDBLOCK at step 0 is
+  unexpected); parity-safe against future Branch-2 trigger broadening.
 - Binary exits 0 with `ALREADY_MIGRATED`
-- **Fault-injection test mandate (H-2):** A test MUST simulate the crash window between
-  completed.json write and gate→OPEN flip. Verify that a subsequent Branch 2 invocation
-  reconciles gate → OPEN; verify that subsequent Edit/Write PreToolUse admissions are
-  accepted after this reconciliation.
+- **Fault-injection test mandate (H-2; v1.12 F6):** Tests MUST:
+  (a) Simulate the crash window between completed.json write and gate→OPEN flip. Verify that
+      a subsequent Branch 2 invocation reconciles gate → OPEN (step 0 acquires `exclusive.lock`,
+      steps 1–4 flip gate, step 4 releases both locks); verify subsequent Edit/Write PreToolUse
+      admissions are accepted after this reconciliation.
+  (b) Verify that Branch 2 with `exclusive.lock` held by a live process logs a warning and
+      exits 0 with `ALREADY_MIGRATED` without modifying gate_state.
 
 **Branch 3 — New activation:**
 - Trigger: no `completed.json` + no CURRENT.json with `status: committing`
@@ -896,8 +953,8 @@ at the `fsync`/`rename` boundary in test doubles.
 - This directory is CONTENT-IMMUTABLE after all content is written and synced (step 2):
   file contents are never modified. Files may be moved (renamed) to canonical paths during
   step 7; a moved file is no longer accessible at its `gen-<uuid>/` path (its content is at
-  the canonical path instead). The reader's canonical-first fallback (see Reader Protocol
-  below) ensures the new content is always accessible at one of the two paths. (C1 fix)
+  the canonical path instead). The reader's open-with-ENOENT-fallback to canonical (see Reader
+  Protocol below) ensures the new content is always accessible at one of the two paths. (C1 fix)
 
 **Pointer file:** `.factory/migration-state/CURRENT.json` — the authoritative generation pointer.
 The pointer transition is the single atomic commit point for the entire multi-file migration.
@@ -1651,7 +1708,8 @@ that made incremental amendment non-viable (diverging finding trajectory 7→8�
   - Local pass-5 (D-1225): 8th review (2 HIGH + 1 MED, RATIFY-WITH-CHANGES), producing the v1.8 fix-burst
   - Local pass-6 (D-1226): 9th review (1 HIGH + 1 MED + 2 LOW, RATIFY-WITH-CHANGES), producing the v1.9 fix-burst
   - Local pass-7 (D-1227): 10th review (1 HIGH + 2 MED + 2 LOW, RATIFY-WITH-CHANGES), producing the v1.10 fix-burst
-  - Local pass-8 (D-1228): 11th review (1 HIGH + 2 MED + 1 LOW, NOT-RATIFIABLE), producing this v1.11 fix-burst
+  - Local pass-8 (D-1228): 11th review (1 HIGH + 2 MED + 1 LOW, NOT-RATIFIABLE), producing the v1.11 fix-burst
+  - Local pass-9 (D-1229): 12th review (1 HIGH + 2 MED + 1 LOW, NOT-RATIFIABLE), producing this v1.12 fix-burst
 - `research-adr-052-v13-atomic-publication-2026-09-13.md` — research brief grounding
   the atomic-pointer architecture, advisory flock design, and F_FULLFSYNC / fexecve guidance
 - CLAUDE.md TD-FACTORY-HOOK-BYPASS-001 P0 — governing rule this ADR excepts via §Decision 8
@@ -1810,21 +1868,21 @@ Applied: Amendment 9 text from v1.2 replaced with the following complete Archite
 > - ADR-052 §Decision 8 — POLICY 22 exception declaration with accurate skipped-control inventory
 >   and enumerated allowed write targets
 
-### BC-1.18.010 amendments (v1.3–v1.5 bursts) — Applied: BC-1.18.010 v1.8
+### BC-1.18.010 amendments (v1.3–v1.5 bursts) — Applied: BC-1.18.010 v1.9
 
 **Invariant 2 amendment:** Applied per v1.2 text (unchanged from v1.2).
 
-**Reader integration amendment (applied BC-1.18.010 v1.8):**
+**Reader integration amendment (applied BC-1.18.010 v1.9):**
 
-Applied: §Reader Integration section replaced with (v1.5 M-4: stale v1.3 "use gen-uuid/" and stale v1.4 "canonical-first" text removed; single correct instruction per §Decision 7c C-1 fix):
+Applied: §Reader Integration section replaced with (v1.5 M-4: stale v1.3 "use gen-uuid/" and stale v1.4 "canonical-first" text removed; v1.11 MED-1: open-with-ENOENT-fallback; v1.12 F3: existence-check "if absent" replaced with open-based form in this blockquote):
 
 > "During the B2 migration window (after CURRENT.json pointer swap, before completed.json
 > written), readers accessing BC-INDEX paths MUST use the following protocol:
 > 1. Check `.factory/migration-state/completed.json` — if exists: canonical paths are current.
 > 2. Check `.factory/migration-state/CURRENT.json` — if `status: committing`: for each
->    required file, try `gen-<generation_id>/` path FIRST; if absent (already renamed to
->    canonical), fall back to canonical path. (generation-first / canonical-fallback per
->    ADR-052 §Decision 7c)
+>    required file, `open(gen-<generation_id>/<file>)`; on ENOENT, `open(canonical/<file>)`.
+>    (generation-first / open-with-ENOENT-fallback per ADR-052 §Decision 7c step 2a;
+>    race-free: files move one-directionally gen→canonical via atomic rename(2))
 > 3. If neither CURRENT.json nor completed.json exists: legacy BC-INDEX.md path is current.
 > In steady state (completed.json present), canonical paths are always authoritative."
 
@@ -1866,7 +1924,7 @@ record. BC bodies were not edited directly — all changes were routed via produ
 
 | Section | v1.3 text (superseded) | Applied (BC-1.18.011 v1.7) |
 |---|---|---|
-| Invariant 3 | "CURRENT.json atomic pointer swap is the sole commit-point" — does not reflect C1 reader protocol change | Update: add that during COMMITTING state, new-generation content is accessible via canonical-first / generation-fallback protocol; a file is at canonical path (if already moved) OR at gen-uuid/ path (not yet moved); ENOENT is not possible for any file during the committing window (C1 fix) |
+| Invariant 3 | "CURRENT.json atomic pointer swap is the sole commit-point" — does not reflect C1 reader protocol change | Applied: during COMMITTING state, new-generation content is accessible via generation-first / open-with-ENOENT-fallback protocol: `open(gen-<uuid>/<file>)`; on ENOENT → `open(canonical/<file>)` (file already moved to canonical by step 7 progress). ENOENT-safe: files move one-directionally gen→canonical via atomic rename(2); required file never absent from both paths during COMMITTING window. (v1.5 C-1 corrected from canonical-first direction; v1.11 MED-1 corrected existence-check to open-based; v1.12 F3 corrected the inverted "canonical-first / generation-fallback; ENOENT is not possible" wording in this Applied cell) |
 | Postcondition 1/2 (census gate cross-ref) | No explicit pre-pivot gate step referenced | Add cross-reference to ADR-052 §Decision 7c step 3b (pre-pivot content-preservation + census gate); state that PC1/PC2 are verified at step 3b against the staged generation BEFORE the pointer swap; failure at step 3b aborts cleanly per step 3c |
 | Postcondition 3a (Amendment 7) / PC3a | "step 5 in ADR-052 §Decision 7c" cited as the pointer swap location | CORRECTION: the CURRENT.json pointer swap is at **step 6** (not step 5). Step 5 = fingerprint recheck; step 6 = CURRENT.json pointer swap (the commit point). Update all PC3a and related references from "step 5" to "step 6" |
 | State names (any remaining PREPARED occurrences) | Any "PREPARED" in BC body or preconditions | Replace with STAGING. ADR-052 §7a enum authoritative: STAGING, COMMITTING, COMPLETED, ABORTED — no PREPARED state exists |
@@ -1877,15 +1935,18 @@ BC-1.18.011 may have `total_bcs` stdout references that need updating to match c
 BC-INDEX frontmatter values. This is a BC-owned finding for the product-owner to assess and
 correct independently of the ADR changes.
 
-### v1.5 additional BC changes (Applied: BC-1.18.011 v1.7, BC-1.18.010 v1.8, error-taxonomy v1.25)
+### v1.5 additional BC changes (Applied: BC-1.18.011 v1.7, BC-1.18.010 v1.9, error-taxonomy v1.25)
 
-**C-1 (generation-first reader protocol — applied):**
-- BC-1.18.010 §Reader Integration step 2: replaced with a single generation-first instruction per
-  §Decision 7c: "for each required file, try `gen-<generation_id>/` path FIRST; if absent, fall
-  back to canonical path." Supersedes all prior versions of this instruction.
+**C-1 (generation-first reader protocol — applied; v1.11 MED-1 / v1.12 F3 open-with-ENOENT-fallback upgrade):**
+- BC-1.18.010 §Reader Integration step 2: replaced with generation-first / open-with-ENOENT-fallback
+  instruction per §Decision 7c step 2a: "for each required file, `open(gen-<generation_id>/<file>)`;
+  on ENOENT, `open(canonical/<file>)`." Race-free: files move one-directionally gen→canonical via
+  rename(2). Supersedes all prior versions of this instruction. (v1.5 C-1 established generation-first
+  direction; v1.11 MED-1 + v1.12 F3 upgraded from existence-check "if absent" to open-based form)
 - BC-1.18.011 Invariant 3: "canonical-first / generation-fallback" language (added in v1.4)
-  corrected to "generation-first / canonical-fallback" — gen-uuid/ is tried first; canonical is
-  the fallback for already-moved files.
+  corrected to "generation-first / open-with-ENOENT-fallback": `open(gen-<uuid>/<file>)`; on
+  ENOENT → `open(canonical/<file>)`. (v1.5 C-1 corrected direction from canonical-first;
+  v1.11 MED-1 + v1.12 F3 corrected existence-check to open-based form)
 
 **H-4 (version-pin cleanup — applied):**
 - BC-1.18.010 body: "ADR-052 v1.N §..." version-pinned references replaced with stable
@@ -2001,17 +2062,17 @@ against `source_sha256`. Feasibility assessment and proof strategy updated accor
 
 ### BC-1.18.010 — changes applied to match v1.3–v1.5
 
-| Section | v1.2 text (superseded) | Applied (BC-1.18.010 v1.8) |
+| Section | v1.2 text (superseded) | Applied (BC-1.18.010 v1.9) |
 |---|---|---|
 | §Reader Integration | "COMMITTED absent → read legacy BC-INDEX.md"; COMMITTED archived at CLEANED | Applied: replaced entire section with v1.3 reader protocol (completed.json check first; CURRENT.json generation pinning second; legacy only if neither exists) |
 | §Reader Integration steady state | "after CLEANED, shard paths are canonical; COMMITTED archived" | Applied: completed.json is permanent + authoritative; no archiving of any terminal record |
 | Invariant 3 (if present) | References COMMITTED marker as commit-pointer | Applied: updated to CURRENT.json pointer swap as the commit-point; completed.json as the terminal record |
 
-**v1.4 additional changes to BC-1.18.010 (Applied: BC-1.18.010 v1.8):**
+**v1.4 additional changes to BC-1.18.010 (Applied: BC-1.18.010 v1.9):**
 
-| Section | v1.3 text (superseded) | Applied (BC-1.18.010 v1.8) |
+| Section | v1.3 text (superseded) | Applied (BC-1.18.010 v1.9) |
 |---|---|---|
-| §Reader Integration step 2 | "if `status: committing`: use gen-uuid/ paths for reads" (v1.3 stale text); "try canonical path first; fall back to gen-uuid/" (v1.4 canonical-first — regression for BC-INDEX.md overwrite target) | Applied (v1.5 M-4): replaced BOTH stale instructions with a single generation-first/canonical-fallback instruction per §Decision 7c C-1 fix: "try `gen-<generation_id>/` path FIRST; if absent, fall back to canonical path." Correct for net-new shard files AND BC-INDEX.md (in-place overwrite target). |
+| §Reader Integration step 2 | "if `status: committing`: use gen-uuid/ paths for reads" (v1.3 stale text); "try canonical path first; fall back to gen-uuid/" (v1.4 canonical-first — regression for BC-INDEX.md overwrite target) | Applied (v1.5 M-4 + v1.11 MED-1 + v1.12 F3): replaced BOTH stale instructions with generation-first / open-with-ENOENT-fallback per §Decision 7c step 2a: "`open(gen-<generation_id>/<file>)`; on ENOENT, `open(canonical/<file>)`." Correct for net-new shard files AND BC-INDEX.md (in-place overwrite target); race-free. |
 
 ### error-taxonomy.md — changes applied to match v1.3
 
@@ -2040,7 +2101,7 @@ fix-burst. All changes were completed; no pending actions remain here.)*
 - `research-adr-052-v13-atomic-publication-2026-09-13.md` — research brief grounding the v1.3 architecture (atomic publication, intent log, advisory flock, F_FULLFSYNC, fexecve/execveat)
 - `adv-cv-adr052-v11-closure-2026-09-12.md` — 2nd Codex closure review, 8 findings (D-1216)
 - `adv-cv-adr052-cluster5-F1-2026-09-12.md` — 1st Codex RATIFY-WITH-CHANGES verdict (7 findings, D-1214)
-- Decision log D-1221 (local pass-1, 9 findings, producing v1.4), D-1222 (local pass-2, 9 findings, producing v1.5), D-1223 (local pass-3, 12 findings, producing v1.6), D-1224 (local pass-4, 2H+6M, producing v1.7), D-1225 (local pass-5, 2H+1M RATIFY-WITH-CHANGES, producing v1.8), D-1226 (local pass-6, 1H+1M+2L RATIFY-WITH-CHANGES, producing v1.9), D-1227 (local pass-7, 1H+2M+2L RATIFY-WITH-CHANGES, producing v1.10), D-1228 (local pass-8, 1H+2M+1L NOT-RATIFIABLE, producing v1.11)
+- Decision log D-1221 (local pass-1, 9 findings, producing v1.4), D-1222 (local pass-2, 9 findings, producing v1.5), D-1223 (local pass-3, 12 findings, producing v1.6), D-1224 (local pass-4, 2H+6M, producing v1.7), D-1225 (local pass-5, 2H+1M RATIFY-WITH-CHANGES, producing v1.8), D-1226 (local pass-6, 1H+1M+2L RATIFY-WITH-CHANGES, producing v1.9), D-1227 (local pass-7, 1H+2M+2L RATIFY-WITH-CHANGES, producing v1.10), D-1228 (local pass-8, 1H+2M+1L NOT-RATIFIABLE, producing v1.11), D-1229 (local pass-9, 1H+2M+1L NOT-RATIFIABLE, producing v1.12)
 - `research-adr-052-assumption-validation-2026-09-12.md` — prior research Q1-Q5 validation
 - `BC-1.18.011` — migration BC; §Downstream to Product-Owner specifies amendments
 - `BC-1.18.010` — §Reader Integration amendment + Invariant 2 amendment
@@ -2070,11 +2131,11 @@ fix-burst. All changes were completed; no pending actions remain here.)*
 | `.factory/migration-state/exclusive.lock` | Create empty pre-seeded flock inode (never deleted) | devops-engineer (cluster-5 activation preparation) |
 | `plugins/vsdd-factory/hooks-registry.toml` | Amend 4 guards per §Decision 5b (txn record state awareness replacing PID-liveness check) | devops-engineer |
 | `plugins/vsdd-factory/hooks/destructive-command-guard.sh` (or WASM) | 4-branch classifier per §5c; txn record state check | devops-engineer |
-| `plugins/vsdd-factory/hooks/validate-factory-path-staging.sh` (or WASM) | 4-branch classifier; conservative Bash admission; executable digest verification + fd-binding per §Decision 11 | devops-engineer |
+| `plugins/vsdd-factory/hooks/validate-factory-path-staging.sh` (or WASM) | 4-branch classifier; conservative Bash admission; executable digest verification + fd-binding per §Decision 11; **v1.12 F6: Branch 2 gate reconciliation — new step 0: attempt `flock(exclusive.lock, LOCK_EX\|LOCK_NB)` before gate LOCK_EX; on EWOULDBLOCK log warning + exit 0 ALREADY_MIGRATED without gate reconciliation; on acquired proceed with steps 1–4 + release both locks** | devops-engineer |
 | `plugins/vsdd-factory/hooks/validate-factory-path-staged.sh` (or WASM) | Recognize governed migration subcommands; pass through | devops-engineer |
-| `crates/factory-dispatcher/src/executor.rs` | OPEN/DRAINING gate with writer reservations (PreToolUse-acquire/PostToolUse-release); durable reservation dir `.factory/migration-state/reservations/` (H2 v1.4); atomic admission under gate_state flock; every abort path flips gate → OPEN (H1 v1.4); **v1.10 HIGH-1: step-3.5 stale-gate reconciliation generalised — triggers on gate ∈ {LOCKED, DRAINING} AND no active txn (absent/COMPLETED/ABORTED), regardless of completed.json presence; covers (i) abort-crash-before-gate-reset (txn=ABORTED, no completed.json) and (ii) drain-timeout-crash (gate=DRAINING, no txn record) scenarios**; **v1.11 HIGH-1: step-3.5 flock-gated reconciliation — FIRST attempts `flock(exclusive.lock, LOCK_EX\|LOCK_NB)`; reconcile gate→OPEN ONLY if flock ACQUIRABLE (no live coordinator); on EWOULDBLOCK block with E-MAINTENANCE-001 (no gate flip); sub-steps a→h; parity with crash-recovery paragraph; drain reordered: initial txn (state=STAGING, source hashes null) written at step 2.5 BEFORE DRAINING flip (defense-in-depth — `gate=DRAINING + no-txn` eliminated from normal live drains); step 7 is now UPDATE txn with source hashes; step 4 drain-timeout abort now also sets txn→ABORTED**; crash-recovery gate reconciliation (§Decision 5a Crash-recovery gate reconciliation paragraph — also covers gate=DRAINING per v1.4 H1); stale reservation cleanup with **v1.10 MED-2: operator runbook for abandoned-reservation stall — confirmed-stale reservation files (no live harness session) MAY be manually deleted pre-activation per §Decision 5a operator remediation guidance**; txn record state check blocking mutations | implementer (cluster-5 TDD) |
-| `crates/factory-dispatcher/src/shard_manager.rs` | Full v1.7 migration implementation: advisory flock; txn record (`source_body_row_sha256` field for PC1); intent log (framed+checksummed); step 3b pre-pivot census gate — staging-integrity (sha256(staged_file) vs intent-log expected_post_hash) + PC1 (structured per-BC-row equivalence: extract BC-X.YY.NNN rows from staged shards, sort by BC-ID, sha256 → compare vs `source_body_row_sha256`; `source_sha256` whole-file hash is the step-5 fingerprint recheck only, NOT PC1) + PC2 (per-ID exactly-one-shard set check; EC-001 dup+drop detection); CURRENT.json pointer swap + generation-first/canonical-fallback reader; completed.json; 4-branch recovery (including new `txn STAGING + manifest absent/expired` clean-abort path); platform-branched durability (F_FULLFSYNC on macOS); fd-binding exec on Linux with /proc dependency note; programmatic mtime guard on macOS (M-2: mtime re-stat immediately before exec); TTL-based stale-reservation GC at start of every drain (reservation files store created_at + tool_use_id, no PID; remove files older than MAX_RESERVATION_TTL default 3600s / lower bound 1800s; PID-liveness GC removed as unsound for per-event binaries — v1.9 H1); all abort paths flip gate → OPEN; fencing_generation AUDIT-ONLY | implementer (cluster-5 TDD) |
-| `crates/factory-dispatcher/tests/` | v1.7 test suite: advisory flock; txn record state machine (`source_body_row_sha256` field); intent log write+recovery+fault-injection; step 3b census gate (staging-integrity sha256 vs intent-log expected_post_hash + PC1 structured per-BC-row equivalence vs `source_body_row_sha256` + PC2 ID-set exactly-one-shard + EC-001 dup+drop + shard-boundary internal capacity check [NOT `E-SHD-005` — that is the steady-state HookResult, not a migration process exit code]); CURRENT.json pointer swap + generation-first reader; completed.json permanence; all abort paths → gate OPEN (including new `txn STAGING + manifest absent/expired` → EXPIRY_ABORT clean-abort); Branch 2 gate reconciliation (H-2 fault injection: crash between step 8 and gate→OPEN, then ALREADY_MIGRATED reconciles gate); reservation dir cross-process quiescence (H-2); TTL-based stale-reservation GC on first-run drain (created_at TTL, no PID); test that an IN-FLIGHT reservation (Pre fired, Post not yet) is NEVER reclaimed by drain step-1 GC and the coordinator waits for its PostToolUse (v1.9 H1); 4-branch guard logic; conservative Bash admission (txn=STAGING or COMMITTING); digest mismatch abort; Linux execveat AT_EMPTY_PATH; macOS mtime guard (pre-exec re-stat) + freeze-build; platform durability; validate_write_target() dot-lowercase + rejection of hyphen-uppercase (C2 ratification test) | implementer (cluster-5 TDD) |
+| `crates/factory-dispatcher/src/executor.rs` | OPEN/DRAINING gate with writer reservations (PreToolUse-acquire/PostToolUse-release); durable reservation dir `.factory/migration-state/reservations/` (H2 v1.4); atomic admission under gate_state flock; every abort path flips gate → OPEN (H1 v1.4); **v1.10 HIGH-1: step-3.5 stale-gate reconciliation generalised — triggers on gate ∈ {LOCKED, DRAINING} AND no active txn (absent/COMPLETED/ABORTED), regardless of completed.json presence; covers (i) abort-crash-before-gate-reset (txn=ABORTED, no completed.json) and (ii) drain-timeout-crash (gate=DRAINING, no txn record) scenarios**; **v1.11 HIGH-1: step-3.5 flock-gated reconciliation — FIRST attempts `flock(exclusive.lock, LOCK_EX\|LOCK_NB)`; reconcile gate→OPEN ONLY if flock ACQUIRABLE (no live coordinator); on EWOULDBLOCK block with E-MAINTENANCE-001 (no gate flip); sub-steps a→h; parity with crash-recovery paragraph; drain reordered: initial txn (state=STAGING, source hashes null) written at step 2.5 BEFORE DRAINING flip (defense-in-depth — `gate=DRAINING + no-txn` eliminated from normal live drains); step 7 is now UPDATE txn with source hashes; step 4 drain-timeout abort now also sets txn→ABORTED**; **v1.12 F2: null-generation crash recovery path — admission reads `generation_id` from txn record on recovery; if null (pre-generation crash sub-state: drain step 2.5 written but §7c step 1 not yet run): DISCARD txn, flip gate→OPEN, exit EXPIRY_ABORT; MUST NOT call census or compare PC1 against null `source_body_row_sha256`**; **v1.12 F4: txn-selection disambiguation — admission scans all `txn-*.json` and selects by activation_id match to current manifest; fallback: highest created_at; ABORTED record is inert (treated as absent for selection); terminal-txn GC: on migration completion archive ABORTED + COMPLETED records to `.factory/migration-audit/txn-archive/`**; crash-recovery gate reconciliation (§Decision 5a Crash-recovery gate reconciliation paragraph — also covers gate=DRAINING per v1.4 H1); stale reservation cleanup with **v1.10 MED-2: operator runbook for abandoned-reservation stall — confirmed-stale reservation files (no live harness session) MAY be manually deleted pre-activation per §Decision 5a operator remediation guidance**; txn record state check blocking mutations | implementer (cluster-5 TDD) |
+| `crates/factory-dispatcher/src/shard_manager.rs` | Full v1.7 migration implementation: advisory flock; txn record (`source_body_row_sha256` field for PC1); intent log (framed+checksummed); step 3b pre-pivot census gate — staging-integrity (sha256(staged_file) vs intent-log expected_post_hash) + PC1 (structured per-BC-row equivalence: extract BC-X.YY.NNN rows from staged shards, sort by BC-ID, sha256 → compare vs `source_body_row_sha256`; `source_sha256` whole-file hash is the step-5 fingerprint recheck only, NOT PC1) + PC2 (per-ID exactly-one-shard set check; EC-001 dup+drop detection); CURRENT.json pointer swap + generation-first/open-with-ENOENT-fallback reader; completed.json; **v1.12 F2: recovery path checks `generation_id` field in txn record — if null (pre-generation crash sub-state): DISCARD txn, flip gate→OPEN, exit EXPIRY_ABORT; MUST NOT census or compare PC1 against null `source_body_row_sha256`**; **v1.12 F4: txn-selection reads all `txn-*.json`, selects by activation_id match to current manifest (fallback: highest created_at); terminal-txn GC at migration completion archives ABORTED/COMPLETED records to `.factory/migration-audit/txn-archive/`**; platform-branched durability (F_FULLFSYNC on macOS); fd-binding exec on Linux with /proc dependency note; programmatic mtime guard on macOS (M-2: mtime re-stat immediately before exec); TTL-based stale-reservation GC at start of every drain; all abort paths flip gate → OPEN; fencing_generation AUDIT-ONLY | implementer (cluster-5 TDD) |
+| `crates/factory-dispatcher/tests/` | v1.7 test suite: advisory flock; txn record state machine (`source_body_row_sha256` field); intent log write+recovery+fault-injection; step 3b census gate (staging-integrity sha256 vs intent-log expected_post_hash + PC1 structured per-BC-row equivalence vs `source_body_row_sha256` + PC2 ID-set exactly-one-shard + EC-001 dup+drop + shard-boundary internal capacity check [NOT `E-SHD-005` — that is the steady-state HookResult, not a migration process exit code]); CURRENT.json pointer swap + generation-first/open-with-ENOENT-fallback reader; completed.json permanence; all abort paths → gate OPEN; Branch 2 gate reconciliation (**v1.12 F6: step 0 flock acquire + EWOULDBLOCK warning-and-exit path + fault injection for crash between step 8 and gate→OPEN**); reservation dir cross-process quiescence; TTL-based stale-reservation GC on first-run drain; test that an IN-FLIGHT reservation is NEVER reclaimed by drain step-1 GC (v1.9 H1); **v1.12 F2: null-generation crash test — crash between drain step 2.5 (generation_id=null) and §7c step 1 → recovery discards txn + flips gate→OPEN + exits EXPIRY_ABORT; VERIFY no EC-003 census attempted; VERIFY no PC1 comparison against null source_body_row_sha256**; **v1.12 F4: txn-selection disambiguation test — multiple txn-*.json coexist; recovery selects by activation_id match; ABORTED record inert**; 4-branch guard logic; conservative Bash admission; digest mismatch abort; Linux execveat AT_EMPTY_PATH; macOS mtime guard; platform durability; validate_write_target() dot-lowercase + rejection of hyphen-uppercase (C2 ratification test) | implementer (cluster-5 TDD) |
 | `crates/factory-dispatcher/tests/darwin_arm64_durability_test.rs` | Empirical darwin-arm64 directory-fsync durability characterization test — **RATIFICATION PREREQUISITE (v1.7 F8)**: this test MUST be completed and reviewed before POLICY 22 ratification of macOS safety. Test validates whether `fsync(dir_fd)` on APFS provides power-loss durability for rename directory entries beyond `F_FULLFSYNC` alone. Results feed §Decision 11 sign-off item 2. | implementer (cluster-5 TDD) — darwin-arm64 CI required; result reviewed at POLICY 22 ratification gate |
 | `.factory/activation/factory-dispatcher.sha256` | SHA-256 of built binary | devops-engineer (cluster-5 activation) |
 | `.factory/activation/` | Created at F4 by state-manager | state-manager |
@@ -2085,6 +2146,7 @@ fix-burst. All changes were completed; no pending actions remain here.)*
 
 | Version | Date | Author | Change |
 |---|---|---|---|
+| 1.12 | 2026-09-13 | architect | Fix-burst (adversary pass-9 NOT-RATIFIABLE, ADR-owned findings). F2 (HIGH) — §4e null-STAGING crash sub-state: v1.11 drain step 2.5 writes txn=STAGING with generation_id=null before snapshot (step 5) and generation build (§7c step 1); a crash between step 2.5 and §7c step 1 leaves null-generation STAGING; §4e single STAGING row routes to EC-003 census but no generation exists and PC1 would compare against null source_body_row_sha256. Fixed: §4e STAGING row split by generation_id presence — (a) generation_id=null: DISCARD null txn, flip gate→OPEN, exit EXPIRY_ABORT; MUST NOT census a null generation; MUST NOT compare PC1 against null source_body_row_sha256; (b) generation_id set + gen dir present: existing EC-003 resume path. Exhaustiveness scope note updated. Fault-injection test mandate added. F3 (MED) — residual/inverted reader wording: §Downstream BC-1.18.010 §Reader Integration step 2 used existence-check "if absent" form (not open-with-ENOENT-fallback); §BC Impact v1.4 Invariant-3 Applied cell described "canonical-first / generation-fallback; ENOENT is not possible" (inverted/known-regression direction in an Applied column); BC-1.18.010 provenance labels stale at v1.8 after v1.11 MED-1 open-with-ENOENT-fallback handoff applied BC-1.18.010 v1.9. Fixed: §Downstream step 2 → open(gen-id/file); on ENOENT open(canonical/file); §BC Impact Invariant-3 Applied cell corrected to generation-first/open-with-ENOENT-fallback; v1.5 C-1 applied description updated; all BC-1.18.010 v1.8 provenance labels bumped to v1.9; existence-check language swept from §Downstream + §BC Impact. F4 (MED) — §4e ABORTED row absent + txn-selection ambiguity + terminal-txn GC unspecified: multiple txn-*.json files can coexist; no disambiguation rule; no GC/archival policy → unbounded file growth. Fixed: added explicit ABORTED row ("treated as no active txn; fresh activation permitted"); added activation_id-matching txn-selection rule below table (highest created_at fallback); added GC/archival policy (ABORTED/COMPLETED records archived to .factory/migration-audit/txn-archive/ at next migration completion audit burst; ABORTED records not deleted before archival). F6 (LOW) — §5c Branch 2 gate reconciliation acquired gate LOCK_EX without exclusive.lock flock-acquirable precondition, diverging from step 3.5 and crash-recovery paragraph parity. Fixed: Branch 2 gate reconciliation now first attempts flock(exclusive.lock, LOCK_EX\|LOCK_NB); on acquired proceeds with steps 1–4 + releases both locks; on EWOULDBLOCK logs warning and exits 0 ALREADY_MIGRATED without gate reconciliation. Fault-injection test mandate updated. §Source/Origin and §References updated with pass-9 (D-1229) provenance. |
 | 1.11 | 2026-09-13 | architect | Fix-burst (adversary pass-8 NOT-RATIFIABLE, ADR-owned findings). HIGH-1 (HIGH) — step 3.5 self-heal reopened gate during a LIVE drain: no flock check on exclusive.lock meant gate ∈ {DRAINING,LOCKED} + no-txn matched the reconciliation predicate even while a live coordinator held exclusive.lock mid-drain (between drain step 3 DRAINING flip and drain step 7 txn write), allowing a concurrent PreToolUse to flip gate→OPEN and admit itself — breaking BC-1.18.011 Precondition 6 writer-exclusion while the coordinator snapshots/stages. Fixed: step 3.5 now first attempts `flock(exclusive.lock, LOCK_EX\|LOCK_NB)` before any gate manipulation; on EWOULDBLOCK (live coordinator) block with E-MAINTENANCE-001 without flipping gate; on LOCK_EX acquired (no live coordinator) proceed with existing gate→OPEN flip; sub-steps relabeled a→h; flock-acquire → re-read-under-lock → flip → release discipline matches the existing "Crash-recovery gate reconciliation" paragraph (parity). Defense-in-depth: drain reordered — initial txn record (state=STAGING, source hashes null) written at new step 2.5 BEFORE DRAINING flip at step 3 — ensures gate=DRAINING in a live drain always implies txn=STAGING; step 7 updated to "update txn record with source hashes"; drain timeout abort (step 4) now also sets txn→ABORTED. Fault-injection test mandate added. §Files-to-Change executor.rs row swept. MED-1 (MED) — §Decision 7c reader protocol used existence-check-then-open (TOCTOU-racy): "If the file EXISTS at its generation-dir path, use it" — a rename gen→canonical between exists() and open() yields ENOENT. Fixed: reader protocol step 2a changed to open(gen-<id>/<file>); on ENOENT fall back to open(canonical). Race-free: files move one-directionally gen→canonical. "ENOENT is impossible" rationale updated. BC-impact handoff for PO: mirror open-with-ENOENT-fallback in BC-1.18.010 §Reader Integration step 2 AND BC-1.18.011 Invariant 3. MED-2 (MED) — §BC Impact BC-1.18.010 provenance tables still imperative after v1.10 LOW-2 partial sweep: "v1.3 change required"/"v1.4 change required" headers and imperative cells not swept. Fixed: both BC-1.18.010 table headers → "Applied (BC-1.18.010 v1.8)"; imperative cells converted to past-tense provenance. Sibling sweep complete. LOW-1 (LOW) — §Decision 9/10 headings, §Decision 1 body, and §5b body carried residual "unchanged from v1.2"/"as v1.2" self-references. Fixed: stripped from headings and body; "The same 4 guards as v1.2" → "The following 4 guards" in §5b. §Source/Origin and §References updated with pass-8 (D-1228) provenance. In-place v1.11 correction (sibling-sweep residue — MED-1 handoff blockquote): §BC Impact v1.7 Invariant 3 handoff blockquote updated from existence-check/generation-first framing to open-with-ENOENT-fallback wording per §Decision 7c step 2a; "ENOENT is impossible" claim replaced with accurate ENOENT-safe rationale (files move one-directionally gen→canonical via atomic rename(2); required file never absent from both paths simultaneously during COMMITTING window). In-place structural fix: escaped `LOCK_EX\|LOCK_NB` flag notation in §Files-to-Change executor.rs table cell (validate-table-cell-count hook). |
 | 1.10 | 2026-09-13 | architect | Fix-burst (adversary pass-7 RATIFY-WITH-CHANGES, ADR-owned findings). HIGH-1 (HIGH) — step-3.5 PreToolUse self-heal predicate gated on completed.json presence, missing two symmetric crash windows that leave the gate permanently stuck: (i) any abort path (census §7c step 3b / fingerprint §7c step 5 / expiry §7c step 4) crashes AFTER writing txn→ABORTED but BEFORE the gate→OPEN flip — gate=LOCKED, txn=ABORTED, no completed.json — step 3.5 skips because completed.json is absent; (ii) drain-timeout abort fires with gate=DRAINING and NO txn record (txn first written at drain step 7, after LOCKED) — step 3.5 required gate=LOCKED so DRAINING was never considered. Fixed: step-3.5 predicate generalised from "gate=LOCKED AND no active txn AND completed.json present" to "gate ∈ {LOCKED, DRAINING} AND no active txn (absent/COMPLETED/ABORTED) — regardless of completed.json presence"; step 3.5 title updated; sub-items (d) lists all four covered scenarios; "Note" at end updated to ∈ {LOCKED, DRAINING} phrasing; two new fault-injection tests added ("abort-crash before gate→OPEN — txn=ABORTED, no completed.json" and "drain-timeout crash — gate=DRAINING, no txn record"); §Files-to-Change executor.rs row updated to cite generalised reconciliation; PO handoff note added to step 3.5 for E-MAINTENANCE-001 "always TEMPORARY" reconciliation. MED-1 (MED) — §Error Code Semantics EXPIRY_ABORT trigger row described trigger solely as "manifest has expired … AND txn=STAGING" but §Decision 4e (v1.8 F-4) routes both expired AND absent manifest at STAGING resume to EXPIRY_ABORT. Fixed: EXPIRY_ABORT trigger widened to "manifest has expired OR is absent at STAGING resume (pre-pivot; no canonical paths changed)"; PO handoff note added to the row pointing to the matching error-taxonomy.md correction needed. MED-2 (MED) — TTL-based reservation GC (v1.9 H1) retains an abandoned reservation for up to MAX_RESERVATION_TTL (3,600 s); every drain attempt aborts with DRAIN_TIMEOUT_ABORT until TTL elapses, with no operator remediation documented. Fixed: added "Operator remediation for abandoned-reservation stall" paragraph to §Decision 5a Stale reservation cleanup section: identify confirmed-stale reservation (tool_use_id not owned by any live harness session); SAFE MANUAL DELETION is SANCTIONED pre-activation; TTL lower-bound is heuristic, not structurally enforced; activation SHOULD be scheduled during quiescence; TTL MAY be lowered toward lower bound to shorten stall duration. LOW-1 (LOW) — §Error Code Semantics section opened "emitted by the migration binary" but included E-MAINTENANCE-001 which is emitted by the native admission gate in executor.rs (dispatcher hook path), not the migration binary. Fixed: §Error Code Semantics restructured into two sub-tables: "Migration binary process exit codes" and "Guard-layer admission code"; E-MAINTENANCE-001 moved to the guard-layer sub-table with a header note distinguishing HookResult from process exit codes. LOW-2 (LOW) — BC Impact provenance tables under §BC Impact still used imperative future-directive phrasing ("v1.3 change required", "Replace with:", "v1.4 change required", "Add catalog rows…", "Each row must include…", "Codes to add:") despite all changes being applied in prior bursts. Fixed: BC-1.18.011 main table column header changed from "v1.3 change required" to "Applied (BC-1.18.011 v1.7)"; v1.4 additional changes table column header changed to "Applied (BC-1.18.011 v1.7)"; v1.4 additional changes to error-taxonomy.md block converted to past-tense provenance form. §Source/Origin and §References updated with pass-7 (D-1227) provenance. Status block updated. In-place v1.10 correction (no version bump): PO handoff notes for HIGH-1 (E-MAINTENANCE-001 "always TEMPORARY") and MED-1 (EXPIRY_ABORT trigger) converted to completed-provenance form — error-taxonomy.md v1.27 applied both same-burst. |
 | 1.9 | 2026-09-13 | architect | Fix-burst (adversary pass-6 RATIFY-WITH-CHANGES, ADR-owned findings). H1 (HIGH) — drain quiescence unsound: drain step 1 used (pid, start_time) liveness GC, but the creating PID is the per-event PreToolUse dispatcher binary which exits microseconds after writing the reservation; every in-flight reservation appears stale to a liveness check, so step 1 would reclaim it while the tool is still running, causing the step-4 quiescence poll to see an empty dir and snapshot source MID-WRITE. Fixed: PID-liveness GC removed entirely from drain step 1 and from "Stale reservation cleanup" summary; reservation files now store only `created_at` ISO-8601 timestamp (no PID, no start_time); drain step 1 removes only files older than MAX_RESERVATION_TTL (default 3,600 s), a lower bound CANNOT be shorter than the maximum expected tool-call duration; fault-injection test mandate updated: new test "in-flight reservation (Pre fired, Post NOT yet) is NEVER reclaimed by drain step-1 TTL GC; coordinator waits for PostToolUse before snapshotting." M2 (MED) — §Downstream to Product-Owner (Amendments 1–9) and §BC Impact "what must change to match v1.3/v1.4" / "v1.4/v1.5/v1.7 additional changes … product-owner MUST apply" tables still carried imperative future-directive framing, but all BC/taxonomy changes are already applied (BC-1.18.011 v1.7, BC-1.18.010 v1.8, error-taxonomy v1.25). Converted to past-tense completed-provenance form: section headings changed from "required amendments" / "must apply" to "amendments applied" / "Applied:"; body preambles changed from imperative to past-tense; §Error Code Semantics product-owner MUST add → was added. Genuinely-pending items (crates/ implementation, 4 devops dispatcher-guard amendments, darwin-arm64 durability test) left future-tense. L1 (LOW) — §Source/Origin + §References cited passes only through "local pass-3 … producing this v1.6 fix-burst"; stale self-reference. Fixed: appended pass-4 (v1.7 / D-1224), pass-5 (v1.8 / D-1225), pass-6 (v1.9 / this burst) provenance rows; corrected "this v1.6 fix-burst" to past-tense in both sections. L2 (LOW) — §Decision 4e table and the v1.8 F-4 Finding→Resolution row claimed "exhaustive for all TXN-RECORD states" but the no-txn + manifest-present first-run case is handled by §5c Branch 3, not §4e. Fixed: added note below §4e table that first-run activation is out of scope; corrected F-4 row claim to "exhaustive for all re-run and recovery TXN-RECORD states; first-run handled by §5c Branch 3." In-place v1.9 correction: §Files-to-Change shard_manager.rs + tests/ rows swept from the superseded (pid,start_time) reservation-GC to the v1.9 H1 TTL model (created_at + tool_use_id); prose-vs-Files-to-Change gap closed. |
