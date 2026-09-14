@@ -11206,3 +11206,69 @@ Cluster-5 TDD remains BLOCKED until POLICY 22 ratification.
 ### Canonical 6-column row (STATE.md Decisions Log)
 
 | D-1229 | D-1229-ADR052-V112-PASS9-NULL-STAGING-F1-BC-INDEX-TRANSCRIPTION | **ADR-052 v1.12 + BC-INDEX F1 corrective re-transcription + error-taxonomy v1.29 fix burst committed (state-manager, single-commit TD-VSDD-053; D-1229): in-house adversary LOCAL pass-9 = NOT-RATIFIABLE (2 HIGH + 2 MED + 2 LOW); all 6 findings closed — F1 HIGH BC-INDEX transcription [state-manager]: corrective re-transcription of BC-1.18.010 v1.9 + BC-1.18.011 v1.8 INDEX catalog cells and v5.95 changelog entry — inverted canonical-first + invented both-ENOENT CONTENT_PRESERVATION_ABORT abort clause deleted; corrected to actual generation-first/canonical-fallback per BC bodies + ADR §Decision 7c; BC-INDEX v5.95→v5.96. F2 HIGH §4e null-STAGING crash sub-state (v1.11 drain step 2.5 writes txn=STAGING with generation_id=null BEFORE snapshot; crash leaves null-STAGING with no staged gen dir; EC-003 census unconditionally aborts CONTENT_PRESERVATION_ABORT on null hashes; fixed by generation_id partition: null→DISCARD/EXPIRY_ABORT, set→EC-003 resume; fault-injection test mandate §5a). F3 MED §Downstream/§BC Impact residual inverted reader wording + stale provenance labels (generation-first/canonical-fallback corrected; BC-1.18.010 v1.8→v1.9 labels updated). F4 MED §4e ABORTED disposition + txn-selection disambiguation + terminal-txn GC/archival policy. F5 LOW error-taxonomy v1.29 ALREADY_MIGRATED casing (completed.json lowercase). F6 LOW §5c Branch 2 flock parity (pre-reconcile flock(exclusive.lock, LOCK_EX\|LOCK_NB) added; on EWOULDBLOCK exit 0 without gate flip). NOTE: TRAJECTORY REVERSED (1→2); 3rd fix-induced concurrency/recovery regression; human directed KEEP-GRINDING 2nd time. ARCH-INDEX v4.39→v4.40; BC-INDEX v5.95→v5.96; VP-INDEX v3.22 UNCHANGED. Input-hashes: ADR-052 a9d309a (PASS); error-taxonomy (PASS). [D-1222-DRIFT-001] prd.md §5.1 UNCHANGED OPEN. [D-1224-DRIFT-001] VP-leg UNCHANGED OPEN. OWED #2 unchanged (907-file hash sweep). BC-5.39.001 LOCAL streak 0/3 (NOT-RATIFIABLE ≠ CLEAN; pass-10 next). TRAJECTORY REVERSED: CRIT+HIGH 7→5→5→2→2→2→1→1→2 (tail LENGTH=4 →2→1→1→2). POLICY 22 OPEN — 2 sign-off items: (i) macOS exec-TOCTOU; (ii) APFS RATIFICATION PREREQUISITE — UNCHANGED. Cluster-5 TDD BLOCKED. pipeline: PAUSED.** | S-25.02 F4 | 2026-09-13 |
+
+---
+
+## D-1230 — ADR-052 v1.13 FINAL accept-at-floor fix burst + prd.md §5.1 MIG/MAINTENANCE sync (pass-10)
+
+**Date:** 2026-09-13
+**Burst type:** spec fix burst (state-manager, single-commit TD-VSDD-053)
+**Adversary pass:** pass-10 LOCAL (in-house Claude, fresh context, reads only pass-9 Part A per Iron Law)
+**Verdict:** RATIFY-WITH-CHANGES
+**Human decision:** ACCEPT-AT-FLOOR per D-386 Option C
+
+### Finding Table (pass-10)
+
+| Finding | Severity | Summary | Resolution |
+|---------|----------|---------|------------|
+| HIGH-1 | HIGH | 4th fix-induced concurrency-core regression: v1.12 flock-gated self-heal predicate (gate∈{LOCKED,DRAINING} AND no-active-txn) fires at step 2.5 crash where txn=STAGING with generation_id=null ALREADY written — coordinator had written txn before crash; self-heal would gate-flip without discard of null-generation STAGING state | FINAL prose fix: self-heal checks for null-generation STAGING txn first; null-generation STAGING → DISCARD (delete partial txn per §4e null-generation partition), THEN gate→OPEN; combines §4e null-STAGING logic (v1.12) with step-3.5 self-heal path (ADR-052 v1.13) |
+| MED-1 | MED | EXPIRY_ABORT third arm missing: reservation absent-AND-expired (crash before reservation creation at step 2.5) also requires DISCARD of null-generation STAGING + EXPIRY_ABORT; prior text only covered TTL-expired case | Third arm added to EXPIRY_ABORT trigger: absent-AND-expired reservation → DISCARD null-STAGING txn + EXPIRY_ABORT (ADR-052 v1.13) |
+| MED-2 | MED | Remaining v1.2 dangling refs in §Downstream + §BC Impact: cross-version "see v1.2 §" language not fully inlined in prior fix bursts | All cross-version references replaced with direct spec prose; no "see v1.2 §" refs remain (ADR-052 v1.13) |
+| MED-3 | MED | Null-generation txn disposition was implied as DELETE — should be ABORTED-retained to preserve audit trail consistent with §4e ABORTED row | Null-generation txn disposition set to ABORTED-retained; archival to .factory/migration-audit/txn-archive/ preserves audit trail; consistent with §4e ABORTED row per D-1229 F4 (ADR-052 v1.13) |
+| LOW-1 | LOW | generation_id ordering invariant not stated explicitly — null generation_id semantics rely on implicit convention | Invariant stated in §Decision 5a: generation_id assigned at step 2.5+ε for any post-crash-recovery STAGING record; null generation_id exclusive to crash window (ADR-052 v1.13) |
+| LOW-2 | LOW | ADR-051 version note stale (v1.14 reference) | Updated to v1.15 (ADR-052 v1.13) |
+
+### Pre-ratification cleanup (prd.md §5.1 MIG/MAINTENANCE sync)
+
+**[D-1222-DRIFT-001] RESOLVED:** prd.md §5.1 updated to include MIG and MAINTENANCE error categories with correct exit codes aligned with error-taxonomy v1.30. prd.md v1.4→v1.5.
+
+### §Verification-Strategy accept-at-floor note
+
+Added to ADR-052 v1.13: concurrency state machine FROZEN for prose review; definitive crash-safety/liveness verification DEFERRED to cluster-5 implementation-phase Kani model-checking + exhaustive fault-injection.
+
+### E-SHD-005 VP-leg assessment
+
+**[D-1224-DRIFT-001] ASSESSED DEFERRABLE (NOT a POLICY 22 blocker):** E-SHD-005 is the STEADY-STATE native gate's HookResult (BC-1.18.006/BC-1.18.010), scoped exclusively to the steady-state gate path. ADR-052's accept-at-floor explicitly defers concurrency/gate verification to cluster-5 implementation-phase Kani+fault-injection. E-SHD-005 VP coverage is a BC-1.18.006/010 verification concern anchored to E-12 verification story — not an ADR-052-ratification prerequisite.
+
+### New follow-up items (tracked)
+
+- **prd.md §5.1 inaccuracy (TRACKED):** "All dispatcher-level errors except E-CAP and E-PLG exit 0" summary line is inaccurate; implementation-phase follow-up anchored to S-25.06 or cluster-5 cleanup.
+- **E-SHD-NNN absent from prd.md §5.1 (TRACKED):** E-SHD-NNN category not present in prd.md §5.1 error taxonomy; anchored to E-12/BC-1.18.006/010 verification story.
+
+### Codification
+
+**Human decision (D-1230):** ACCEPT-AT-FLOOR per D-386 Option C — stop prose-patching the concurrency core; definitive crash-safety/liveness verification DEFERRED to cluster-5 implementation-phase Kani model-checking + exhaustive fault-injection. Adversary cascade CLOSED at pass-10.
+
+**Input-hash status:**
+- ADR-052: a9d309a (PASS — --check verified; architect set this at v1.12; v1.13 does not change this hash as architect confirmed)
+- error-taxonomy.md: 35180ab (UPDATED to v1.30)
+- prd.md: 185754e (UNCHANGED — synthetic input cannot be resolved by compute-input-hash; pre-existing limitation)
+
+**Drift items status:**
+- [D-1222-DRIFT-001] prd.md §5.1 MIG+MAINTENANCE sync: RESOLVED (prd.md v1.4→v1.5 applied).
+- [D-1224-DRIFT-001] E-SHD-005 VP-leg gap: ASSESSED DEFERRABLE — anchored to E-12/BC-1.18.006/010 verification story (NOT POLICY 22 blocker).
+- [D-1225-PG-001] sibling-sweep → S-12.15: UNCHANGED OPEN.
+
+**POLICY 22 status:** AWAITING HUMAN RATIFICATION — 5 sign-off items:
+- (i) macOS exec-TOCTOU residual window + no-concurrent-cargo-build pre-flight.
+- (ii) APFS darwin-arm64 durability test: RATIFICATION PREREQUISITE — must complete before POLICY 22 ratification gate.
+- (iii) CLAUDE.md amendment (4 exact append-log paths + sub-shard/manifest allowlist).
+- (iv) 4 dispatcher-guard amendments at cluster-5 activation.
+- (v) Accept-at-floor acknowledgment per D-1230 (this decision).
+Cluster-5 TDD remains BLOCKED until POLICY 22 ratification.
+
+**OWED (unchanged):** OWED #2 (907-file hash sweep).
+
+### Canonical 6-column row (STATE.md Decisions Log)
+
+| D-1230 | D-1230-ADR052-V113-PASS10-ACCEPT-AT-FLOOR | **ADR-052 v1.13 FINAL accept-at-floor fix burst committed (state-manager, single-commit TD-VSDD-053; D-1230): in-house adversary LOCAL pass-10 = RATIFY-WITH-CHANGES (1 HIGH + 3 MED + 2 LOW); all 6 findings closed — HIGH-1 (4th fix-induced concurrency-core regression): step-3.5 self-heal predicate covers null-generation STAGING crash (null-generation STAGING → DISCARD first, THEN gate→OPEN); MED-1 EXPIRY_ABORT third arm (absent-AND-expired reservation → DISCARD null-STAGING + EXPIRY_ABORT); MED-2 v1.2 dangling refs inlined; MED-3 null-generation txn disposition = ABORTED-retained; LOW-1 generation_id ordering invariant; LOW-2 ADR-051 version note. §Verification-Strategy accept-at-floor note added. prd.md §5.1 MIG/MAINTENANCE sync ([D-1222-DRIFT-001] RESOLVED): prd.md v1.4→v1.5. error-taxonomy v1.29→v1.30. ARCH-INDEX v4.40→v4.41; BC-INDEX v5.96 UNCHANGED; VP-INDEX v3.22 UNCHANGED. Input-hashes: ADR-052 a9d309a (PASS); error-taxonomy 35180ab (updated). [D-1222-DRIFT-001] RESOLVED. [D-1224-DRIFT-001] E-SHD-005 VP-leg: ASSESSED DEFERRABLE (NOT POLICY 22 blocker; anchored to E-12). OWED #2 unchanged (907-file hash sweep). BC-5.39.001 LOCAL streak 0/3 (RATIFY-WITH-CHANGES ≠ CLEAN). TRAJECTORY: CRIT+HIGH 7→5→5→2→2→2→1→1→2→1 (10 passes; floor at 1; tail LENGTH=4 →1→1→2→1). HUMAN DECISION: ACCEPT-AT-FLOOR per D-386 Option C — concurrency state machine FROZEN; crash-safety/liveness DEFERRED to cluster-5 Kani+fault-injection. POLICY 22: AWAITING HUMAN RATIFICATION (5 sign-off items: i=macOS exec-TOCTOU; ii=APFS RATIFICATION PREREQUISITE; iii=CLAUDE.md amendment; iv=dispatcher guards; v=accept-at-floor acknowledgment). Cluster-5 TDD BLOCKED. pipeline: PAUSED.** | S-25.02 F4 | 2026-09-13 |

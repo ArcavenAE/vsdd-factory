@@ -1,7 +1,7 @@
 ---
 document_type: prd
 level: L3
-version: "1.4"
+version: "1.5"
 status: draft
 producer: product-owner
 timestamp: 2026-05-07T00:00:00Z
@@ -1184,6 +1184,8 @@ See `.factory/specs/prd-supplements/nfr-catalog.md` for the complete 76-NFR cata
 | Sink errors | E-SNK-NNN | degraded → non-blocking | 0 | E-SNK-001: queue full (event dropped); E-SNK-002: write failure; E-SNK-003: unknown driver type |
 | Activation errors | E-ACT-NNN | broken → explicit error | non-zero | E-ACT-001: unsupported platform; E-ACT-002: binary missing; E-ACT-003: hooks.json write failure |
 | Hook gate blocks | E-HK-NNN | blocked → exit 2 | 2 | E-HK-001: secret detected; E-HK-002: destructive command; E-HK-003: branch protection |
+| Migration binary exit codes | Named codes (EXPIRY_ABORT, etc.) | non-error sentinel (exit 0/1) or blocked (exit 2) | 0, 1, or 2 | EXPIRY_ABORT: manifest expired/absent/null-generation sub-state (exit 1); CENSUS_MISMATCH_ABORT: pre-pivot census failure (exit 2); ALREADY_MIGRATED: idempotent sentinel (exit 0) |
+| Migration window guards | E-MAINTENANCE-NNN | blocked → HookResult (native admission gate); exit 2 | 2 | E-MAINTENANCE-001: BC-INDEX write blocked — txn record in STAGING or COMMITTING state (ADR-052 §Decision 5a) |
 
 All dispatcher-level errors except E-CAP and E-PLG exit 0 (non-blocking per NFR-REL-001).
 
@@ -1582,7 +1584,7 @@ The following features must NOT appear in any story acceptance criteria or imple
 | FRs defined | 48 |
 | NFRs cataloged | 76 |
 | DTU status | DTU_REQUIRED: false |
-| PRD version | 1.4 (2026-05-13 — D-466 E-10 pass-12 fix burst F-3+F-6 closure (HH-4 regex-alternation discipline): §2.3 heading `Observability Sinks (SS-03)` → `Event Emission (OTel-Aligned) (SS-03)` per POLICY 6 canonical-name SoT. Also fixed 2 pre-existing unescaped pipe violations (line 851: `Edit\|Write` → `Edit or Write`; line 1054: `strict\|facade` → `strict or facade`) per validate-table-cell-count gate. Previous: 1.3 (2026-05-08 — F-P19-001 corpus-wide L-P18-002 sweep). [D-468 F-PASS13-001: D-350 → D-466 citation correction applied 2026-05-14.] |
+| PRD version | 1.5 (2026-09-13 — D-1222-DRIFT-001 pre-ratification cleanup: added Migration binary exit codes (MIG) and Migration window guards (MAINTENANCE) categories to §5.1 Error Category Summary to match prd-supplements/error-taxonomy.md. Previous: 1.4 (2026-05-13 — D-466 E-10 pass-12 fix burst F-3+F-6 closure (HH-4 regex-alternation discipline): §2.3 heading `Observability Sinks (SS-03)` → `Event Emission (OTel-Aligned) (SS-03)` per POLICY 6 canonical-name SoT). |
 
 This PRD should be updated when:
 - A Tier E/F/G story ships and its FR status changes from `pending` to `shipped`
