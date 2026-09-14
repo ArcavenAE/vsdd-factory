@@ -2,7 +2,7 @@
 document_type: architecture-decision-record
 adr_id: ADR-052
 level: L3
-version: "1.9"
+version: "1.10"
 status: proposed
 date: 2026-09-13
 producer: architect
@@ -36,17 +36,17 @@ input-hash: "156d100"
 
 ## Status
 
-PROPOSED — v1.8 NOT ratified per 9th adversarial review (local cascade pass-6)
-(1 HIGH crash-safety soundness bug + 1 MED future-directive framing + 2 LOW provenance/scope
-findings — drain step 1 GC keyed on ephemeral per-event dispatcher PID (dead microseconds after
-PreToolUse exit), enabling in-flight reservation reclamation and coordinator snapshotting
-source MID-WRITE; §Downstream/§BC Impact future-directive framing for changes already applied
-(BC-1.18.011 v1.7, BC-1.18.010 v1.8, error-taxonomy v1.25); §Source/Origin stale self-reference
-and missing pass-4/5/6 provenance; §4e "exhaustive" claim overstated vs §5c Branch 3 first-run
-case). This v1.9 fix-burst resolves all ADR-owned findings. Human POLICY 22 ratification
-required before this ADR is treated as accepted — two explicit sign-off items: (1) exec-TOCTOU
-residual window on macOS; (2) APFS dir-fsync durability test must complete as ratification
-prerequisite. Cluster-5 TDD dispatch remains BLOCKED until ratification.
+PROPOSED — v1.9 NOT ratified per 10th adversarial review (local cascade pass-7)
+(1 HIGH crash-safety/liveness bug + 2 MED operational gaps + 2 LOW provenance/scope findings —
+step 3.5 self-heal predicate gates on completed.json presence, missing the symmetric crash windows
+where gate stays LOCKED from a non-COMPLETED abort crash or DRAINING from a drain-timeout crash
+with no txn; EXPIRY_ABORT trigger narrower than §4e behavior (absent manifest not covered); no
+operator runbook for TTL reservation stall after crashed harness session; E-MAINTENANCE-001
+mis-shelved under migration binary error codes; residual imperative phrasing in BC Impact
+provenance tables). This v1.10 fix-burst resolves all ADR-owned findings. Human POLICY 22
+ratification required before this ADR is treated as accepted — two explicit sign-off items:
+(1) exec-TOCTOU residual window on macOS; (2) APFS dir-fsync durability test must complete as
+ratification prerequisite. Cluster-5 TDD dispatch remains BLOCKED until ratification.
 
 ## Context
 
@@ -163,6 +163,16 @@ All 11 findings from the 3rd Codex cross-vendor closure review (`adv-cv-adr052-v
 |---------|-----|-------------------|-------------------|
 | F-2 | HIGH | §Files to Change: the `shard_manager.rs` row still described PC1 as "step 3b pre-pivot census gate — staging-integrity + PC1 (byte-for-byte reconstruct vs source_sha256)" — the v1.6 whole-concat form that v1.7 F1 superseded. The `tests/` row still said "PC1 concat-SHA vs source_sha256" and listed `E-SHD-005` inside the migration census-gate test description. `E-SHD-005` is a `HookResult` emitted by the steady-state native admission gate (BC-1.18.006/BC-1.18.010); it is NOT a process exit code of the migration binary and does not belong in the migration census-gate test inventory. Both rows also carried stale "v1.6" version labels. | §Files to Change `shard_manager.rs` row: rewrites PC1 phrase to "PC1 structured per-BC-row equivalence vs `source_body_row_sha256`"; removes `source_sha256` from the PC1 bullet (it remains only in the step-5 fingerprint recheck); updates version scope label from v1.6 to v1.7. `tests/` row: replaces "PC1 concat-SHA vs source_sha256" with "PC1 structured per-BC-row equivalence vs `source_body_row_sha256`"; removes `E-SHD-005` from the census-gate test listing (the test verifies the shard-boundary internal capacity check, NOT the steady-state HookResult); updates version scope label from v1.6 to v1.7. |
 | F-4 | MED | §Decision 4e recovery-modes table was inexhaustive: the `txn STAGING + manifest absent or expired` case had no row. This scenario occurs when (a) the activation manifest was never written, (b) the manifest was deleted, or (c) the manifest has expired before the resume attempt. Without a defined row, the coordinator has no specified action for this valid operational state. | §Decision 4e: added row `txn STAGING + manifest absent or expired` → clean-abort: delete staging generation, update txn record → ABORTED, flip gate → OPEN, exit `EXPIRY_ABORT`. This applies the §4d clean-abort logic (expired-pre-pivot branch) to the case where the manifest is absent or expired at resume time rather than expiring mid-run. The table is now exhaustive for all re-run and recovery TXN-RECORD states; first-run activation (no txn record + valid manifest present) is handled by §Decision 5c Branch 3 and is intentionally absent from this table (see v1.9 L2 scope note added to §Decision 4e). |
+
+**v1.10 findings (10th adversarial review — local cascade pass-7, D-1227 — this fix-burst):**
+
+| Finding | Sev | Root cause in v1.9 | Resolution in v1.10 |
+|---------|-----|-------------------|-------------------|
+| HIGH-1 | HIGH | §Decision 5a step 3.5 self-heal predicate: triggers only when gate=LOCKED AND no active txn AND completed.json present. Two symmetric crash windows leave the gate permanently stuck: (i) an abort path (census §7c step 3b / fingerprint §7c step 5 / expiry §7c step 4) crashes AFTER writing txn→ABORTED but BEFORE the gate→OPEN flip — durable state gate=LOCKED, txn=ABORTED, NO completed.json — step 3.5 skips (requires completed.json); (ii) drain-timeout abort fires with gate=DRAINING and NO txn record (txn first written at drain step 7, after LOCKED) — step 3.5 required gate=LOCKED so DRAINING was never considered. Writers blocked permanently in both cases. | §Decision 5a step 3.5: predicate generalised to "gate ∈ {LOCKED, DRAINING} AND no active txn (absent, COMPLETED, or ABORTED) — regardless of completed.json presence." Step title updated. Sub-item (d) lists all four covered scenarios. "Note" updated to reflect ∈ {LOCKED, DRAINING} phrasing. Two fault-injection tests added: "abort-crash before gate→OPEN (txn=ABORTED, no completed.json) → next PreToolUse reconciles gate→OPEN" and "drain-timeout crash (gate=DRAINING, no txn) → next PreToolUse reconciles gate→OPEN." PO handoff note added for E-MAINTENANCE-001 "always TEMPORARY" reconciliation. §Files-to-Change executor.rs row updated. |
+| MED-1 | MED | §Error Code Semantics EXPIRY_ABORT trigger described solely as "manifest has expired … AND txn=STAGING" but §Decision 4e (v1.8 F-4) routes both expired AND absent manifest at STAGING resume to EXPIRY_ABORT; trigger is narrower than the actual behavior. | §Error Code Semantics EXPIRY_ABORT trigger widened to "manifest has expired OR is absent at STAGING resume (pre-pivot; no canonical paths changed)"; PO handoff note added to row pointing to error-taxonomy.md EXPIRY_ABORT row requiring the same widening. |
+| MED-2 | MED | TTL-based reservation GC (v1.9 H1) retains a crashed-harness-session's abandoned reservation for up to MAX_RESERVATION_TTL (3,600 s); every activation attempt aborts with DRAIN_TIMEOUT_ABORT until the TTL elapses; no operator remediation documented. | §Decision 5a Stale reservation cleanup: added "Operator remediation for abandoned-reservation stall" paragraph documenting how to identify a confirmed-stale reservation (tool_use_id not owned by any live session), that SAFE MANUAL DELETION is SANCTIONED pre-activation, that the TTL lower-bound is a heuristic constraint (not structurally enforced), that activation SHOULD be scheduled during quiescence, and that MAX_RESERVATION_TTL MAY be lowered toward the lower bound to shorten stall duration. §Files-to-Change executor.rs row updated. |
+| LOW-1 | LOW | §Error Code Semantics section header "emitted by the migration binary" included E-MAINTENANCE-001 which is emitted by the native admission gate in executor.rs (dispatcher hook path), not the migration binary. | §Error Code Semantics restructured into two sub-tables: "Migration binary process exit codes" and "Guard-layer admission code (executor.rs / native admission gate)"; E-MAINTENANCE-001 moved to the guard-layer sub-table with a header note distinguishing HookResult from migration-binary process exit codes. |
+| LOW-2 | LOW | §BC Impact provenance tables still used imperative future-directive phrasing ("v1.3 change required", "Replace with:", "v1.4 change required", "Add catalog rows…", "Each row must include…", "Codes to add:") despite all changes having been applied in prior bursts (BC-1.18.011 v1.7, BC-1.18.010 v1.8, error-taxonomy v1.25). | BC-1.18.011 main table column header changed from "v1.3 change required" to "Applied (BC-1.18.011 v1.7)"; v1.4 additional changes table column header changed to "Applied (BC-1.18.011 v1.7)"; v1.4 additional changes to error-taxonomy.md prose block converted from imperative ("Add catalog rows…") to past-tense provenance ("Applied: catalog rows added for…"). |
 
 **v1.9 findings (9th adversarial review — local cascade pass-6, D-1226 — this fix-burst):**
 
@@ -356,20 +366,33 @@ permanent reservation leaks. The count of files in this directory is the cross-p
   2. Read gate_state value
   3. Check for an active txn record: scan `.factory/migration-state/txn-*.json` for state IN
      (STAGING, COMMITTING)
-  3.5. **Stale-locked-gate reconciliation (v1.7 F4 — avoids permanent gate-stuck on completion
-     crash):** If gate_state = LOCKED AND no active txn AND completed.json exists at
-     `.factory/migration-state/completed.json`:
+  3.5. **Stale-gate reconciliation (v1.7 F4 / v1.10 HIGH-1 — generalised to full no-active-txn
+     predicate):** If gate_state ∈ {LOCKED, DRAINING} AND no active txn (txn absent, COMPLETED,
+     or ABORTED) — REGARDLESS of completed.json presence:
      a. Release `LOCK_SH`
      b. Acquire `LOCK_EX` on gate-state file
-     c. Re-read gate_state (re-check under exclusive lock — it may have changed)
-     d. If gate_state = LOCKED AND no active txn AND completed.json present: write gate_state
-        = OPEN (atomic replace-via-rename per normal gate-flip procedure); this repairs the
-        crash between step 8 (completed.json write) and the COMPLETED gate→OPEN flip that was
-        not caught by a Branch 2 re-invocation
+     c. Re-read gate_state under exclusive lock (it may have changed)
+     d. If gate_state ∈ {LOCKED, DRAINING} AND no active txn (txn absent, COMPLETED, or
+        ABORTED): write gate_state = OPEN (atomic replace-via-rename per normal gate-flip
+        procedure). This repairs four stuck-gate scenarios:
+        (i) crash between step 8 (completed.json write) and the COMPLETED gate→OPEN flip
+            (gate=LOCKED, no active txn, completed.json present — the original v1.7 F4 case);
+        (ii) abort path (census §7c step 3b / fingerprint §7c step 5 / expiry §7c step 4)
+            crashes AFTER writing txn→ABORTED but BEFORE the gate→OPEN flip
+            (gate=LOCKED, txn=ABORTED, NO completed.json — missed by the v1.7 F4 check);
+        (iii) drain-timeout fires and the process crashes after setting gate=DRAINING (drain
+            step 3) but before the abort's gate→OPEN reset — gate=DRAINING, NO txn record
+            (txn is first written at drain step 7, after quiescence; step 3.5 previously
+            required gate=LOCKED so DRAINING was never considered);
+        (iv) any other abort/rollback path that set the gate to LOCKED or DRAINING but
+            crashed before completing the gate→OPEN reset.
+        Idempotent: a newly-started STAGING or COMMITTING txn blocks reconciliation (sub-item
+        d condition: no active txn). A legitimately locked gate is never falsely reconciled.
      e. Release `LOCK_EX`
      f. Re-acquire `LOCK_SH`; re-read gate_state and re-check txn record (go back to step 4)
-     Note: if gate_state = LOCKED with an active txn (STAGING or COMMITTING), gate is
-     legitimately locked — do NOT reconcile; proceed to step 5 (block).
+     Note: if gate_state ∈ {LOCKED, DRAINING} WITH an active txn (STAGING or COMMITTING),
+     the gate is LEGITIMATELY locked — do NOT reconcile; proceed to step 5 (block).
+     **Applied same-burst (v1.10 HIGH-1):** error-taxonomy.md v1.27 reconciled the E-MAINTENANCE-001 clause to self-healing (unblocks on complete/abort OR next-PreToolUse stale-gate reconciliation). E-MAINTENANCE-001 unblocks either when the migration completes/aborts normally (gate flips to OPEN as part of the lifecycle) OR by the next PreToolUse self-heal of any stuck gate with no active txn (this step 3.5 generalised path). Both routes are automatic; no operator action required for routine cases.
   4. If gate_state = OPEN AND no active txn: create `reservations/<tool_use_id>.reservation`
      file; release `LOCK_SH`; proceed (admit)
   5. If gate_state ≠ OPEN (DRAINING or LOCKED) OR active txn exists (STAGING or COMMITTING):
@@ -476,6 +499,33 @@ reservations appear stale to a liveness check (v1.9 H1). TTL-based cleanup is th
 mechanism for per-event reservations. On crash recovery startup (separate from a first-run
 drain), the same TTL GC also runs before re-attempting the drain.
 
+**Operator remediation for abandoned-reservation stall (v1.10 MED-2):** If a harness session
+crashes while a tool call was in-flight, it leaves an abandoned reservation file in
+`.factory/migration-state/reservations/`. Every subsequent drain attempt will abort with
+DRAIN_TIMEOUT_ABORT (30-second poll timeout) until MAX_RESERVATION_TTL elapses — up to 3,600
+seconds by default — with no automatic recovery until then. Operator remediation BEFORE the
+next activation attempt:
+1. Identify the reservation file(s): list `.factory/migration-state/reservations/*.reservation`;
+   each file contains `{"created_at": "...", "tool_use_id": "..."}`.
+2. Confirm the reservation is stale: verify the `tool_use_id` does not correspond to any
+   currently running harness session (no live Claude Code session active that could be its
+   PostToolUse counterpart). If the creating session has terminated, the reservation is stale.
+3. **SAFE MANUAL DELETION is SANCTIONED:** once confirmed stale (no live session owns it),
+   deleting the reservation file from `.factory/migration-state/reservations/` is an explicitly
+   authorised pre-activation operator action. This is the only exception to the principle that
+   reservation files are lifecycle-managed by Pre/PostToolUse hooks.
+4. After deletion, the next drain will see an empty reservations directory and reach quiescence
+   immediately, without waiting for TTL expiry.
+**Operational note:** The TTL lower-bound (MAX_RESERVATION_TTL MUST exceed the worst-case
+legitimate tool-call duration) is a HEURISTIC operational constraint, not a structurally-enforced
+invariant. The implementation cannot distinguish a crashed session's reservation from a very-long
+legitimate tool call. F4 activation SHOULD be scheduled during quiescence (per the L-4 note on
+the 30-second drain timeout) — a system with no concurrent agent operations eliminates both the
+TTL stall risk and the drain-timeout risk. If the default MAX_RESERVATION_TTL is unnecessarily
+long for the deployment, it MAY be lowered toward the lower bound (1,800 seconds) to shorten the
+stall duration for confirmed-crash scenarios, at the cost of a narrower margin against very-long
+legitimate tool calls.
+
 **Fault-injection test mandate (v1.4 — H1; v1.5 — H-3, M-6; v1.6 — M-5; v1.7 — F4; v1.9 — H1):** Tests MUST verify:
 - Drain-timeout abort: gate returns to OPEN; next PreToolUse is admitted
 - Expiry abort at step 4: gate returns to OPEN; txn = ABORTED
@@ -497,11 +547,22 @@ drain), the same TTL GC also runs before re-attempting the drain.
   reaches quiescence and proceeds normally
 - (M-6) Long-running admitted Bash with write effect creates a reservation; coordinator waits
   for PostToolUse reservation removal before proceeding past step 4 of drain procedure
-- (F4) Stale-locked-gate reconciliation via PreToolUse: simulate crash between step 8
+- (F4) Stale-gate reconciliation via PreToolUse: simulate crash between step 8
   (completed.json written) and gate→OPEN flip — gate=LOCKED, completed.json present, no
   active txn. Verify that the NEXT PreToolUse admission (not a binary re-invocation) reconciles
   gate→OPEN; verify subsequent Edit/Write PreToolUse admissions are accepted; verify that a
   LOCKED gate with an active STAGING txn is NOT reconciled by this path (legitimate lock)
+- (v1.10 HIGH-1) Abort-crash before gate→OPEN (txn=ABORTED, no completed.json): simulate an
+  abort path (e.g., expiry abort at §7c step 4) that has written txn→ABORTED but crashes before
+  the gate→OPEN flip — resulting state: gate=LOCKED, txn=ABORTED, no completed.json. Verify
+  that the NEXT PreToolUse reconciles gate→OPEN via step 3.5 (gate=LOCKED, no active txn,
+  regardless of completed.json); verify subsequent Edit/Write PreToolUse admissions are accepted;
+  verify that a LOCKED gate with an active STAGING txn is NOT reconciled (legitimate lock)
+- (v1.10 HIGH-1) Drain-timeout crash (gate=DRAINING, no txn): simulate drain step 3 setting
+  gate=DRAINING, then the process crashes before the drain-timeout abort's gate→OPEN reset —
+  resulting state: gate=DRAINING, NO txn record (txn is first written at drain step 7, after
+  quiescence). Verify that the NEXT PreToolUse reconciles gate→OPEN via step 3.5 (gate=DRAINING,
+  no active txn); verify subsequent Edit/Write PreToolUse admissions are accepted
 
 **Fingerprint recheck:** Retained at §Decision 7c step 5 as defense-in-depth after quiescence.
 Not the drain mechanism.
@@ -1313,15 +1374,24 @@ Both acknowledgments MUST be recorded in the D-NNN entry that ratifies ADR-052.
 
 ## Error Code Semantics
 
-The following error codes are emitted by the migration binary. The product-owner added
-catalog rows to `error-taxonomy.md` (v1.25) for each code. This section is the definitive
-record of the trigger, severity, and exit behavior for each code.
+This section covers two distinct layers: (1) **migration binary process exit codes** — emitted
+by the `crates/factory-dispatcher` migration subcommands (`migrate-bc-index`,
+`backfill-append-logs`); these are operating-system process exit codes. (2) **guard-layer
+admission code** — emitted by the native admission gate in `executor.rs` (dispatcher hook
+path); this is a `HookResult` value, not a migration binary process exit code. The two layers
+are distinguished by sub-table below. The product-owner added catalog rows to `error-taxonomy.md`
+(v1.25) for each code. This section is the definitive record of the trigger, severity, and exit
+behavior for each code. **(v1.10 LOW-1):** Prior versions incorrectly shelved E-MAINTENANCE-001
+under the migration binary section; it has been moved to its own sub-table.
+
+**Migration binary process exit codes** (emitted by `crates/factory-dispatcher` migration
+subcommands; these are OS process exit codes, not HookResult values):
 
 | Error Code | Trigger | Severity | Exit |
 |---|---|---|---|
 | `E-BINARY-INTEGRITY-FAILURE` | SHA-256 digest of the binary (computed through opened fd or path) does not match the stored/expected digest; OR programmatic mtime guard detects mtime change between digest-check and exec attempt on macOS | BLOCKED — migration aborted before exec | exit 2 |
 | `RECOVERY_REQUIRES_REAUTHORIZATION` | Recovery process encounters a COMMITTING transaction whose original manifest has expired AND no completion-only recovery manifest is present or valid | BLOCKED — cannot forward-recover without fresh authorization | exit 2 |
-| `EXPIRY_ABORT` | Activation manifest has expired (timestamp_utc + expires_after_hours < now) AND txn record state is STAGING (pre-pivot); clean abort | NON-ERROR termination — no canonical paths changed; re-activation required | exit 1 |
+| `EXPIRY_ABORT` | Activation manifest has expired (timestamp_utc + expires_after_hours < now) OR is absent at STAGING resume — txn record state is STAGING (pre-pivot; no canonical paths changed); clean abort (delete staging generation, txn → ABORTED, gate → OPEN). **Applied same-burst (v1.10 MED-1):** error-taxonomy.md v1.27 EXPIRY_ABORT trigger widened to "expired OR absent at STAGING resume" to match §Decision 4e behavior. | NON-ERROR termination — no canonical paths changed; re-activation required | exit 1 |
 | `FINGERPRINT_MISMATCH_ABORT` | Source files changed between quiescence snapshot and fingerprint recheck at step 5 (sha256 of source != source_sha256 in txn record) | BLOCKED — abort before irreversible step | exit 2 |
 | `DRAIN_TIMEOUT_ABORT` | Coordinator waited 30 seconds for active writer reservations to drain to zero; quiescence not achieved | BLOCKED — migration deferred; gate returned to OPEN | exit 2 |
 | `ARCH_INDEX_PARITY_ABORT` | Three-way ARCH-INDEX parity check fails: config.arch_index_sha != manifest.approved_arch_index_sha OR != live ARCH-INDEX SHA | BLOCKED — abort before any staging work | exit 2 |
@@ -1329,7 +1399,13 @@ record of the trigger, severity, and exit behavior for each code.
 | `CENSUS_MISMATCH_ABORT` | Pre-pivot census (step 3b PC2): any `BC-X.YY.NNN` ID from the original-census set appears in zero or more than one staged shard file (ID-set exactly-one-shard violation; detects EC-001 dup+drop even when total count is equal); OR shard-boundary capacity violation (step 3b internal check — distinct from `E-SHD-005`, which is a `HookResult` of the steady-state admission gate in BC-1.18.006/BC-1.18.010, NOT a process exit code of the migration binary). Process exit code. | BLOCKED — abort before pointer swap; txn → ABORTED; gate → OPEN | exit 2 |
 | `CONTENT_PRESERVATION_ABORT` | Pre-pivot checks (step 3b): staging-file integrity failure (sha256(staged_file) != expected_post_hash for any staged file, indicating modification after staging sync); OR PC1 structured-equivalence failure (SHA-256 of staged per-BC-row content in canonical BC-ID sort order does not match `source_body_row_sha256` from txn record, indicating row bytes were altered, dropped, or reordered during the split). NOTE: `source_sha256` (whole-file hash) is used ONLY by step 5 fingerprint recheck; PC1 uses the dedicated `source_body_row_sha256` field. Process exit code. | BLOCKED — abort before pointer swap; txn → ABORTED; gate → OPEN | exit 2 |
 | `ALREADY_MIGRATED` | `completed.json` exists at `.factory/migration-state/completed.json` | NON-ERROR sentinel — migration previously completed; no action taken | exit 0 |
-| `E-MAINTENANCE-001` | Mutation tool call attempted while gate state is DRAINING or LOCKED, OR while txn record exists with state STAGING or COMMITTING | BLOCKED — writer must retry after migration completes | exit 2 (guard layer) |
+
+**Guard-layer admission code** (emitted by the native admission gate in `executor.rs`,
+dispatcher hook path — this is a `HookResult` value, NOT a migration binary process exit code):
+
+| Error Code | Trigger | Severity | Exit |
+|---|---|---|---|
+| `E-MAINTENANCE-001` | Mutation tool call (Edit/Write/MultiEdit/Bash) attempted while gate state is DRAINING or LOCKED, OR while txn record exists with state STAGING or COMMITTING. Emitted by the native admission gate in `executor.rs` (§Decision 5a), NOT by the migration binary. | BLOCKED — writer must retry after migration completes or after PreToolUse step-3.5 self-heals a stuck gate | HookResult (guard layer) |
 
 **Note:** One catalog row per code was added to `error-taxonomy.md` (v1.25). The `exit 0`
 for `ALREADY_MIGRATED` is a deliberate sentinel — callers that re-invoke the migration binary
@@ -1491,7 +1567,8 @@ that made incremental amendment non-viable (diverging finding trajectory 7→8�
     1C+4H+5M+2L), producing the v1.6 fix-burst
   - Local pass-4 (D-1224): 7th review (2 HIGH + 6 MED observations), producing the v1.7 fix-burst
   - Local pass-5 (D-1225): 8th review (2 HIGH + 1 MED, RATIFY-WITH-CHANGES), producing the v1.8 fix-burst
-  - Local pass-6 (D-1226): 9th review (1 HIGH + 1 MED + 2 LOW, RATIFY-WITH-CHANGES), producing this v1.9 fix-burst
+  - Local pass-6 (D-1226): 9th review (1 HIGH + 1 MED + 2 LOW, RATIFY-WITH-CHANGES), producing the v1.9 fix-burst
+  - Local pass-7 (D-1227): 10th review (1 HIGH + 2 MED + 2 LOW, RATIFY-WITH-CHANGES), producing this v1.10 fix-burst
 - `research-adr-052-v13-atomic-publication-2026-09-13.md` — research brief grounding
   the atomic-pointer architecture, advisory flock design, and F_FULLFSYNC / fexecve guidance
 - CLAUDE.md TD-FACTORY-HOOK-BYPASS-001 P0 — governing rule this ADR excepts via §Decision 8
@@ -1693,7 +1770,7 @@ record. BC bodies were not edited directly — all changes were routed via produ
 
 ### BC-1.18.011 — changes applied to match v1.3–v1.7
 
-| Section | v1.2 text (to replace) | v1.3 change required |
+| Section | v1.2 text (superseded) | Applied (BC-1.18.011 v1.7) |
 |---|---|---|
 | Precondition 5 (§Amendment 4) | PREPARED/COMMITTED/CLEANED phase markers; `completed_renames` tracking; EC-003 reads `completed_renames` | Replace with: STAGING/COMMITTING/COMPLETED txn record; intent log for recovery; EC-003 reads intent log + txn record |
 | Precondition 6 (§Amendment 5) | O_CREAT\|O_EXCL lock file with alive-PID check; Edit/Write gate via `validate-factory-path-staging` only | Replace with: advisory flock on stable inode; txn record state blocks writers regardless of PID liveness; OPEN/DRAINING gate with writer reservations |
@@ -1704,7 +1781,7 @@ record. BC bodies were not edited directly — all changes were routed via produ
 
 **v1.4 additional changes to BC-1.18.011 (Applied: BC-1.18.011 v1.7):**
 
-| Section | v1.3 text (to replace) | v1.4 change required |
+| Section | v1.3 text (superseded) | Applied (BC-1.18.011 v1.7) |
 |---|---|---|
 | Invariant 3 | "CURRENT.json atomic pointer swap is the sole commit-point" — does not reflect C1 reader protocol change | Update: add that during COMMITTING state, new-generation content is accessible via canonical-first / generation-fallback protocol; a file is at canonical path (if already moved) OR at gen-uuid/ path (not yet moved); ENOENT is not possible for any file during the committing window (C1 fix) |
 | Postcondition 1/2 (census gate cross-ref) | No explicit pre-pivot gate step referenced | Add cross-reference to ADR-052 §Decision 7c step 3b (pre-pivot content-preservation + census gate); state that PC1/PC2 are verified at step 3b against the staged generation BEFORE the pointer swap; failure at step 3b aborts cleanly per step 3c |
@@ -1855,19 +1932,21 @@ against `source_sha256`. Feasibility assessment and proof strategy updated accor
 
 ### error-taxonomy.md — changes applied to match v1.3
 
-| Location | v1.2 text (to replace) | v1.3 change required |
+| Location | v1.2 text (superseded) | Applied (error-taxonomy v1.25) |
 |---|---|---|
-| E-MAINTENANCE-001 definition (near original line 84) | "enforced by `validate-factory-path-staging` on Edit/Write"; "when exclusive.lock exists with alive PID" | Replace with: dual-mechanism: (1) txn record state STAGING/COMMITTING blocks all mutation tools via native gate regardless of PID; (2) DRAINING gate prevents new reservations; guard is secondary classifier only |
+| E-MAINTENANCE-001 definition (near original line 84) | "enforced by `validate-factory-path-staging` on Edit/Write"; "when exclusive.lock exists with alive PID" | Applied: replaced with dual-mechanism: (1) txn record state STAGING/COMMITTING blocks all mutation tools via native gate regardless of PID; (2) DRAINING gate prevents new reservations; guard is secondary classifier only |
 
 **v1.4 additional changes to error-taxonomy.md (Applied: error-taxonomy v1.25):**
 
-Add catalog rows for all new error codes defined in §Error Code Semantics above. Each row
-must include: code name, trigger description, severity, exit behavior. Codes to add:
+Applied: catalog rows added for all new error codes defined in §Error Code Semantics above.
+Each row includes: code name, trigger description, severity, exit behavior. Codes added:
 `E-BINARY-INTEGRITY-FAILURE`, `RECOVERY_REQUIRES_REAUTHORIZATION`, `EXPIRY_ABORT`,
 `FINGERPRINT_MISMATCH_ABORT`, `DRAIN_TIMEOUT_ABORT`, `ARCH_INDEX_PARITY_ABORT`,
 `COMPLETION_MANIFEST_REJECTION`, `CENSUS_MISMATCH_ABORT`, `CONTENT_PRESERVATION_ABORT`,
-`ALREADY_MIGRATED` (exit-0 non-error sentinel), `E-MAINTENANCE-001` (update existing entry
-per v1.3 correction above).
+`ALREADY_MIGRATED` (exit-0 non-error sentinel), `E-MAINTENANCE-001` (existing entry updated
+per v1.3 correction above). All rows present in error-taxonomy.md v1.25.
+*(Historical record: this block records the v1.4 directive that was applied in the v1.4
+fix-burst. All changes were completed; no pending actions remain here.)*
 
 ---
 
@@ -1878,7 +1957,7 @@ per v1.3 correction above).
 - `research-adr-052-v13-atomic-publication-2026-09-13.md` — research brief grounding the v1.3 architecture (atomic publication, intent log, advisory flock, F_FULLFSYNC, fexecve/execveat)
 - `adv-cv-adr052-v11-closure-2026-09-12.md` — 2nd Codex closure review, 8 findings (D-1216)
 - `adv-cv-adr052-cluster5-F1-2026-09-12.md` — 1st Codex RATIFY-WITH-CHANGES verdict (7 findings, D-1214)
-- Decision log D-1221 (local pass-1, 9 findings, producing v1.4), D-1222 (local pass-2, 9 findings, producing v1.5), D-1223 (local pass-3, 12 findings, producing v1.6), D-1224 (local pass-4, 2H+6M, producing v1.7), D-1225 (local pass-5, 2H+1M RATIFY-WITH-CHANGES, producing v1.8), D-1226 (local pass-6, 1H+1M+2L RATIFY-WITH-CHANGES, producing v1.9)
+- Decision log D-1221 (local pass-1, 9 findings, producing v1.4), D-1222 (local pass-2, 9 findings, producing v1.5), D-1223 (local pass-3, 12 findings, producing v1.6), D-1224 (local pass-4, 2H+6M, producing v1.7), D-1225 (local pass-5, 2H+1M RATIFY-WITH-CHANGES, producing v1.8), D-1226 (local pass-6, 1H+1M+2L RATIFY-WITH-CHANGES, producing v1.9), D-1227 (local pass-7, 1H+2M+2L RATIFY-WITH-CHANGES, producing v1.10)
 - `research-adr-052-assumption-validation-2026-09-12.md` — prior research Q1-Q5 validation
 - `BC-1.18.011` — migration BC; §Downstream to Product-Owner specifies amendments
 - `BC-1.18.010` — §Reader Integration amendment + Invariant 2 amendment
@@ -1910,7 +1989,7 @@ per v1.3 correction above).
 | `plugins/vsdd-factory/hooks/destructive-command-guard.sh` (or WASM) | 4-branch classifier per §5c; txn record state check | devops-engineer |
 | `plugins/vsdd-factory/hooks/validate-factory-path-staging.sh` (or WASM) | 4-branch classifier; conservative Bash admission; executable digest verification + fd-binding per §Decision 11 | devops-engineer |
 | `plugins/vsdd-factory/hooks/validate-factory-path-staged.sh` (or WASM) | Recognize governed migration subcommands; pass through | devops-engineer |
-| `crates/factory-dispatcher/src/executor.rs` | OPEN/DRAINING gate with writer reservations (PreToolUse-acquire/PostToolUse-release); durable reservation dir `.factory/migration-state/reservations/` (H2 v1.4); atomic admission under gate_state flock; every abort path flips gate → OPEN (H1 v1.4); crash-recovery gate reconciliation; stale reservation cleanup; txn record state check blocking mutations | implementer (cluster-5 TDD) |
+| `crates/factory-dispatcher/src/executor.rs` | OPEN/DRAINING gate with writer reservations (PreToolUse-acquire/PostToolUse-release); durable reservation dir `.factory/migration-state/reservations/` (H2 v1.4); atomic admission under gate_state flock; every abort path flips gate → OPEN (H1 v1.4); **v1.10 HIGH-1: step-3.5 stale-gate reconciliation generalised — triggers on gate ∈ {LOCKED, DRAINING} AND no active txn (absent/COMPLETED/ABORTED), regardless of completed.json presence; covers (i) abort-crash-before-gate-reset (txn=ABORTED, no completed.json) and (ii) drain-timeout-crash (gate=DRAINING, no txn record) scenarios**; crash-recovery gate reconciliation (§Decision 5a Crash-recovery gate reconciliation paragraph — also covers gate=DRAINING per v1.4 H1); stale reservation cleanup with **v1.10 MED-2: operator runbook for abandoned-reservation stall — confirmed-stale reservation files (no live harness session) MAY be manually deleted pre-activation per §Decision 5a operator remediation guidance**; txn record state check blocking mutations | implementer (cluster-5 TDD) |
 | `crates/factory-dispatcher/src/shard_manager.rs` | Full v1.7 migration implementation: advisory flock; txn record (`source_body_row_sha256` field for PC1); intent log (framed+checksummed); step 3b pre-pivot census gate — staging-integrity (sha256(staged_file) vs intent-log expected_post_hash) + PC1 (structured per-BC-row equivalence: extract BC-X.YY.NNN rows from staged shards, sort by BC-ID, sha256 → compare vs `source_body_row_sha256`; `source_sha256` whole-file hash is the step-5 fingerprint recheck only, NOT PC1) + PC2 (per-ID exactly-one-shard set check; EC-001 dup+drop detection); CURRENT.json pointer swap + generation-first/canonical-fallback reader; completed.json; 4-branch recovery (including new `txn STAGING + manifest absent/expired` clean-abort path); platform-branched durability (F_FULLFSYNC on macOS); fd-binding exec on Linux with /proc dependency note; programmatic mtime guard on macOS (M-2: mtime re-stat immediately before exec); TTL-based stale-reservation GC at start of every drain (reservation files store created_at + tool_use_id, no PID; remove files older than MAX_RESERVATION_TTL default 3600s / lower bound 1800s; PID-liveness GC removed as unsound for per-event binaries — v1.9 H1); all abort paths flip gate → OPEN; fencing_generation AUDIT-ONLY | implementer (cluster-5 TDD) |
 | `crates/factory-dispatcher/tests/` | v1.7 test suite: advisory flock; txn record state machine (`source_body_row_sha256` field); intent log write+recovery+fault-injection; step 3b census gate (staging-integrity sha256 vs intent-log expected_post_hash + PC1 structured per-BC-row equivalence vs `source_body_row_sha256` + PC2 ID-set exactly-one-shard + EC-001 dup+drop + shard-boundary internal capacity check [NOT `E-SHD-005` — that is the steady-state HookResult, not a migration process exit code]); CURRENT.json pointer swap + generation-first reader; completed.json permanence; all abort paths → gate OPEN (including new `txn STAGING + manifest absent/expired` → EXPIRY_ABORT clean-abort); Branch 2 gate reconciliation (H-2 fault injection: crash between step 8 and gate→OPEN, then ALREADY_MIGRATED reconciles gate); reservation dir cross-process quiescence (H-2); TTL-based stale-reservation GC on first-run drain (created_at TTL, no PID); test that an IN-FLIGHT reservation (Pre fired, Post not yet) is NEVER reclaimed by drain step-1 GC and the coordinator waits for its PostToolUse (v1.9 H1); 4-branch guard logic; conservative Bash admission (txn=STAGING or COMMITTING); digest mismatch abort; Linux execveat AT_EMPTY_PATH; macOS mtime guard (pre-exec re-stat) + freeze-build; platform durability; validate_write_target() dot-lowercase + rejection of hyphen-uppercase (C2 ratification test) | implementer (cluster-5 TDD) |
 | `crates/factory-dispatcher/tests/darwin_arm64_durability_test.rs` | Empirical darwin-arm64 directory-fsync durability characterization test — **RATIFICATION PREREQUISITE (v1.7 F8)**: this test MUST be completed and reviewed before POLICY 22 ratification of macOS safety. Test validates whether `fsync(dir_fd)` on APFS provides power-loss durability for rename directory entries beyond `F_FULLFSYNC` alone. Results feed §Decision 11 sign-off item 2. | implementer (cluster-5 TDD) — darwin-arm64 CI required; result reviewed at POLICY 22 ratification gate |
@@ -1923,6 +2002,7 @@ per v1.3 correction above).
 
 | Version | Date | Author | Change |
 |---|---|---|---|
+| 1.10 | 2026-09-13 | architect | Fix-burst (adversary pass-7 RATIFY-WITH-CHANGES, ADR-owned findings). HIGH-1 (HIGH) — step-3.5 PreToolUse self-heal predicate gated on completed.json presence, missing two symmetric crash windows that leave the gate permanently stuck: (i) any abort path (census §7c step 3b / fingerprint §7c step 5 / expiry §7c step 4) crashes AFTER writing txn→ABORTED but BEFORE the gate→OPEN flip — gate=LOCKED, txn=ABORTED, no completed.json — step 3.5 skips because completed.json is absent; (ii) drain-timeout abort fires with gate=DRAINING and NO txn record (txn first written at drain step 7, after LOCKED) — step 3.5 required gate=LOCKED so DRAINING was never considered. Fixed: step-3.5 predicate generalised from "gate=LOCKED AND no active txn AND completed.json present" to "gate ∈ {LOCKED, DRAINING} AND no active txn (absent/COMPLETED/ABORTED) — regardless of completed.json presence"; step 3.5 title updated; sub-items (d) lists all four covered scenarios; "Note" at end updated to ∈ {LOCKED, DRAINING} phrasing; two new fault-injection tests added ("abort-crash before gate→OPEN — txn=ABORTED, no completed.json" and "drain-timeout crash — gate=DRAINING, no txn record"); §Files-to-Change executor.rs row updated to cite generalised reconciliation; PO handoff note added to step 3.5 for E-MAINTENANCE-001 "always TEMPORARY" reconciliation. MED-1 (MED) — §Error Code Semantics EXPIRY_ABORT trigger row described trigger solely as "manifest has expired … AND txn=STAGING" but §Decision 4e (v1.8 F-4) routes both expired AND absent manifest at STAGING resume to EXPIRY_ABORT. Fixed: EXPIRY_ABORT trigger widened to "manifest has expired OR is absent at STAGING resume (pre-pivot; no canonical paths changed)"; PO handoff note added to the row pointing to the matching error-taxonomy.md correction needed. MED-2 (MED) — TTL-based reservation GC (v1.9 H1) retains an abandoned reservation for up to MAX_RESERVATION_TTL (3,600 s); every drain attempt aborts with DRAIN_TIMEOUT_ABORT until TTL elapses, with no operator remediation documented. Fixed: added "Operator remediation for abandoned-reservation stall" paragraph to §Decision 5a Stale reservation cleanup section: identify confirmed-stale reservation (tool_use_id not owned by any live harness session); SAFE MANUAL DELETION is SANCTIONED pre-activation; TTL lower-bound is heuristic, not structurally enforced; activation SHOULD be scheduled during quiescence; TTL MAY be lowered toward lower bound to shorten stall duration. LOW-1 (LOW) — §Error Code Semantics section opened "emitted by the migration binary" but included E-MAINTENANCE-001 which is emitted by the native admission gate in executor.rs (dispatcher hook path), not the migration binary. Fixed: §Error Code Semantics restructured into two sub-tables: "Migration binary process exit codes" and "Guard-layer admission code"; E-MAINTENANCE-001 moved to the guard-layer sub-table with a header note distinguishing HookResult from process exit codes. LOW-2 (LOW) — BC Impact provenance tables under §BC Impact still used imperative future-directive phrasing ("v1.3 change required", "Replace with:", "v1.4 change required", "Add catalog rows…", "Each row must include…", "Codes to add:") despite all changes being applied in prior bursts. Fixed: BC-1.18.011 main table column header changed from "v1.3 change required" to "Applied (BC-1.18.011 v1.7)"; v1.4 additional changes table column header changed to "Applied (BC-1.18.011 v1.7)"; v1.4 additional changes to error-taxonomy.md block converted to past-tense provenance form. §Source/Origin and §References updated with pass-7 (D-1227) provenance. Status block updated. In-place v1.10 correction (no version bump): PO handoff notes for HIGH-1 (E-MAINTENANCE-001 "always TEMPORARY") and MED-1 (EXPIRY_ABORT trigger) converted to completed-provenance form — error-taxonomy.md v1.27 applied both same-burst. |
 | 1.9 | 2026-09-13 | architect | Fix-burst (adversary pass-6 RATIFY-WITH-CHANGES, ADR-owned findings). H1 (HIGH) — drain quiescence unsound: drain step 1 used (pid, start_time) liveness GC, but the creating PID is the per-event PreToolUse dispatcher binary which exits microseconds after writing the reservation; every in-flight reservation appears stale to a liveness check, so step 1 would reclaim it while the tool is still running, causing the step-4 quiescence poll to see an empty dir and snapshot source MID-WRITE. Fixed: PID-liveness GC removed entirely from drain step 1 and from "Stale reservation cleanup" summary; reservation files now store only `created_at` ISO-8601 timestamp (no PID, no start_time); drain step 1 removes only files older than MAX_RESERVATION_TTL (default 3,600 s), a lower bound CANNOT be shorter than the maximum expected tool-call duration; fault-injection test mandate updated: new test "in-flight reservation (Pre fired, Post NOT yet) is NEVER reclaimed by drain step-1 TTL GC; coordinator waits for PostToolUse before snapshotting." M2 (MED) — §Downstream to Product-Owner (Amendments 1–9) and §BC Impact "what must change to match v1.3/v1.4" / "v1.4/v1.5/v1.7 additional changes … product-owner MUST apply" tables still carried imperative future-directive framing, but all BC/taxonomy changes are already applied (BC-1.18.011 v1.7, BC-1.18.010 v1.8, error-taxonomy v1.25). Converted to past-tense completed-provenance form: section headings changed from "required amendments" / "must apply" to "amendments applied" / "Applied:"; body preambles changed from imperative to past-tense; §Error Code Semantics product-owner MUST add → was added. Genuinely-pending items (crates/ implementation, 4 devops dispatcher-guard amendments, darwin-arm64 durability test) left future-tense. L1 (LOW) — §Source/Origin + §References cited passes only through "local pass-3 … producing this v1.6 fix-burst"; stale self-reference. Fixed: appended pass-4 (v1.7 / D-1224), pass-5 (v1.8 / D-1225), pass-6 (v1.9 / this burst) provenance rows; corrected "this v1.6 fix-burst" to past-tense in both sections. L2 (LOW) — §Decision 4e table and the v1.8 F-4 Finding→Resolution row claimed "exhaustive for all TXN-RECORD states" but the no-txn + manifest-present first-run case is handled by §5c Branch 3, not §4e. Fixed: added note below §4e table that first-run activation is out of scope; corrected F-4 row claim to "exhaustive for all re-run and recovery TXN-RECORD states; first-run handled by §5c Branch 3." In-place v1.9 correction: §Files-to-Change shard_manager.rs + tests/ rows swept from the superseded (pid,start_time) reservation-GC to the v1.9 H1 TTL model (created_at + tool_use_id); prose-vs-Files-to-Change gap closed. |
 | 1.8 | 2026-09-13 | architect | Fix-burst (adversary pass-5 RATIFY-WITH-CHANGES, ADR-owned findings only). F-2 (HIGH) — §Files to Change rows for shard_manager.rs and tests/ still described PC1 as "byte-for-byte reconstruct vs source_sha256" / "concat-SHA vs source_sha256" (v1.6 whole-concat form that v1.7 F1 superseded); tests/ row also listed E-SHD-005 inside the migration census-gate test description (E-SHD-005 is a HookResult of the steady-state gate, not a migration process exit code). Fixed: shard_manager.rs row rewrites PC1 to "structured per-BC-row equivalence vs source_body_row_sha256"; source_sha256 removed from PC1 context (it is the step-5 fingerprint recheck hash only); E-SHD-005 removed from migration census-gate test listing; stale "v1.6" version labels updated to "v1.7". F-4 (MED) — §Decision 4e recovery-modes table was inexhaustive: the case `txn STAGING + manifest absent or expired` had no row. This is a valid scenario (manifest expires during slow staging build, or is missing at resume time); without a defined action the coordinator has no specified path. Fixed: new row added mapping `txn STAGING + manifest absent or expired` to clean-abort — delete staging generation, update txn → ABORTED, flip gate → OPEN, exit EXPIRY_ABORT (matching §4d clean-abort logic for the expired-pre-pivot branch). Root-cause handoff to PO + formal-verifier: error-taxonomy CONTENT_PRESERVATION_ABORT trigger must be updated from whole-concat-vs-source_sha256 to structured-equivalence-vs-source_body_row_sha256; BC-1.18.011 PC1 and VP-132 must be reconciled to the structured per-BC-row model (parallel PO + formal-verifier burst — completed same burst). In-place v1.8 tense correction (no decision content change): §BC Impact propagation blocks (a)/(b)/(c) converted from future-directive framing to completed same-burst-propagation form. LOW cleanliness: stripped residual "(unchanged)" / "(unchanged from v1.X)" annotations from §Context bold-section label and Decision 1/2/3 headings (version-agnostic phrasing; not historical explanations). |
 | 1.7 | 2026-09-13 | architect | Fix-burst resolving all ADR-owned findings from 7th adversarial review (pass-4, D-1224): 2 HIGH + 6 MED observations. F1 (HIGH) — PC1 gate was unsatisfiable: whole-concat SHA against source_sha256 cannot match because the staged lean body adds the new §Subsystem Shard Manifest section and content is reordered. Fixed by introducing a dedicated `source_body_row_sha256` field in the txn record (captured at drain step 5 as SHA-256 of per-BC-row content in canonical BC-ID sort order, excluding header sections) and rewriting PC1 as structured-equivalence: extract BC-X.YY.NNN table rows from all staged shards in canonical BC-ID order, hash → compare against `source_body_row_sha256`; `source_sha256` (whole-file hash) is used only by step 5 fingerprint recheck; EC-001 remains reachable because PC2 independently checks ID-set. F2 (HIGH) — ADR error surface inconsistency: CENSUS_MISMATCH_ABORT trigger and step 3b shard-boundary bullet incorrectly referenced E-SHD-005 (a HookResult of the steady-state admission gate, not a process exit code of the migration binary). Fixed by removing all E-SHD-005 references from migration binary process-exit-code contexts; shard-boundary check renamed "internal capacity check (NOT E-SHD-005)"; §Error Code Semantics CENSUS_MISMATCH_ABORT trigger updated; BC impact handoff directs PO to scope E-SHD-005 to steady-state gate only. F4 (MED) — completion-crash reconciliation required binary re-invocation: after a crash between step 8 (completed.json write) and gate→OPEN flip, all writes were permanently blocked until binary was manually re-run. Fixed by adding stale-locked-gate reconciliation to §Decision 5a PreToolUse admission: if gate=LOCKED AND completed.json present AND no active txn, PreToolUse acquires LOCK_EX, flips gate→OPEN, then proceeds with admission. Fault-injection test mandate added. F5 (MED) — dangling "unchanged from v1.2 §Context" reference: §Context cited v1.2 §Context which no longer exists in-file. Fixed: removed dangling cross-reference; replaced with forward references to extant §Rationale (Option A viability) and §Decision 5a (native admission gate design). F8 (MED) — APFS dir-fsync durability test was a post-ratification deliverable: §Decision 7d listed the darwin-arm64 empirical test as "required before this ADR is considered fully validated on macOS" but did not block ratification. Elevated to RATIFICATION PREREQUISITE: this ADR MUST NOT be ratified as safe on macOS until the test completes; explicit residual-risk acknowledgment added to §Decision 11 POLICY 22 sign-off block. F9 (OBS) — stale "step 5" v1.3-handoff row in BC-Impact table: the v1.3 BC-Impact row for Postcondition 3a still said "step 5 in §Decision 7c" for the pointer swap; corrected inline to "step 6" per v1.4 fix (step 5 = fingerprint recheck; step 6 = CURRENT.json pointer swap). F10 (OBS) — PID-reuse hazard in stale-reservation GC: §5a stale-PID cleanup used PID alone, but OS PID reuse can cause false-negative (live process at reused PID). Fixed by specifying (pid, process_start_time) tuple in reservation files; GC compares both pid and start_time; PID match + start_time mismatch = PID reuse → reclaim. BC impact for product-owner: F2 (scope E-SHD-005 to steady-state gate; update CENSUS_MISMATCH_ABORT in error-taxonomy to remove E-SHD-005 reference; update BC-1.18.011 PC2/PC4/EC-001 trigger language to cite process exit codes not HookResult); F3 (completed.json casing sweep in BC-1.18.010/011); F6 (BC-1.18.011 Invariant 1/Precondition 2 must cite ADR-052 §Decision 7 crash-atomicity machinery, not claim no new machinery exists); F7 (BC-1.18.011 SDK Grounding: drop write_indeterminate_marker as atomic primitive; ground Invariant 1 against BC-1.18.006 shipped primitive in shard_manager.rs). POLICY 22 sign-off items: (1) macOS exec-TOCTOU residual window (existing); (2) F8 APFS dir-fsync durability test must complete as ratification prerequisite before ratifying macOS safety. |

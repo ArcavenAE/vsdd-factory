@@ -8919,3 +8919,23 @@ BC-5.39.001 LOCAL cluster-5 streak **0/3 — pass-1 (D-1221) NOT-RATIFIABLE; pas
 ### §8. BC-5.39.001 streak (D-1225 state)
 
 **LOCAL cluster-5 streak: 0/3** — pass-1 NOT-RATIFIABLE (D-1221), pass-2 NOT-RATIFIABLE (D-1222), pass-3 NOT-RATIFIABLE (D-1223), pass-4 NOT-RATIFIABLE (D-1224), pass-5 RATIFY-WITH-CHANGES (D-1225; ≠ CLEAN); adversary pass-6 next. Cycle-level streak: 3/3 CONVERGED UNCHANGED.
+
+---
+
+## Archived Checkpoint: D-1226-ADR052-V19-PASS6-DRAIN-GC-TTL (v10.57→v10.58, 2026-09-13)
+
+*(Archived 2026-09-13 during D-1227-ADR052-V110-PASS7-STALE-GATE-SELF-HEAL-GENERALIZED v10.58→v10.59; replaced by new SRC reflecting ADR-052 v1.10 fix burst committed state.)*
+
+**SELF-SUFFICIENT RESUME CONTEXT.** ADR-052 v1.9 COMMITTED (D-1226; in-house adversary LOCAL pass-6 RATIFY-WITH-CHANGES H1+H2 HIGH + M1/M2/M3 MED + L1/L2 LOW + §Files-to-Change straggler orch-caught; all findings closed; H1 drain-GC PID→TTL soundness fix; H2 E-SHD-005 re-anchored to steady-state gate; M1 VP-132.md v1.2; S-12.15 propagation-lint story opened). BC-5.39.001 LOCAL streak 0/3. **NEXT = adversary pass-7 (fresh-context, reads only pass-6 Part A per Iron Law).** TRAJECTORY: CRIT+HIGH 7→5→5→2→2→2 (plateau; tail LENGTH=4 →2→2→2→2). PIPELINE REMAINS PAUSED.
+
+### §1. Position (D-1226 state)
+
+2026-09-13. S-25.02 F4 cluster-5 F1; ADR-052 v1.9 COMMITTED (D-1226) — in-house adversary LOCAL pass-6 = RATIFY-WITH-CHANGES (H1+H2 HIGH + M1/M2/M3 MED + L1/L2 LOW + §Files-to-Change straggler orch-caught); all findings closed. BC-5.39.001 LOCAL streak 0/3. NEXT = adversary pass-7 (fresh context, reads only pass-6 Part A). TRAJECTORY: CRIT+HIGH 7→5→5→2→2→2 (plateau). `pipeline:` PAUSED.
+
+### §2. Convergence (D-1226 state)
+
+BC-5.39.001 LOCAL cluster-5 streak **0/3 — pass-1 (D-1221) NOT-RATIFIABLE; pass-2 (D-1222) NOT-RATIFIABLE; pass-3 (D-1223) NOT-RATIFIABLE; pass-4 (D-1224) NOT-RATIFIABLE; pass-5 (D-1225) RATIFY-WITH-CHANGES (≠ CLEAN); pass-6 (D-1226) RATIFY-WITH-CHANGES (≠ CLEAN); pass-7 next.** Cycle-level streak: CONVERGED 3/3 (unchanged). TRAJECTORY: CRIT+HIGH 7→5→5→2→2→2 (plateau; tail LENGTH=4 →2→2→2→2).
+
+### §8. BC-5.39.001 streak (D-1226 state)
+
+**LOCAL cluster-5 streak: 0/3** — pass-1 NOT-RATIFIABLE (D-1221), pass-2 NOT-RATIFIABLE (D-1222), pass-3 NOT-RATIFIABLE (D-1223), pass-4 NOT-RATIFIABLE (D-1224), pass-5 RATIFY-WITH-CHANGES (D-1225; ≠ CLEAN), pass-6 RATIFY-WITH-CHANGES (D-1226; ≠ CLEAN); adversary pass-7 next. Cycle-level streak: 3/3 CONVERGED UNCHANGED.

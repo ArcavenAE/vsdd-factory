@@ -11035,3 +11035,59 @@ Cluster-5 TDD remains BLOCKED until POLICY 22 ratification.
 ### Canonical 6-column row (STATE.md Decisions Log)
 
 | D-1226 | D-1226-ADR052-V19-PASS6-DRAIN-GC-TTL | **ADR-052 v1.9 fix burst committed (state-manager, single-commit TD-VSDD-053; D-1226): in-house adversary LOCAL pass-6 = RATIFY-WITH-CHANGES (H1+H2 HIGH + M1/M2/M3 MED + L1/L2 LOW + §Files-to-Change straggler orch-caught); all findings closed — H1 HIGH drain GC changed from unsound PID-liveness to TTL-based (created_at+tool_use_id) in ADR-052 v1.9 (snapshot-mid-write soundness fix); H2 HIGH E-SHD-005 re-anchored to steady-state gate (error-taxonomy.md v1.25→v1.26; ADR-052 v1.9); M1 MED VP-132.md v1.1→v1.2 sibling note (formal-verifier) + VP-INDEX v3.21→v3.22 catalog annotation; M2 MED handoff past-tense (ADR-052 v1.9); M3 MED exit-code criterion (error-taxonomy.md v1.26); L1/L2 (ADR-052 v1.9); §Files-to-Change straggler shard_manager.rs TTL-directive (3rd recurrence: orch global grep; per-agent sweeps missed). ARCH-INDEX v4.36→v4.37; BC-INDEX v5.94 UNCHANGED; VP-INDEX v3.21→v3.22. Input-hashes: ADR-052 156d100 (PASS) / error-taxonomy 68425f5 (PASS) / VP-132.md inputs:[] no-op. [D-1222-DRIFT-001] prd.md §5.1 UNCHANGED OPEN. [D-1224-DRIFT-001] VP-leg UNCHANGED OPEN. S-12.15 propagation-lint story OPENED (E-12; story_count 11→12). BC-5.39.001 LOCAL streak 0/3 (RATIFY-WITH-CHANGES ≠ CLEAN; pass-7 next). TRAJECTORY: CRIT+HIGH 7→5→5→2→2→2 (plateau; LENGTH=4 tail →2→2→2→2). POLICY 22 2 sign-off items (i) macOS exec-TOCTOU; (ii) APFS test RATIFICATION PREREQUISITE — UNCHANGED. OWED #2+#3 unchanged. Cluster-5 TDD BLOCKED. pipeline: PAUSED.** | S-25.02 F5 | 2026-09-13 |
+
+
+---
+
+## D-1227: ADR-052 v1.10 fix burst (adversary pass-7 RATIFY-WITH-CHANGES)
+
+**Date:** 2026-09-13
+**Burst type:** spec fix burst (state-manager, single-commit TD-VSDD-053)
+**Adversary pass:** pass-7 LOCAL (in-house Claude, fresh context, reads only pass-6 Part A per Iron Law)
+**Verdict:** RATIFY-WITH-CHANGES
+
+### Finding Table (pass-7)
+
+| Finding | Severity | Summary | Resolution |
+|---------|----------|---------|------------|
+| HIGH-1 | HIGH | PreToolUse stale-gate self-heal scoped only to gate=LOCKED + completed.json present (post-COMPLETED crash window); symmetric post-ABORT window (txn=ABORTED, gate=LOCKED, no completed.json) and post-drain-timeout window (gate=DRAINING, no active txn) unreachable by v1.9 self-heal — both are genuine stuck states | Self-heal generalized to gate ∈ {LOCKED, DRAINING} AND no active txn, regardless of completed.json presence (ADR-052 v1.10); covers all three crash windows |
+| MED-1 | MED | EXPIRY_ABORT trigger defined only for "expired" reservation; absent-reservation post-abort path had no defined trigger | EXPIRY_ABORT trigger widened to "expired OR absent" (ADR-052 v1.10) |
+| MED-2 | MED | No operator runbook for TTL stall in DRAINING state | Operator runbook added: heuristic lower-bound for TTL stall detection + recovery procedure for gate stuck in DRAINING after drain timeout (ADR-052 v1.10) |
+| LOW-1 | LOW | E-MAINTENANCE-001 listed in §Files-to-Change main table; should be in guard-layer sub-table (execution guard classification) | E-MAINTENANCE-001 moved to guard-layer sub-table (ADR-052 v1.10) |
+| LOW-2 | LOW | §Handoff tables used present/future-directive tense for already-delivered MIG integration | §Handoff tables corrected to past-tense throughout (ADR-052 v1.10) |
+| LOW-3 | LOW | error-taxonomy.md ALREADY_MIGRATED summary-line read "always TEMPORARY" + self-healing clause, incorrectly conflating permanent ALREADY_MIGRATED no-op with TTL-expired reservation resets | ALREADY_MIGRATED summary-line corrected to distinguish permanent terminal path from self-healing TTL-reset (error-taxonomy.md v1.26→v1.27) |
+
+### Codification
+
+**BC-5.39.001 LOCAL cascade:** pass-7 = RATIFY-WITH-CHANGES. Streak REMAINS 0/3 (RATIFY-WITH-CHANGES ≠ CLEAN). Adversary pass-8 next (fresh-context, reads only pass-7 Part A per Iron Law). NOTE: adversary's stated RATIFIABLE bar was "close HIGH-1 + MED-1" — both closed this burst.
+
+**TRAJECTORY (CRIT+HIGH):** 7→5→5→2→2→2→1 — converging; LENGTH=4 tail →2→2→2→1.
+
+**Verified-sound list:** 12 items (incremented from pass-6's verified-sound list by HIGH-1 liveness generalization + MED-1 EXPIRY_ABORT widening, each of which was adversary-verified at pass-7 as genuinely sound).
+
+**NOTE:** ADR-052 v1.10 written by architect (HIGH-1 stale-gate self-heal generalization + MED-1 EXPIRY_ABORT widened + MED-2 operator runbook + LOW-1 E-MAINTENANCE-001 sub-table + LOW-2 handoff past-tense). error-taxonomy.md v1.27 written by product-owner (LOW-3 ALREADY_MIGRATED summary-line correction). sidecar-learning.md folded in per D-1207-precedent convention. Same-burst PO handoff-note cleanup folded in.
+
+**Index advances this burst:**
+- ARCH-INDEX v4.37 → v4.38 (ADR-052 row v1.9→v1.10 body amendment)
+- BC-INDEX v5.94 → UNCHANGED (BCs unchanged this burst)
+- VP-INDEX v3.22 → UNCHANGED (VPs unchanged this burst)
+
+**Input-hashes (post-check):**
+- ADR-052: `156d100` (PASS — confirmed current by --check; inputs[] list unchanged, hash already current)
+- error-taxonomy.md: `68425f5` (PASS — confirmed current by --check; hash already current)
+
+**Drift items status:**
+- [D-1222-DRIFT-001] prd.md §5.1 MIG+MAINTENANCE sync: UNCHANGED OPEN — owed before POLICY 22 ratification.
+- [D-1224-DRIFT-001] E-SHD-005 VP-leg gap: UNCHANGED OPEN.
+- [D-1225-PG-001] sibling-sweep → S-12.15: UNCHANGED OPEN.
+
+**POLICY 22 status:** OPEN with 2 sign-off items (unchanged):
+- (i) macOS exec-TOCTOU residual window + no-concurrent-cargo-build pre-flight.
+- (ii) APFS darwin-arm64 durability test: RATIFICATION PREREQUISITE — must complete before POLICY 22 ratification gate.
+Cluster-5 TDD remains BLOCKED until POLICY 22 ratification.
+
+**OWED (unchanged):** OWED #2 (907-file hash sweep); OWED #3 (ADR-052↔BC circular re-settle). prd.md §5.1 MIG/MAINTENANCE sync [D-1222-DRIFT-001] owed before ratification.
+
+### Canonical 6-column row (STATE.md Decisions Log)
+
+| D-1227 | D-1227-ADR052-V110-PASS7-STALE-GATE-SELF-HEAL-GENERALIZED | **ADR-052 v1.10 + error-taxonomy v1.26→v1.27 fix burst committed (state-manager, single-commit TD-VSDD-053; D-1227): in-house adversary LOCAL pass-7 = RATIFY-WITH-CHANGES (1 HIGH + 2 MED + 3 LOW); all findings closed — HIGH-1 (GENUINE liveness fix) PreToolUse stale-gate self-heal generalized from post-COMPLETED-only to all no-active-txn stuck states: gate ∈ {LOCKED, DRAINING} AND no active txn triggers self-heal regardless of completed.json; closes post-ABORT (txn=ABORTED, gate=LOCKED, no completed.json) and post-drain-timeout (gate=DRAINING, no active txn) crash windows; MED-1 EXPIRY_ABORT trigger widened (expired OR absent); MED-2 operator runbook for TTL stall; LOW-1 E-MAINTENANCE-001 guard-layer sub-table; LOW-2 §Handoff past-tense; LOW-3 error-taxonomy.md v1.26→v1.27 ALREADY_MIGRATED summary-line corrected. ARCH-INDEX v4.37→v4.38; BC-INDEX v5.94 UNCHANGED; VP-INDEX v3.22 UNCHANGED. Input-hashes: ADR-052 156d100 (PASS) / error-taxonomy 68425f5 (PASS). NOTE: adversary's RATIFIABLE bar was close HIGH-1+MED-1 — both closed. [D-1222-DRIFT-001] prd.md §5.1 UNCHANGED OPEN. [D-1224-DRIFT-001] VP-leg UNCHANGED OPEN. BC-5.39.001 LOCAL streak 0/3 (RATIFY-WITH-CHANGES ≠ CLEAN; pass-8 next toward 3-CLEAN). TRAJECTORY: CRIT+HIGH 7→5→5→2→2→2→1 (converging; LENGTH=4 tail →2→2→2→1; verified-sound list 12 items). POLICY 22 2 sign-off items (i) macOS exec-TOCTOU; (ii) APFS test RATIFICATION PREREQUISITE — UNCHANGED. OWED #2+#3 unchanged. Cluster-5 TDD BLOCKED. pipeline: PAUSED.** | S-25.02 F5 | 2026-09-13 |
