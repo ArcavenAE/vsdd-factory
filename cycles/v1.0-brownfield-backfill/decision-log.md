@@ -11091,3 +11091,60 @@ Cluster-5 TDD remains BLOCKED until POLICY 22 ratification.
 ### Canonical 6-column row (STATE.md Decisions Log)
 
 | D-1227 | D-1227-ADR052-V110-PASS7-STALE-GATE-SELF-HEAL-GENERALIZED | **ADR-052 v1.10 + error-taxonomy v1.26→v1.27 fix burst committed (state-manager, single-commit TD-VSDD-053; D-1227): in-house adversary LOCAL pass-7 = RATIFY-WITH-CHANGES (1 HIGH + 2 MED + 3 LOW); all findings closed — HIGH-1 (GENUINE liveness fix) PreToolUse stale-gate self-heal generalized from post-COMPLETED-only to all no-active-txn stuck states: gate ∈ {LOCKED, DRAINING} AND no active txn triggers self-heal regardless of completed.json; closes post-ABORT (txn=ABORTED, gate=LOCKED, no completed.json) and post-drain-timeout (gate=DRAINING, no active txn) crash windows; MED-1 EXPIRY_ABORT trigger widened (expired OR absent); MED-2 operator runbook for TTL stall; LOW-1 E-MAINTENANCE-001 guard-layer sub-table; LOW-2 §Handoff past-tense; LOW-3 error-taxonomy.md v1.26→v1.27 ALREADY_MIGRATED summary-line corrected. ARCH-INDEX v4.37→v4.38; BC-INDEX v5.94 UNCHANGED; VP-INDEX v3.22 UNCHANGED. Input-hashes: ADR-052 156d100 (PASS) / error-taxonomy 68425f5 (PASS). NOTE: adversary's RATIFIABLE bar was close HIGH-1+MED-1 — both closed. [D-1222-DRIFT-001] prd.md §5.1 UNCHANGED OPEN. [D-1224-DRIFT-001] VP-leg UNCHANGED OPEN. BC-5.39.001 LOCAL streak 0/3 (RATIFY-WITH-CHANGES ≠ CLEAN; pass-8 next toward 3-CLEAN). TRAJECTORY: CRIT+HIGH 7→5→5→2→2→2→1 (converging; LENGTH=4 tail →2→2→2→1; verified-sound list 12 items). POLICY 22 2 sign-off items (i) macOS exec-TOCTOU; (ii) APFS test RATIFICATION PREREQUISITE — UNCHANGED. OWED #2+#3 unchanged. Cluster-5 TDD BLOCKED. pipeline: PAUSED.** | S-25.02 F5 | 2026-09-13 |
+
+---
+
+## D-1228: ADR-052 v1.11 fix burst (adversary pass-8 NOT-RATIFIABLE — HIGH-1 self-heal-vs-live-drain regression)
+
+**Date:** 2026-09-13
+**Burst type:** spec fix burst (state-manager, single-commit TD-VSDD-053)
+**Adversary pass:** pass-8 LOCAL (in-house Claude, fresh context, reads only pass-7 Part A per Iron Law)
+**Verdict:** NOT-RATIFIABLE
+
+### Finding Table (pass-8)
+
+| Finding | Severity | Summary | Resolution |
+|---------|----------|---------|------------|
+| HIGH-1 | HIGH | REGRESSION from v1.10: generalized self-heal predicate (gate ∈ {LOCKED, DRAINING} AND no active txn) matched a live coordinator mid-drain — concurrent writer could reopen gate after coordinator state wiped, breaking writer exclusion | flock(exclusive.lock, LOCK_EX\|LOCK_NB) FIRST before reconcile: self-heal proceeds only if flock acquirable (no live coordinator); EWOULDBLOCK → E-MAINTENANCE-001, no gate flip; drain txn reorder: txn=STAGING written at step 2.5 BEFORE DRAINING flip (ADR-052 v1.11) |
+| MED-1 | MED | §7c step 2a per-shard file-open was a racy file-exists-check-then-open (TOCTOU); if file disappears between check and open, ENOENT on open was unhandled | open-with-ENOENT-fallback: try canonical path; if ENOENT try generation-uuid/ path; if both ENOENT abort CONTENT_PRESERVATION_ABORT; §BC-Impact blockquote swept to match; propagated to BC-1.18.010 v1.9 + BC-1.18.011 v1.8 |
+| MED-2 | MED | BC-1.18.010 provenance tables used present/future-directive tense for already-delivered content | BC-1.18.010 §BC-Impact provenance rows corrected to past-tense (ADR-052 v1.11) |
+| LOW-1 | LOW | Residual "unchanged from v1.2" self-reference in ADR body | Stripped (ADR-052 v1.11) |
+| LOW-2 | LOW | Unescaped pipe in table cell violated validate-table-cell-count | Table-cell pipe escaped with \\| (ADR-052 v1.11) |
+
+### Codification
+
+**BC-5.39.001 LOCAL cascade:** pass-8 = NOT-RATIFIABLE. Streak REMAINS 0/3 (NOT-RATIFIABLE ≠ CLEAN). Adversary pass-9 next (fresh-context, reads only pass-8 Part A per Iron Law).
+
+**TRAJECTORY (CRIT+HIGH):** 7→5→5→2→2→2→1→1 — plateau at 1; HIGH-1 was a 2nd fix-induced concurrency-core regression (pass-4 C-1 reader-inversion was 1st).
+
+**NOTE (concurrency regression pattern):** HIGH-1 was a REGRESSION introduced by v1.10's self-heal generalization. The v1.10 predicate correctly identified no-active-txn stuck states but did not guard against the live-coordinator case (drain not yet committed). Fixing via flock(LOCK_EX|LOCK_NB) achieves parity with the crash-recovery path. The orchestrator's global-grep sweeps caught: (a) a stale §BC-Impact reader blockquote carrying the pre-ENOENT-fallback wording (per-agent sweeps missed), and (b) the unescaped table-cell pipe (validate-table-cell-count fired). Recurring propagation-gap class per S-12.15.
+
+**NOTE (lesson strengthening):** MED-1 confirms that prose 3-CLEAN review cannot close the concurrency state-machine surface — the v1.10 regression slipped through 7 passes of adversarial review before detection. Formal methods (Kani + fault-injection) remain the only complete closure path. This is the 2nd fix-induced concurrency-core regression; strengthens L-EDP1-XXX process-gap lesson with fresh evidence.
+
+**Index advances this burst:**
+- ARCH-INDEX v4.38 → v4.39 (ADR-052 row v1.10→v1.11 body amendment)
+- BC-INDEX v5.94 → v5.95 (BC-1.18.010 v1.8→v1.9; BC-1.18.011 v1.7→v1.8)
+- VP-INDEX v3.22 → UNCHANGED (VPs unchanged this burst)
+- STORY-INDEX UNCHANGED
+
+**Input-hashes (post-update):**
+- ADR-052: `f4f12f6` (PASS — --check verified; inputs[] unchanged, hash current)
+- BC-1.18.010: `6e2d3a3` (updated via --update)
+- BC-1.18.011: `e027627` (updated via --update)
+- error-taxonomy.md: `605cc2e` (updated via --update; v1.27→v1.28 exit-cell reconciled LOW-2)
+
+**Drift items status:**
+- [D-1222-DRIFT-001] prd.md §5.1 MIG+MAINTENANCE sync: UNCHANGED OPEN — owed before POLICY 22 ratification.
+- [D-1224-DRIFT-001] E-SHD-005 VP-leg gap: UNCHANGED OPEN.
+- [D-1225-PG-001] sibling-sweep → S-12.15: UNCHANGED OPEN.
+
+**POLICY 22 status:** OPEN with 2 sign-off items (unchanged):
+- (i) macOS exec-TOCTOU residual window + no-concurrent-cargo-build pre-flight.
+- (ii) APFS darwin-arm64 durability test: RATIFICATION PREREQUISITE — must complete before POLICY 22 ratification gate.
+Cluster-5 TDD remains BLOCKED until POLICY 22 ratification.
+
+**OWED (unchanged):** OWED #2 (907-file hash sweep); OWED #3 (ADR-052↔BC circular re-settle). prd.md §5.1 MIG/MAINTENANCE sync [D-1222-DRIFT-001] owed before ratification.
+
+### Canonical 6-column row (STATE.md Decisions Log)
+
+| D-1228 | D-1228-ADR052-V111-PASS8-FLOCK-SELF-HEAL-REGRESSION | **ADR-052 v1.11 + BC-1.18.010 v1.9 + BC-1.18.011 v1.8 + error-taxonomy v1.28 fix burst committed (state-manager, single-commit TD-VSDD-053; D-1228): in-house adversary LOCAL pass-8 = NOT-RATIFIABLE (1 HIGH + 2 MED + 2 LOW); all findings closed — HIGH-1 REGRESSION: v1.10 generalized self-heal predicate matched live coordinator mid-drain → concurrent writer could reopen gate → writer-exclusion break; fixed via flock(exclusive.lock, LOCK_EX\|LOCK_NB) first-check before reconcile + EWOULDBLOCK→E-MAINTENANCE-001, no gate flip + drain txn=STAGING written at step 2.5 BEFORE DRAINING flip (reorder); MED-1 reader open-with-ENOENT-fallback (§7c step 2a TOCTOU) propagated to §BC-Impact blockquote + BC-1.18.010 v1.9 + BC-1.18.011 v1.8; MED-2 BC-1.18.010 provenance past-tense; LOW-1 residual v1.2 self-refs; LOW-2 table-cell pipe escaped. ARCH-INDEX v4.38→v4.39; BC-INDEX v5.94→v5.95; VP-INDEX v3.22 UNCHANGED. Input-hashes: ADR-052 f4f12f6 (PASS) / BC-1.18.010 6e2d3a3 (updated) / BC-1.18.011 e027627 (updated) / error-taxonomy 605cc2e (updated). NOTE: 2nd fix-induced concurrency-core regression (pass-4 C-1 reader-inversion was 1st); orchestrator global-grep sweeps caught stale reader blockquote + unescaped table-cell pipe that per-agent sweeps missed (S-12.15 propagation-gap). [D-1222-DRIFT-001] prd.md §5.1 UNCHANGED OPEN. [D-1224-DRIFT-001] VP-leg UNCHANGED OPEN. BC-5.39.001 LOCAL streak 0/3 (NOT-RATIFIABLE ≠ CLEAN; pass-9 next toward 3-CLEAN). TRAJECTORY: CRIT+HIGH 7→5→5→2→2→2→1→1 (plateau; tail LENGTH=4 →2→2→1→1). POLICY 22 2 sign-off items (i) macOS exec-TOCTOU; (ii) APFS test RATIFICATION PREREQUISITE — UNCHANGED. OWED #2+#3 unchanged. Cluster-5 TDD BLOCKED. pipeline: PAUSED.** | S-25.02 F5 | 2026-09-13 |
