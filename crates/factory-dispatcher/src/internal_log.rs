@@ -82,6 +82,34 @@ pub const PLUGIN_INVOKED: &str = "plugin.invoked";
 pub const PLUGIN_COMPLETED: &str = "plugin.completed";
 pub const PLUGIN_TIMEOUT: &str = "plugin.timeout";
 pub const PLUGIN_CRASHED: &str = "plugin.crashed";
+/// S-25.01 / BC-3.08.001 Event 8: emitted for every INDETERMINATE outcome
+/// (both fail-closed and fail-open). Carries all 8 mandatory fields.
+pub const PLUGIN_INDETERMINATE: &str = "plugin.indeterminate";
+/// ADR-048 v1.1 / BC-3.08.001 Event 9: emitted whenever the
+/// `.factory/unvalidated-mutation.marker` is cleared. The `trace_id` field
+/// on this event equals the marker's stored `trace_id`, linking back to the
+/// originating `plugin.indeterminate` (Event 8) that wrote the marker.
+///
+/// Mandatory fields: `type`, `trace_id`, `session_id`, `plugin_name`,
+/// `artifact_path`, `clear_mode` ∈ {REVALIDATED|TTL_EXPIRED|OPERATOR_OVERRIDE},
+/// `actor_type` ∈ {validator|deadman|operator}, `reason` (null unless
+/// `clear_mode == OPERATOR_OVERRIDE`).
+pub const PLUGIN_MARKER_CLEARED: &str = "marker.cleared";
+/// ADR-048 v1.4 / BC-3.08.001 Event 10: emitted whenever
+/// `write_indeterminate_marker` returns `Ok(())` — the positive, durable
+/// creation record for the `.factory/unvalidated-mutation.marker` file.
+/// Emitted ONLY on a confirmed successful write (never before the write is
+/// attempted, never on a write failure), so an unmatched `marker.written`
+/// with no subsequent `marker.cleared` is proof-by-construction that a
+/// marker was durably written and has since become absent through a path
+/// other than the three already-audited clears (REVALIDATED, TTL_EXPIRED,
+/// SUPERSEDED) — i.e. a human out-of-band `rm` (OPERATOR_OVERRIDE).
+/// `reconcile_raw_delete` scans for this event type (S-25.01 adversary pass
+/// 6 F-P6-001 MEDIUM resolution).
+///
+/// Mandatory fields: `type`, `trace_id`, `session_id`, `plugin_name`,
+/// `artifact_path`, `cause` ∈ {fuel|epoch|output-too-large}, `expires_at`.
+pub const PLUGIN_MARKER_WRITTEN: &str = "marker.written";
 pub const INTERNAL_CAPABILITY_DENIED: &str = "internal.capability_denied";
 pub const INTERNAL_HOST_FUNCTION_PANIC: &str = "internal.host_function_panic";
 pub const INTERNAL_SINK_ERROR: &str = "internal.sink_error";
@@ -242,16 +270,43 @@ pub struct InternalLog {
     /// Shared via `Arc` so every `clone()` of `InternalLog` participates in the
     /// same dedup window (one process invocation = one dispatcher session).
     seen_errors: std::sync::Arc<Mutex<HashSet<u64>>>,
+    /// One-shot flag so the mount-gate suppression (issue #206) warns exactly
+    /// once per dispatcher session instead of once per event. Shared across
+    /// clones like `seen_errors`.
+    gate_warned: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// Whether the #206 mount gate applies. `true` for resolved (level B–G)
+    /// log dirs; `false` only when the operator explicitly chose the location
+    /// via `VSDD_LOG_DIR` (level A) — an explicit override must not itself be
+    /// overridden, even when it points at a `.factory/logs` path (the bats
+    /// harness does exactly that with scratch fixtures). `FACTORY_ROOT`
+    /// (level B) is deliberately NOT exempt: it resolves to
+    /// `$FACTORY_ROOT/logs`, the racing shape the gate holds back.
+    mount_gated: bool,
 }
 
 impl InternalLog {
     /// Build a writer rooted at `log_dir`. The directory is NOT created
-    /// eagerly; `write` will `mkdir -p` on first use.
+    /// eagerly; `write` will `mkdir -p` on first use — and, by default, only
+    /// once the `.factory` parent is a mounted worktree (see
+    /// [`crate::log_dir::factory_mount_ready`], issue #206). Callers whose
+    /// `log_dir` came from an explicit operator override should disable the
+    /// gate via [`InternalLog::with_mount_gate`].
     pub fn new(log_dir: PathBuf) -> Self {
         Self {
             log_dir,
             seen_errors: std::sync::Arc::new(Mutex::new(HashSet::new())),
+            gate_warned: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            mount_gated: true,
         }
+    }
+
+    /// Set whether the #206 mount gate applies. Pass `false` only when the
+    /// log dir came from an explicit `VSDD_LOG_DIR` (level A) override — see
+    /// `crate::log_dir::mount_gate_exempt`.
+    #[must_use]
+    pub fn with_mount_gate(mut self, gated: bool) -> Self {
+        self.mount_gated = gated;
+        self
     }
 
     /// Best-effort append. Never panics, never propagates errors. On
@@ -289,6 +344,30 @@ impl InternalLog {
                     // Poisoned mutex — write anyway to avoid silent loss.
                 }
             }
+        }
+
+        // Issue #206: never create `.factory/logs` ahead of the worktree
+        // mount. The dispatcher fires on every tool use, so an unconditional
+        // mkdir here continuously recreated a plain `.factory/` during
+        // `/factory-health` bootstrap — blocking the later `git worktree add`
+        // (`fatal: '.factory' already exists`) and feeding the #203/#205
+        // bootstrap-failure cluster. Suppression is a skip, not an error —
+        // events during the bootstrap window are still observable via
+        // `VSDD_SINK_FILE`. Only an explicit VSDD_LOG_DIR override is exempt
+        // (`mount_gated == false`): the operator chose that exact path.
+        if self.mount_gated && !crate::log_dir::factory_mount_ready(&self.log_dir) {
+            if !self
+                .gate_warned
+                .swap(true, std::sync::atomic::Ordering::Relaxed)
+            {
+                eprintln!(
+                    "factory-dispatcher: internal_log suppressed — parent of {} is not a \
+                     mounted .factory worktree yet (no .git entry); run /factory-health to \
+                     mount it, or set VSDD_LOG_DIR to log elsewhere",
+                    self.log_dir.display()
+                );
+            }
+            return Ok(());
         }
 
         fs::create_dir_all(&self.log_dir)?;
@@ -524,6 +603,85 @@ mod tests {
         assert!(expected.exists());
         let lines = read_lines(&expected);
         assert_eq!(lines.len(), 1);
+    }
+
+    /// Issue #206: when the log dir is `.factory/logs` and `.factory` does not
+    /// exist, `write` must NOT create it — a plain `.factory/` planted here
+    /// forces the later `git worktree add .factory` to mount nested.
+    #[test]
+    fn gate_skips_write_when_factory_absent() {
+        let dir = tempfile::tempdir().unwrap();
+        let factory = dir.path().join(".factory");
+        let log = InternalLog::new(factory.join("logs"));
+        let ts = Local.with_ymd_and_hms(2026, 1, 15, 9, 30, 0).unwrap();
+
+        log.write(&InternalEvent::with_ts(DISPATCHER_STARTED, ts));
+
+        assert!(
+            !factory.exists(),
+            ".factory must not be created by the internal log ahead of the mount"
+        );
+    }
+
+    /// Issue #206/#203: `.factory` existing as a PLAIN directory (the
+    /// onboard-before-health conflict state) must not gain a `logs/` child.
+    #[test]
+    fn gate_skips_write_into_plain_factory_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let factory = dir.path().join(".factory");
+        stdfs::create_dir_all(&factory).unwrap();
+        let log = InternalLog::new(factory.join("logs"));
+        let ts = Local.with_ymd_and_hms(2026, 1, 15, 9, 30, 0).unwrap();
+
+        log.write(&InternalEvent::with_ts(DISPATCHER_STARTED, ts));
+
+        assert!(
+            !factory.join("logs").exists(),
+            "plain .factory dir must not gain logs/ — that is the bootstrap race"
+        );
+    }
+
+    /// Issue #206: an explicit override (`with_mount_gate(false)`, reached
+    /// only via VSDD_LOG_DIR — level A) writes even into a plain `.factory`
+    /// with no `.git` — the operator chose the location; the gate must not
+    /// override the override. FACTORY_ROOT does NOT reach this path (#738).
+    #[test]
+    fn gate_bypassed_for_explicit_override() {
+        let dir = tempfile::tempdir().unwrap();
+        let factory = dir.path().join(".factory");
+        stdfs::create_dir_all(&factory).unwrap();
+        let log = InternalLog::new(factory.join("logs")).with_mount_gate(false);
+        let ts = Local.with_ymd_and_hms(2026, 1, 15, 9, 30, 0).unwrap();
+
+        log.write(&InternalEvent::with_ts(DISPATCHER_STARTED, ts));
+
+        let expected = factory
+            .join("logs")
+            .join(format!("{FILENAME_PREFIX}2026-01-15{FILENAME_SUFFIX}"));
+        assert!(
+            expected.exists(),
+            "explicit override must write regardless of mount state"
+        );
+    }
+
+    /// Issue #206 control: a mounted `.factory` (a `.git` FILE, the
+    /// `git worktree add` shape) writes exactly as before.
+    #[test]
+    fn gate_allows_write_into_mounted_factory() {
+        let dir = tempfile::tempdir().unwrap();
+        let factory = dir.path().join(".factory");
+        stdfs::create_dir_all(&factory).unwrap();
+        stdfs::write(factory.join(".git"), "gitdir: ../.git/worktrees/.factory\n").unwrap();
+        let log = InternalLog::new(factory.join("logs"));
+        let ts = Local.with_ymd_and_hms(2026, 1, 15, 9, 30, 0).unwrap();
+
+        log.write(&InternalEvent::with_ts(DISPATCHER_STARTED, ts));
+
+        let expected = factory
+            .join("logs")
+            .join(format!("{FILENAME_PREFIX}2026-01-15{FILENAME_SUFFIX}"));
+        assert!(expected.exists(), "mounted .factory must write normally");
+        assert_eq!(read_lines(&expected).len(), 1);
     }
 
     #[test]
