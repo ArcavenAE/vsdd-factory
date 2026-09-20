@@ -2,11 +2,11 @@
 document_type: architecture-decision-record
 adr_id: ADR-052
 level: L3
-version: "1.13"
+version: "1.14"
 status: proposed
-date: 2026-09-13
+date: 2026-09-20
 producer: architect
-timestamp: 2026-09-13T00:00:00Z
+timestamp: 2026-09-20T00:00:00Z
 phase: F1
 supersedes: null
 superseded_by: null
@@ -36,19 +36,32 @@ input-hash: "a9d309a"
 
 ## Status
 
-PROPOSED — v1.12 NOT ratified per 13th adversarial review (accept-at-floor final fix-burst)
-(1 HIGH null-generation STAGING crash sub-state unhandled in step 3.5 self-heal + stale v1.10
-HIGH-1 test mandate claiming "txn is first written at drain step 7" + 2 MED wording gaps +
-1 MED STAGING-abort txn disposition contradiction + 1 LOW generation_id ordering invariant missing +
-1 LOW ADR-051 versioning note).
-This v1.13 fix-burst resolves all ADR-owned findings and declares accept-at-floor ratification
-per D-386 Option C asymptotic convergence. Human POLICY 22 ratification required before this ADR
-is treated as accepted — two explicit sign-off items:
-(1) exec-TOCTOU residual window on macOS; (2) APFS dir-fsync durability test must complete as
-ratification prerequisite. Cluster-5 TDD dispatch remains BLOCKED until ratification.
-§Decision 4e/5a/7c concurrency state machine FROZEN for prose review per D-386 Option C
-accept-at-floor ratification; definitive crash-safety and liveness verification deferred to
-cluster-5 implementation-phase formal methods (see §Verification Strategy subsection).
+PROPOSED — v1.13 accept-at-floor was NOT ratified: a Kani model-checking pass (run as
+human-directed spec/design convergence work PRIOR to POLICY 22 ratification, per "more
+convergence before accept-at-floor ratification") found DEF-1 (1 HIGH) — an uncovered
+self-heal window (`gate=OPEN, txn=STAGING(generation_id=null), flock released, no gen dir,
+dead coordinator`) that was itself a fix-induced regression introduced by v1.11's step-2.5
+reordering. This v1.14 fix-burst resolves DEF-1 by reverting/restructuring the drain
+ordering (§Decision 5a: initial txn record now written at step 3a, strictly AFTER the
+step-3 DRAINING flip) rather than adding another step-3.5 predicate branch — see the v1.14
+findings table below for the full root-cause analysis and the options considered.
+**This amendment is compatible with the §Verification Strategy FROZEN-prose clause**
+(v1.13 declared §Decision 4e/5a/7c prose frozen except when "accompanied by a formal proof
+or exhaustive model-check result" — DEF-1 is exactly such a finding, and a formal-verifier
+re-verification pass following this burst is REQUIRED before this ADR can be re-evaluated
+for accept-at-floor ratification).
+**Pipeline state (unchanged by this burst):** the factory pipeline remains PAUSED and
+cluster-5 TDD dispatch remains BLOCKED; this burst is spec/design convergence work only —
+it does not touch `.factory/STATE.md` phase/current_step and does not implement cluster-5.
+Human POLICY 22 ratification still requires the same two explicit sign-off items as v1.13:
+(1) exec-TOCTOU residual window on macOS; (2) APFS dir-fsync durability test must complete
+as ratification prerequisite. Both remain open and unaffected by this burst.
+§Decision 4e/5a/7c concurrency state machine remains FROZEN for further prose-only review
+per D-386 Option C; this v1.14 amendment is the sanctioned formal-finding exception to that
+freeze, not a reopening of general prose adversarial review. Definitive crash-safety and
+liveness verification remains deferred to cluster-5 implementation-phase formal methods,
+with the addition that the formal-verifier's next Kani pass MUST re-verify the specific
+property this DEF-1 fix depends on (see §Verification Strategy subsection).
 
 ## Context
 
@@ -214,6 +227,14 @@ All 11 findings from the 3rd Codex cross-vendor closure review (`adv-cv-adr052-v
 | F4 | MED | §4e ABORTED disposition absent + txn-selection ambiguity + terminal-txn GC unspecified: (a) Every abort writes txn=ABORTED and retains the file indefinitely; a fresh re-activation writes a new `txn-<newuuid>.json`; §4e has no row for the case where an ABORTED txn record exists alongside a new activation attempt, leaving re-activation behavior undefined. (b) Multiple `txn-*.json` files can coexist (one per prior activation attempt); §4e has no disambiguation rule for which record governs admission/recovery. (c) Terminal txn records (ABORTED/COMPLETED) accumulate in `.factory/migration-state/` with no documented GC or archival policy — unbounded file growth. | §Decision 4e: (a) Added explicit ABORTED disposition row: "`txn=ABORTED` (any terminal ABORTED record)" → "treated as no active txn; fresh activation permitted; no recovery action required; record retained until GC archival per policy below." (b) Added txn-selection disambiguation rule below the table: when multiple `txn-*.json` exist, select the record whose `activation_id` matches the CURRENT manifest's `activation_id`; if no current manifest: select highest `created_at`; ABORTED records not matching the current manifest are inert for recovery. (c) Added GC/archival policy: terminal records (ABORTED/COMPLETED) archived to `.factory/migration-audit/txn-archive/` by state-manager at the next successful migration completion audit burst; ABORTED records MUST NOT be deleted before archival. |
 | F6 | LOW | §5c Branch 2 gate reconciliation acquires gate LOCK_EX without first verifying `flock(exclusive.lock, LOCK_EX\|LOCK_NB)` acquirability. §Decision 5a step 3.5 and the "Crash-recovery gate reconciliation" paragraph both require the flock-acquirable precondition before gate manipulation; Branch 2 silently diverges, creating an inconsistent reconciliation protocol. Benign today (Branch 2 triggers only when `completed.json` present — terminal state — so no live coordinator can legitimately hold `exclusive.lock`), but a parity gap that could admit a writer if Branch-2 trigger conditions are ever broadened. | §Decision 5c Branch 2: gate reconciliation now first attempts `flock(exclusive.lock, LOCK_EX\|LOCK_NB)` as a new pre-step (step 0) before acquiring gate LOCK_EX. On EWOULDBLOCK: log a warning ("unexpected: completed.json present but exclusive.lock held"); exit 0 with `ALREADY_MIGRATED` WITHOUT reconciling gate (benign: `completed.json` terminal state is authoritative; gate self-heals at next PreToolUse step 3.5). On acquired: proceed with gate reconciliation steps 1–4 (existing logic); release `exclusive.lock` after step 4. Rationale documented inline: parity with step 3.5 and crash-recovery paragraph; safe against future Branch-2 trigger broadening. Fault-injection test mandate updated. Note: all literal `\|` inside this section's markdown table cells are escaped. |
 
+**v1.14 findings (Kani model-checking pass — this fix-burst; DEF-1; human-directed spec/design
+convergence per D-386 Option C, prior to accept-at-floor ratification — pipeline remains PAUSED,
+cluster-5 TDD remains BLOCKED):**
+
+| Finding | Sev | Root cause in v1.13 | Resolution in v1.14 |
+|---------|-----|-------------------|-------------------|
+| DEF-1 | HIGH | Uncovered self-heal window, fix-induced regression from v1.11 step 2.5: v1.11 introduced a "defense-in-depth" reordering that wrote the initial txn record (state=STAGING, `generation_id=null`) at a "step 2.5" positioned BEFORE the step-3 DRAINING flip, on the stated rationale that this was redundant with the flock check (step 3.5 sub-step a) — v1.11's own text called it "defense-in-depth," not the primary guard. This reordering opened a NEW crash sub-window that did not exist before v1.11: a coordinator crash strictly between step 2.5 (txn written, gate STILL OPEN) and step 3 (DRAINING flip) left durable state `gate=OPEN, txn=STAGING(generation_id=null), flock released, no gen dir, dead coordinator`. §5a step 3.5's self-heal predicate requires `gate_state ∈ {LOCKED, DRAINING}` by design (gate=OPEN is defined to mean "no maintenance in progress"), so it never matched this state — no self-heal fires. §5a step 5's ordinary admission check blocks any writer whenever an active STAGING/COMMITTING txn exists, REGARDLESS of gate_state, so the writer is blocked. §4e's `txn=STAGING AND generation_id=null` DISCARD row exists but is reachable only via migration-binary re-invocation (not an ordinary PreToolUse self-heal), directly contradicting this ADR's own v1.10/v1.13 guarantee that E-MAINTENANCE-001 always self-heals by the next PreToolUse. Found by Kani model-checking (bounded crash-interleaving check over the drain procedure) during the cluster-5-pre-implementation formal convergence pass authorized by human direction; symmetric in kind to the pass-8/9/13 findings (each an ADR self-heal branch introducing a new regression) but landing in the previously-unexamined `gate=OPEN` window rather than the `gate ∈ {LOCKED, DRAINING}` window those passes covered. | §Decision 5a drain procedure: REORDERED (structural fix, not a new branch) — the initial txn-record write moves from "step 2.5" (before the DRAINING flip) to new step **3a**, strictly AFTER step 3 (the DRAINING flip) completes. Because the coordinator is a single sequential process holding `exclusive.lock` continuously from step 2 through completion/abort, this ordering establishes the invariant `gate_state = OPEN ⟹ no txn record exists with state STAGING or COMMITTING` — `gate=OPEN` co-existing with an active txn becomes structurally unreachable, not merely covered by an extra predicate branch. The flock-gated step-3.5 sub-step a check (v1.11 HIGH-1) remains the sole load-bearing writer-exclusion mechanism during the drain, unchanged — consistent with v1.11's own rationale that the pre-DRAINING txn write added no exclusion guarantee beyond what the flock check already provided. No new step-3.5 branch was added; Branch A and Branch B predicates are unchanged and remain exhaustive under the new ordering (Branch B's precondition `gate ∈ {LOCKED, DRAINING}` is now provably always true whenever `txn=STAGING(generation_id=null)` exists). Drain-timeout abort (step 4) simplified: the txn record now always exists by the time step 4 runs (step 3a is unconditional and precedes step 4), so no conditional "does a txn exist to mark ABORTED" branching is needed. Fault-injection test mandate expanded (§Decision 5a): (a) crash between step 3 and step 3a → gate=DRAINING, no txn → Branch A self-heals (pre-existing branch, new crash point, no new coverage needed); (b) DEF-1 regression/unreachability test — construct-and-assert-UNSAT that `gate=OPEN` with an active STAGING/COMMITTING txn cannot be produced by any crash-injection point between step 2 and the completion of step 3 under the v1.14 ordering; (c) reproduction of the exact pre-v1.14 defect scenario, asserted unconstructible. §Files-to-Change `executor.rs` and `tests/` rows swept to cite the new step-3a position and the DEF-1 regression suite. See §Consequences → Verification Strategy for the Kani harness re-verification requirement (the property the formal-verifier's Kani pass labels VP-M7) and the BC-1.18.011 handoff note (§Downstream to Product-Owner) confirming no BC-visible behavior changes. |
+
 ---
 
 ## Decision
@@ -375,8 +396,10 @@ handled by §Decision 5c Branch 3 (New activation) and intentionally has no row 
 The "no txn record + manifest absent" row handles the distinct case where both the txn record
 and the manifest are absent — that is an unauthorized invocation, not a first-run activation.
 The STAGING row is now partitioned by `generation_id` presence (v1.12 F2): generation_id=null
-means crash between drain step 2.5 and §7c step 1 (pre-generation); generation_id set means
-crash after generation was assigned (normal resume path).
+means crash between drain step 3a and §7c step 1 (pre-generation) — **(v1.14 DEF-1): this
+sub-state is now reachable ONLY with `gate_state ∈ {DRAINING, LOCKED}`**, never `gate=OPEN`,
+because step 3a (txn write) executes strictly after step 3 (DRAINING flip); generation_id set
+means crash after generation was assigned (normal resume path).
 
 ### Decision 5 — Dispatcher PreToolUse guard stack + native admission gate (v1.3 REDESIGNED)
 
@@ -445,15 +468,21 @@ permanent reservation leaks. The count of files in this directory is the cross-p
         Idempotent: a newly-started STAGING (generation_id set) or COMMITTING txn blocks
         reconciliation. A legitimately locked gate with a live coordinator is blocked
         (EWOULDBLOCK from sub-step a).
-        **Branch B — txn=STAGING AND generation_id=null (v1.13 HIGH-1 — null-generation crash):**
+        **Branch B — txn=STAGING AND generation_id=null (v1.13 HIGH-1 — null-generation crash;
+        v1.14 DEF-1 — precondition now structurally gate-restricted):**
         If gate_state ∈ {LOCKED, DRAINING} AND txn=STAGING AND generation_id=null:
         apply §4e F2 DISCARD logic PreToolUse-side — set txn state → ABORTED (null_generation
         disposition marker; retained per GC policy, do NOT delete); write gate_state = OPEN
-        (atomic). This covers: coordinator crashed between drain step 2.5 (txn written with
+        (atomic). This covers: coordinator crashed between drain step 3a (txn written with
         generation_id=null) and §7c step 1 (generation UUID assigned and gen dir created);
         exclusive.lock was released by the crash; no staged generation directory exists.
-        Idempotent: a live coordinator holding flock at step 2.5 (pre-step-3 or post-step-3
-        but before §7c step 1) is blocked by EWOULDBLOCK (sub-step a).
+        Idempotent: a live coordinator holding flock between step 3a and §7c step 1 is blocked
+        by EWOULDBLOCK (sub-step a). **(v1.14 DEF-1):** because step 3a now executes strictly
+        AFTER the step-3 DRAINING flip (never before it — see the DEF-1 rationale in the drain
+        procedure above), `txn=STAGING AND generation_id=null` can now arise ONLY with
+        `gate_state ∈ {DRAINING, LOCKED}`; `gate_state=OPEN` while this txn sub-state is active
+        is structurally unreachable, so Branch B's precondition is exhaustive by construction —
+        no `gate=OPEN` variant of this branch is needed.
         **Branch selection under LOCK_EX re-read:** if conditions have changed (e.g., a new
         legitimate txn started between the initial read and sub-step c acquisition), act on
         the re-read state. If no predicate branch matches under re-read: release locks and
@@ -471,10 +500,18 @@ permanent reservation leaks. The count of files in this directory is the cross-p
          `exclusive.lock` is held by a live coordinator (EWOULDBLOCK in sub-step a): maintenance
          legitimately in progress — do NOT reconcile; block with E-MAINTENANCE-001. Covers both:
          (a) Branch A (no-txn): live coordinator mid-recovery; and
-         (b) Branch B (txn=STAGING, generation_id=null): live coordinator between drain step 2.5
+         (b) Branch B (txn=STAGING, generation_id=null): live coordinator between drain step 3a
              (txn written) and §7c step 1 (gen UUID assigned) — the coordinator is legitimately
              active even though txn has null generation_id.
      (3) gate_state = OPEN: no reconciliation needed; proceed to admission check.
+         **(v1.14 DEF-1 closure):** by construction (step 3a always executes after step 3),
+         `gate_state = OPEN` and an active txn (STAGING or COMMITTING) are now mutually
+         exclusive — this case can never coexist with an active txn that would otherwise need
+         Branch A/B reconciliation. Before v1.14, a crash between the old pre-DRAINING txn
+         write and the DRAINING flip could leave `gate=OPEN` with an active
+         `txn=STAGING(generation_id=null)` record, which this step-3.5 predicate (gated on
+         `gate_state ∈ {LOCKED, DRAINING}`) never matched — see DEF-1 in the drain procedure
+         above and the v1.14 changelog entry. That state is no longer reachable.
      **Parity note (v1.11 HIGH-1):** This "acquire-flock → re-read gate/txn under lock →
      flip if no active txn → release" discipline is identical to the "Crash-recovery gate
      reconciliation" paragraph below, which also acquires `exclusive.lock` first. Both paths
@@ -485,9 +522,14 @@ permanent reservation leaks. The count of files in this directory is the cross-p
      self-heal of any stuck gate with no active txn AND no live coordinator (Branch A, this
      step 3.5 path). **(v1.13 HIGH-1 extension):** self-heal now ALSO covers Branch B: gate∈
      {LOCKED,DRAINING} + txn=STAGING(generation_id=null) + no live coordinator (dead coordinator
-     between step 2.5 and §7c step 1). PO must widen error-taxonomy.md E-MAINTENANCE-001
+     between step 3a and §7c step 1). PO must widen error-taxonomy.md E-MAINTENANCE-001
      "self-healing" description to cover this case. All routes are automatic; no operator
-     action required for routine stuck-gate cases.
+     action required for routine stuck-gate cases. **(v1.14 DEF-1):** the same self-healing
+     guarantee now also covers the crash window immediately AFTER the step-3 DRAINING flip and
+     BEFORE step 3a's txn write completes (gate=DRAINING, no active txn — Branch A handles it,
+     already listed among the (i)-(iv) scenarios above); the window that was NOT self-healing
+     under v1.11–v1.13 (`gate=OPEN` with an active null-generation STAGING txn) no longer
+     arises at all.
   4. If gate_state = OPEN AND no active txn: create `reservations/<tool_use_id>.reservation`
      file; release `LOCK_SH`; proceed (admit)
   5. If gate_state ≠ OPEN (DRAINING or LOCKED) OR active txn exists (STAGING or COMMITTING):
@@ -543,22 +585,47 @@ including Bash ones.
    DRAIN_TIMEOUT_ABORT on a subsequent migration (the abandoned reservation ages out within
    MAX_RESERVATION_TTL; the next drain proceeds normally after the TTL elapses).
 2. Acquire advisory flock on `exclusive.lock` (§Decision 7a)
-2.5. **(v1.11 HIGH-1 defense-in-depth) Write initial txn record with state=STAGING and null
-   source hashes** (`generation_id=null`, `source_sha256=null`, `source_body_row_sha256=null`,
-   `intent_log_path=null`, `pending_canonical_moves=[]`). This ensures that after the
-   DRAINING flip in step 3, any concurrent PreToolUse step 3.5 that sees `gate=DRAINING +
-   no active txn` will be blocked EITHER by this txn record (state=STAGING = active txn,
-   so step 3.5 skips reconciliation) OR by EWOULDBLOCK on `exclusive.lock` (sub-step a of
-   step 3.5). Rationale: the flock check (step 3.5 sub-step a) is the primary guard for
-   parity with the crash-recovery paragraph; writing txn=STAGING before DRAINING is
-   defense-in-depth to eliminate `gate=DRAINING + no-txn` from normal live drains.
-   Source hashes (`source_sha256`, `source_body_row_sha256`) are null here; filled in at
-   step 7 after quiescence snapshot.
 3. Acquire `LOCK_EX` flock on `gate-state` file; write gate_state = DRAINING; release `LOCK_EX`
    (LOCK_EX blocks new PreToolUse admissions while the flip is in progress)
+3a. **(v1.14 DEF-1 — structural fix; supersedes v1.11 HIGH-1's pre-DRAINING ordering) Write
+   initial txn record with state=STAGING and null source hashes** (`generation_id=null`,
+   `source_sha256=null`, `source_body_row_sha256=null`, `intent_log_path=null`,
+   `pending_canonical_moves=[]`). This step now runs strictly AFTER the DRAINING flip in
+   step 3, not before it (v1.11 wrote it at a "step 2.5" positioned before the flip — see
+   DEF-1 rationale below for why that ordering was defective).
+   **Invariant established by this ordering (v1.14 DEF-1):** because the coordinator is a
+   single sequential process holding `exclusive.lock` continuously from step 2 through
+   completion/abort, and step 3a executes only after step 3 completes, a durable txn record
+   with state=STAGING can come into existence ONLY when gate_state is already DRAINING (or
+   later LOCKED). Equivalently: **`gate_state = OPEN` implies no txn record exists with
+   state STAGING or COMMITTING.** This makes `gate=OPEN` together with an active txn a
+   structurally unreachable combination — not merely a case handled by an extra branch.
+   **DEF-1 rationale (why the v1.11 pre-DRAINING ordering was defective):** v1.11 wrote
+   this same txn record BEFORE the DRAINING flip (at "step 2.5"), as a *defense-in-depth*
+   measure whose own stated rationale was that "the flock check (step 3.5 sub-step a) is
+   the primary guard ... writing txn=STAGING before DRAINING is defense-in-depth" — i.e.
+   the flock check alone was already sufficient to preserve writer-exclusion during a live
+   drain (verified by the "Live coordinator mid-drain — flock exclusion" fault-injection
+   test below), and the pre-flip txn write added no exclusion guarantee that the flock
+   check did not already provide. That redundant "belt" opened a NEW crash sub-window that
+   did not exist before v1.11: a coordinator crash strictly between the old step 2.5
+   (txn written, gate still OPEN) and step 3 (DRAINING flip) left durable state
+   `gate=OPEN, txn=STAGING(generation_id=null), flock released, no gen dir, dead
+   coordinator`. The step-3.5 self-heal predicate (below) requires `gate_state ∈ {LOCKED,
+   DRAINING}` — by design, since gate=OPEN is supposed to mean "no maintenance in
+   progress" — so it never matched this state, and the ordinary admission check (step 5)
+   blocked on the active STAGING txn with no self-heal path, contradicting this ADR's own
+   guarantee that E-MAINTENANCE-001 always self-heals by the next PreToolUse. Before v1.11
+   this state was unreachable (the txn record did not exist until after the coordinator
+   had already flipped the gate). v1.14 restores that ordering guarantee while KEEPING the
+   flock check (sub-step a) as the sole load-bearing writer-exclusion mechanism — exactly
+   as v1.11's own rationale said it already was.
+   Source hashes (`source_sha256`, `source_body_row_sha256`) remain null here; filled in at
+   step 7 after quiescence snapshot.
 4. Poll `reservations/` directory until empty; timeout at 30s → **ABORT: update txn record
-   state → ABORTED (v1.11 HIGH-1: txn written at step 2.5 must be set ABORTED before
-   gate→OPEN on drain timeout); flip gate → OPEN (under LOCK_EX); release both flocks.**
+   state → ABORTED (the txn record written at step 3a always exists by the time this
+   timeout path runs, since step 3a executes unconditionally before step 4 begins — no
+   conditional handling is needed); flip gate → OPEN (under LOCK_EX); release both flocks.**
    (H1 fix: abort path MUST flip gate → OPEN)
    (v1.5 L-4 LIVENESS NOTE: The 30s drain timeout is a safety net, not a production
    operating assumption. F4 activation SHOULD be scheduled when the system is quiescent with
@@ -578,7 +645,7 @@ including Bash ones.
    covers only the per-BC-row content bytes (content-preservation PC1 check). Store all in txn
    record.
 6. Acquire `LOCK_EX`; write gate_state = LOCKED; release `LOCK_EX`
-7. **Update** txn record (first written at step 2.5 with state=STAGING and null hashes):
+7. **Update** txn record (first written at step 3a with state=STAGING and null hashes):
    fill in `source_sha256`, `source_body_row_sha256`, and original ID census snapshot from
    step 5. After this update, the txn record is fully populated for use by §Decision 7c.
    (`generation_id` and `intent_log_path` remain null here; filled in at §Decision 7c step 1
@@ -590,7 +657,10 @@ including Bash ones.
 
 **Abort gate-reset obligation (v1.4 — closes H1):** EVERY abort and rollback path MUST flip
 gate → OPEN before returning. This applies to:
-- Drain-timeout abort (step 3 above)
+- Drain-timeout abort (step 4 above) **(v1.14 in-place correction: this citation previously
+  read "step 3 above," a stale step-number reference from before the step 3/3a renumbering;
+  the drain-timeout abort has always been the step-4 reservation-poll-timeout path, not the
+  step-3 DRAINING flip)**
 - Expiry abort at §7c step 4 (authorization gate check)
 - Fingerprint abort at §7c step 5
 - Census abort at §7c step 3b (new in v1.4)
@@ -639,7 +709,8 @@ long for the deployment, it MAY be lowered toward the lower bound (1,800 seconds
 stall duration for confirmed-crash scenarios, at the cost of a narrower margin against very-long
 legitimate tool calls.
 
-**Fault-injection test mandate (v1.4 — H1; v1.5 — H-3, M-6; v1.6 — M-5; v1.7 — F4; v1.9 — H1):** Tests MUST verify:
+**Fault-injection test mandate (v1.4 — H1; v1.5 — H-3, M-6; v1.6 — M-5; v1.7 — F4; v1.9 — H1;
+v1.14 — DEF-1):** Tests MUST verify:
 - Drain-timeout abort: gate returns to OPEN; next PreToolUse is admitted
 - Expiry abort at step 4: gate returns to OPEN; txn = ABORTED
 - Fingerprint abort at step 5: gate returns to OPEN; txn = ABORTED
@@ -671,46 +742,76 @@ legitimate tool calls.
   that the NEXT PreToolUse reconciles gate→OPEN via step 3.5 (gate=LOCKED, no active txn,
   regardless of completed.json); verify subsequent Edit/Write PreToolUse admissions are accepted;
   verify that a LOCKED gate with an active STAGING txn is NOT reconciled (legitimate lock)
-- (v1.10 HIGH-1 / v1.13 HIGH-1 corrected) Drain-timeout or coordinator crash with step-2.5 txn
-  written: simulate drain step 2.5 writing the initial txn record (state=STAGING, generation_id=null,
-  source hashes null), then step 3 writing gate=DRAINING, then the process CRASHING before drain
-  step 4 sets txn→ABORTED — resulting state: gate=DRAINING, txn=STAGING (generation_id=null),
-  NO staged generation directory, flock released by crash. **NOTE: "gate=DRAINING, NO txn record"
-  can no longer arise from a post-step-3 crash after v1.11 (step 2.5 always writes txn BEFORE
-  DRAINING flip); the pre-v1.12 test claim "txn is first written at drain step 7" was STALE and
-  is corrected here.** Verify that the NEXT PreToolUse step 3.5 matches Branch B predicate
-  (gate=DRAINING, txn=STAGING, generation_id=null) → attempts flock(exclusive.lock, LOCK_EX\|LOCK_NB)
-  → acquires (no live coordinator) → sets txn→ABORTED (null_generation disposition; retained) →
-  flips gate→OPEN → admits. Verify subsequent Edit/Write PreToolUse admissions are accepted.
-  (Sub-case: if the crash happens AFTER drain step 4's txn→ABORTED write but BEFORE gate→OPEN flip:
-  gate=DRAINING, txn=ABORTED → existing Branch A "no active txn" predicate handles it — no change.)
+- (v1.10 HIGH-1 / v1.13 HIGH-1 / v1.14 DEF-1 corrected) Drain-timeout or coordinator crash with
+  step-3a txn written: simulate step 3 writing gate=DRAINING, then step 3a writing the initial
+  txn record (state=STAGING, generation_id=null, source hashes null), then the process CRASHING
+  before drain step 4 sets txn→ABORTED — resulting state: gate=DRAINING, txn=STAGING
+  (generation_id=null), NO staged generation directory, flock released by crash. **NOTE
+  (v1.14 DEF-1): as of v1.14, step 3a always writes the txn record AFTER the step-3 DRAINING
+  flip (reversed from the v1.11–v1.13 ordering, which wrote it at a "step 2.5" BEFORE the flip).
+  Consequently "gate=DRAINING, NO txn record" IS reachable again (from a crash between step 3
+  and step 3a) — see the new step-3/step-3a interstitial test below — and is handled by the
+  pre-existing Branch A predicate, unchanged.** Verify that the NEXT PreToolUse step 3.5 matches
+  Branch B predicate (gate=DRAINING, txn=STAGING, generation_id=null) →
+  attempts flock(exclusive.lock, LOCK_EX\|LOCK_NB) → acquires (no live coordinator) → sets
+  txn→ABORTED (null_generation disposition; retained) → flips gate→OPEN → admits. Verify
+  subsequent Edit/Write PreToolUse admissions are accepted. (Sub-case: if the crash happens
+  AFTER drain step 4's txn→ABORTED write but BEFORE gate→OPEN flip: gate=DRAINING, txn=ABORTED
+  → existing Branch A "no active txn" predicate handles it — no change.)
+- (v1.14 DEF-1 — NEW) Coordinator crash strictly between step 3 (DRAINING flip) and step 3a
+  (txn write): resulting state gate=DRAINING, NO txn record, flock released by crash, no gen
+  dir. Verify that the NEXT PreToolUse step 3.5 matches Branch A predicate (gate=DRAINING, no
+  active txn) → attempts flock(exclusive.lock, LOCK_EX\|LOCK_NB) → acquires (dead coordinator,
+  since the crash released the flock) → flips gate→OPEN (no txn record exists to update) →
+  admits. This is the structural replacement for the v1.11–v1.13 pre-DRAINING txn-write window;
+  it was already covered by Branch A and by the "Live coordinator mid-drain" flock-exclusion
+  test below, so no new predicate branch is required — this test only confirms the crash-point
+  relocation did not open a gap.
+- (v1.14 DEF-1 — NEW, regression / unreachability check) `gate=OPEN` with an active
+  `txn=STAGING(generation_id=null)` record MUST be unreachable: attempt to inject a coordinator
+  crash at every point between step 2 (flock acquired, gate still OPEN) and the completion of
+  step 3 (DRAINING flip) and confirm the txn record is NEVER written before step 3 completes —
+  i.e., no crash-injection point in this interval can produce `gate=OPEN` co-existing with a
+  STAGING or COMMITTING txn record. This is the DEF-1 regression test: it was constructible
+  under the v1.11–v1.13 ordering (crash between the old pre-DRAINING step 2.5 and step 3) and
+  MUST be proven UNSAT under the v1.14 ordering. See §Consequences → Verification Strategy for
+  the corresponding Kani model-checking harness requirement (re-verifies the property the
+  formal-verifier's Kani pass labels VP-M7).
 - (v1.13 HIGH-1) PreToolUse self-heal for null-generation STAGING crash — NEW test:
   Simulate the null-generation crash state (gate∈{LOCKED,DRAINING}, txn=STAGING, generation_id=null,
   no gen dir, flock released). Verify NEXT PreToolUse step 3.5: (a) matches Branch B predicate;
   (b) attempts flock → ACQUIRES (dead coordinator); (c) re-reads under LOCK_EX — confirms Branch B;
   (d) sets txn→ABORTED (null_generation disposition; RETAINED — do NOT delete); writes gate→OPEN;
   (e) releases both locks; (f) admits the writer. VERIFY no EC-003 census attempted. VERIFY that
-  with a LIVE coordinator holding flock (step 2 acquired, between step 2.5 txn-write and §7c step 1),
+  with a LIVE coordinator holding flock (step 2 acquired, between step 3a txn-write and §7c step 1),
   the concurrent PreToolUse receives EWOULDBLOCK → blocks with E-MAINTENANCE-001 → MUST NOT flip
   gate→OPEN and MUST NOT set txn→ABORTED.
 - (v1.11 HIGH-1) Live coordinator mid-drain — flock exclusion (no-flip test): simulate a live
   coordinator that holds `flock(exclusive.lock, LOCK_EX)` (drain step 2) and has written
-  gate=DRAINING (drain step 3) with NO txn record (pre-v1.11 scenario, or simulated by
-  delaying step 2.5). A concurrent ordinary-writer PreToolUse enters step 3.5 (gate=DRAINING,
-  no active txn predicate matches): MUST attempt `flock(exclusive.lock, LOCK_EX|LOCK_NB)` →
-  receive EWOULDBLOCK (coordinator holds it) → MUST block with E-MAINTENANCE-001 → MUST NOT
-  flip gate→OPEN. Verify BC-1.18.011 Precondition 6 writer-exclusion is preserved throughout
-  the coordinator's drain.
-- (v1.11 HIGH-1 defense-in-depth) Normal live drain — txn written before DRAINING: verify
-  that after step 2.5 writes the initial txn record (state=STAGING) and step 3 flips
-  gate=DRAINING, a concurrent PreToolUse step 3.5 sees `gate=DRAINING + txn=STAGING (active)
-  AND exclusive.lock EWOULDBLOCK` — both guards independently block reconciliation. Verify
-  drain timeout abort (step 4) correctly sets txn→ABORTED and THEN flips gate→OPEN.
-- (v1.12 F2 / v1.13 MED-3 updated) Null-generation crash recovery (migration-binary path):
-  simulate crash between drain step 2.5 (txn record written with state=STAGING,
-  `generation_id=null`, `source_sha256=null`, `source_body_row_sha256=null`) and §7c step 1
-  (generation UUID generated, gen dir created). Resulting state: txn=STAGING, generation_id=null,
-  no gen dir, gate=LOCKED. Verify that recovery via binary re-invocation: (1) detects
+  gate=DRAINING (drain step 3) with NO txn record yet (the normal v1.14 window between step 3
+  and step 3a, or a delayed step 3a). A concurrent ordinary-writer PreToolUse enters step 3.5
+  (gate=DRAINING, no active txn predicate matches): MUST attempt
+  `flock(exclusive.lock, LOCK_EX|LOCK_NB)` → receive EWOULDBLOCK (coordinator holds it) → MUST
+  block with E-MAINTENANCE-001 → MUST NOT flip gate→OPEN. Verify BC-1.18.011 Precondition 6
+  writer-exclusion is preserved throughout the coordinator's drain. **(v1.14 DEF-1):** this test
+  is the PRIMARY guard for the gate=DRAINING-no-txn window and remains sufficient on its own;
+  the txn record written at step 3a is a secondary/defense-in-depth signal, not required for
+  correctness of this test.
+- (v1.14 DEF-1 — supersedes v1.11 HIGH-1 "defense-in-depth" framing) Normal live drain — txn
+  written after DRAINING: verify that after step 3 flips gate=DRAINING and step 3a writes the
+  initial txn record (state=STAGING), a concurrent PreToolUse step 3.5 sees `gate=DRAINING +
+  txn=STAGING (active) AND exclusive.lock EWOULDBLOCK` for the remainder of the drain — both
+  guards independently block reconciliation once step 3a has run; for the brief interval between
+  step 3 and step 3a, `exclusive.lock EWOULDBLOCK` alone blocks reconciliation (see the new
+  step-3/step-3a interstitial test above). Verify drain timeout abort (step 4) correctly sets
+  txn→ABORTED (the txn record always exists by step 4, since step 3a is unconditional) and THEN
+  flips gate→OPEN.
+- (v1.12 F2 / v1.13 MED-3 / v1.14 DEF-1 updated) Null-generation crash recovery
+  (migration-binary path): simulate crash between drain step 3a (txn record written with
+  state=STAGING, `generation_id=null`, `source_sha256=null`, `source_body_row_sha256=null`) and
+  §7c step 1 (generation UUID generated, gen dir created). Resulting state: txn=STAGING,
+  generation_id=null, no gen dir, gate ∈ {DRAINING, LOCKED} depending on crash timing (never
+  OPEN — v1.14 DEF-1 invariant). Verify that recovery via binary re-invocation: (1) detects
   generation_id=null in the txn record; (2) sets txn state → ABORTED (null_generation disposition
   marker; RETAINED per GC policy — do NOT delete the txn record); (3) flips gate → OPEN;
   (4) exits `EXPIRY_ABORT`. VERIFY it does NOT: (5) attempt EC-003 census (no gen dir exists);
@@ -1550,7 +1651,7 @@ is a RATIFICATION PREREQUISITE. Before ratifying this ADR as safe on macOS, the 
 do ONE of the following:
 - (a) **Confirm the test has been run** on darwin-arm64 and the results have been reviewed.
   If the test shows `fsync(dir_fd)` on APFS provides power-loss durability for rename directory
-  entries, record the test result in the D-NNN ratification entry.
+  entries, record the test result in the D-1232 ratification entry.
 - (b) **Explicitly acknowledge unverified durability:** If ratifying before the test runs, the
   ratification entry MUST state: "macOS/APFS power-loss durability for rename directory entries
   (from `fsync(dir_fd)`) is NOT verified on darwin-arm64. Under a power-loss scenario, a rename
@@ -1559,7 +1660,7 @@ do ONE of the following:
   acknowledgment, with the understanding that the power-loss durability guarantee is weaker than
   on Linux.
 
-Both acknowledgments MUST be recorded in the D-NNN entry that ratifies ADR-052.
+Both acknowledgments MUST be recorded in the D-1232 entry that ratifies ADR-052.
 
 ---
 
@@ -1748,9 +1849,57 @@ not produce new actionable findings beyond what is captured in this v1.13 record
 amendment to §Decision 4e/5a/7c machinery MUST be accompanied by a formal proof or exhaustive
 model-check result demonstrating the amended invariant holds.
 
+**v1.14 DEF-1 — sanctioned formal-finding exception, applied:** A pre-implementation Kani
+model-checking pass against the drain/gate/txn state machine (run as human-directed spec/design
+convergence work, ahead of the cluster-5 IMPLEMENTATION Kani harnesses described above) found
+DEF-1: the v1.11 step-2.5 reordering made `gate_state = OPEN` reachable while an active
+`txn=STAGING(generation_id=null)` record existed with no live coordinator holding
+`exclusive.lock` — a state the self-heal predicate (gated on `gate_state ∈ {LOCKED, DRAINING}`)
+could never match. §Decision 5a was amended per this frozen-clause's own exception ("MUST be
+accompanied by a formal proof or exhaustive model-check result"): the drain ordering was
+restructured (initial txn record moved from "step 2.5" to step 3a, after the DRAINING flip) so
+that `gate_state = OPEN` and an active STAGING/COMMITTING txn become mutually exclusive by
+construction, rather than by an additional self-heal branch. **This exception does NOT reopen
+general prose adversarial review of §Decision 4e/5a/7c** — the freeze remains in force for any
+change not grounded in a formal/model-check finding.
+
+**Formal-verifier re-verification requirement for this v1.14 fix (VP-M7):** The next Kani pass
+against `executor.rs` MUST update its model of the drain procedure and re-prove the joint
+gate/txn reachability invariant under the corrected step ordering. Precisely, the harness MUST:
+1. Encode the drain procedure's step ordering as: step 2 (flock acquire) → step 3 (gate-state
+   write = DRAINING, under gate-state LOCK_EX, released) → step 3a (txn-record write:
+   state=STAGING, `generation_id=null`, source hashes null) → step 4 (reservation-quiescence
+   poll / timeout-abort) → step 5 (snapshot) → step 6 (gate-state write = LOCKED) → step 7
+   (txn-record update with hashes). The txn-record-write transition (step 3a) MUST be modeled
+   as occurring strictly after the gate-state-write transition (step 3) in the coordinator's
+   program order — this ordering IS the fix; a harness that models step 3a before step 3
+   re-introduces the DEF-1 state space and MUST fail the proof below.
+2. Enumerate a symbolic crash point after EVERY step boundary in the sequence above (bounded
+   model check over all step-boundary crash injections, consistent with the existing "exhaustive
+   crash-interleaving" mandate), including the boundary between step 2 and step 3 and the
+   boundary between step 3 and step 3a — these two boundaries did not need separate treatment
+   under the pre-v1.11 ordering and are the specific boundaries DEF-1 concerns.
+3. Prove invariant **INV-GATE-TXN**: for every reachable durable state (crash-truncated or not),
+   `gate_state = OPEN` implies no txn record exists with state STAGING or COMMITTING —
+   equivalently, `txn.state ∈ {STAGING, COMMITTING}` implies `gate_state ∈ {DRAINING, LOCKED}`.
+   The harness must show this holds at every crash point enumerated in step 2 above, i.e. that
+   `gate=OPEN ∧ txn.state=STAGING(generation_id=null)` is UNSAT under the corrected model. Under
+   the OLD (v1.11–v1.13) step ordering this property is SAT (falsifiable) at the boundary between
+   the old pre-DRAINING txn write and the DRAINING flip — the harness change in point 1 is what
+   makes it UNSAT, so a diff between the old-model and new-model proof runs is the expected
+   re-verification evidence.
+4. Re-run the existing self-heal-predicate-soundness and liveness (no-permanent-stuck-gate)
+   proofs against the updated model to confirm they are unaffected (Branch A and Branch B of
+   step 3.5 are unchanged; only the precondition for when Branch B's state is reachable has
+   narrowed).
+This is the specific re-verification the formal-verifier must perform before this ADR can be
+re-evaluated for accept-at-floor ratification; it is scoped narrowly to the step-3/step-3a
+reordering and does not require re-deriving the rest of the state machine's proofs from scratch.
+
 This is the ratification-time acknowledgment for **POLICY 22** (the narrowly-authorized exception
 to TD-FACTORY-HOOK-BYPASS-001 P0) — the concurrency mechanism that POLICY 22 gates has been
-reviewed to the prose floor and its formal verification is a tracked deliverable of cluster-5 TDD.
+reviewed to the prose floor (plus this v1.14 formal-finding exception) and its formal
+verification is a tracked deliverable of cluster-5 TDD.
 
 ---
 
@@ -1794,7 +1943,10 @@ that made incremental amendment non-viable (diverging finding trajectory 7→8�
   - Local pass-7 (D-1227): 10th review (1 HIGH + 2 MED + 2 LOW, RATIFY-WITH-CHANGES), producing the v1.10 fix-burst
   - Local pass-8 (D-1228): 11th review (1 HIGH + 2 MED + 1 LOW, NOT-RATIFIABLE), producing the v1.11 fix-burst
   - Local pass-9 (D-1229): 12th review (1 HIGH + 2 MED + 1 LOW, NOT-RATIFIABLE), producing the v1.12 fix-burst
-  - Local pass-10 (D-1230): 13th review (1 HIGH + 3 MED + 2 LOW, accept-at-floor per D-386 Option C), producing this v1.13 fix-burst
+  - Local pass-10 (D-1230): 13th review (1 HIGH + 3 MED + 2 LOW, accept-at-floor per D-386 Option C), producing the v1.13 fix-burst
+  - Kani pass-1 (D-1231): pre-implementation Kani model-checking pass (1 HIGH — DEF-1,
+    uncovered self-heal window in the `gate=OPEN` sub-state), run as human-directed spec/design
+    convergence work on 2026-09-20, producing this v1.14 fix-burst
 - `research-adr-052-v13-atomic-publication-2026-09-13.md` — research brief grounding
   the atomic-pointer architecture, advisory flock design, and F_FULLFSYNC / fexecve guidance
 - CLAUDE.md TD-FACTORY-HOOK-BYPASS-001 P0 — governing rule this ADR excepts via §Decision 8
@@ -2187,6 +2339,25 @@ per v1.3 correction above). All rows present in error-taxonomy.md v1.25.
 *(Historical record: this block records the v1.4 directive that was applied in the v1.4
 fix-burst. All changes were completed; no pending actions remain here.)*
 
+### v1.14 (DEF-1) — no BC or taxonomy changes required
+
+The v1.14 fix reorders internal coordinator steps within §Decision 5a (moving the initial
+txn-record write from before to after the DRAINING gate flip). It does not change any
+BC-visible invariant, precondition, postcondition, error code, or trigger condition:
+- `E-MAINTENANCE-001`'s trigger ("gate state is DRAINING or LOCKED, OR txn record exists with
+  state STAGING or COMMITTING") is unchanged and remains accurate — it already covered the
+  DEF-1 defect state correctly (the writer WAS blocked; the defect was the absence of a
+  self-heal path, not an incorrect block).
+- BC-1.18.011 Precondition 6 (writer-exclusion) and Invariant 3 (txn-record state as the
+  re-run/recovery discriminator) are unaffected: the flock-gated exclusion mechanism
+  (§Decision 5a step 3.5 sub-step a) that those clauses rely on is unchanged by this fix.
+- No new error code, no new recovery-table row, and no change to any externally observable
+  timing or ordering guarantee BC-1.18.011/BC-1.18.010 depend on.
+**No product-owner action is required for this v1.14 burst.** The pre-existing PO handoff item
+from v1.13 HIGH-1 (widen error-taxonomy.md's E-MAINTENANCE-001 "self-healing" description to
+explicitly cover the null-generation STAGING sub-state) remains open and unrelated to DEF-1;
+it is not expanded or narrowed by this fix.
+
 ---
 
 ## References
@@ -2196,7 +2367,7 @@ fix-burst. All changes were completed; no pending actions remain here.)*
 - `research-adr-052-v13-atomic-publication-2026-09-13.md` — research brief grounding the v1.3 architecture (atomic publication, intent log, advisory flock, F_FULLFSYNC, fexecve/execveat)
 - `adv-cv-adr052-v11-closure-2026-09-12.md` — 2nd Codex closure review, 8 findings (D-1216)
 - `adv-cv-adr052-cluster5-F1-2026-09-12.md` — 1st Codex RATIFY-WITH-CHANGES verdict (7 findings, D-1214)
-- Decision log D-1221 (local pass-1, 9 findings, producing v1.4), D-1222 (local pass-2, 9 findings, producing v1.5), D-1223 (local pass-3, 12 findings, producing v1.6), D-1224 (local pass-4, 2H+6M, producing v1.7), D-1225 (local pass-5, 2H+1M RATIFY-WITH-CHANGES, producing v1.8), D-1226 (local pass-6, 1H+1M+2L RATIFY-WITH-CHANGES, producing v1.9), D-1227 (local pass-7, 1H+2M+2L RATIFY-WITH-CHANGES, producing v1.10), D-1228 (local pass-8, 1H+2M+1L NOT-RATIFIABLE, producing v1.11), D-1229 (local pass-9, 1H+2M+1L NOT-RATIFIABLE, producing v1.12), D-1230 (local pass-10, 1H+3M+2L accept-at-floor, producing v1.13)
+- Decision log D-1221 (local pass-1, 9 findings, producing v1.4), D-1222 (local pass-2, 9 findings, producing v1.5), D-1223 (local pass-3, 12 findings, producing v1.6), D-1224 (local pass-4, 2H+6M, producing v1.7), D-1225 (local pass-5, 2H+1M RATIFY-WITH-CHANGES, producing v1.8), D-1226 (local pass-6, 1H+1M+2L RATIFY-WITH-CHANGES, producing v1.9), D-1227 (local pass-7, 1H+2M+2L RATIFY-WITH-CHANGES, producing v1.10), D-1228 (local pass-8, 1H+2M+1L NOT-RATIFIABLE, producing v1.11), D-1229 (local pass-9, 1H+2M+1L NOT-RATIFIABLE, producing v1.12), D-1230 (local pass-10, 1H+3M+2L accept-at-floor, producing v1.13), D-1231 (Kani pass-1, 1 HIGH — DEF-1, human-directed spec/design convergence, producing this v1.14 fix-burst)
 - `research-adr-052-assumption-validation-2026-09-12.md` — prior research Q1-Q5 validation
 - `BC-1.18.011` — migration BC; §Downstream to Product-Owner specifies amendments
 - `BC-1.18.010` — §Reader Integration amendment + Invariant 2 amendment
@@ -2228,9 +2399,9 @@ fix-burst. All changes were completed; no pending actions remain here.)*
 | `plugins/vsdd-factory/hooks/destructive-command-guard.sh` (or WASM) | 4-branch classifier per §5c; txn record state check | devops-engineer |
 | `plugins/vsdd-factory/hooks/validate-factory-path-staging.sh` (or WASM) | 4-branch classifier; conservative Bash admission; executable digest verification + fd-binding per §Decision 11; **v1.12 F6: Branch 2 gate reconciliation — new step 0: attempt `flock(exclusive.lock, LOCK_EX\|LOCK_NB)` before gate LOCK_EX; on EWOULDBLOCK log warning + exit 0 ALREADY_MIGRATED without gate reconciliation; on acquired proceed with steps 1–4 + release both locks**; **v1.13 HIGH-1: step-3.5 Branch B — null-generation STAGING predicate extension; EWOULDBLOCK path; set txn→ABORTED(null_generation; RETAINED) path; Branch A vs Branch B selection under LOCK_EX re-read** | devops-engineer |
 | `plugins/vsdd-factory/hooks/validate-factory-path-staged.sh` (or WASM) | Recognize governed migration subcommands; pass through | devops-engineer |
-| `crates/factory-dispatcher/src/executor.rs` | OPEN/DRAINING gate with writer reservations (PreToolUse-acquire/PostToolUse-release); durable reservation dir `.factory/migration-state/reservations/` (H2 v1.4); atomic admission under gate_state flock; every abort path flips gate → OPEN (H1 v1.4); **v1.10 HIGH-1: step-3.5 stale-gate reconciliation generalised — triggers on gate ∈ {LOCKED, DRAINING} AND no active txn (absent/COMPLETED/ABORTED), regardless of completed.json presence; covers (i) abort-crash-before-gate-reset (txn=ABORTED, no completed.json) and (ii) drain-timeout-crash (gate=DRAINING, no txn record) scenarios**; **v1.11 HIGH-1: step-3.5 flock-gated reconciliation — FIRST attempts `flock(exclusive.lock, LOCK_EX\|LOCK_NB)`; reconcile gate→OPEN ONLY if flock ACQUIRABLE (no live coordinator); on EWOULDBLOCK block with E-MAINTENANCE-001 (no gate flip); sub-steps a→h; parity with crash-recovery paragraph; drain reordered: initial txn (state=STAGING, source hashes null) written at step 2.5 BEFORE DRAINING flip (defense-in-depth — `gate=DRAINING + no-txn` eliminated from normal live drains); step 7 is now UPDATE txn with source hashes; step 4 drain-timeout abort now also sets txn→ABORTED**; **v1.12 F2: null-generation crash recovery path — admission reads `generation_id` from txn record on recovery; if null (pre-generation crash sub-state: drain step 2.5 written but §7c step 1 not yet run): set txn→ABORTED (null_generation disposition; RETAINED per GC policy), flip gate→OPEN, exit EXPIRY_ABORT; MUST NOT call census or compare PC1 against null `source_body_row_sha256`**; **v1.12 F4: txn-selection disambiguation — admission scans all `txn-*.json` and selects by activation_id match to current manifest; fallback: highest created_at; ABORTED record is inert (treated as absent for selection); terminal-txn GC: on migration completion archive ABORTED + COMPLETED records to `.factory/migration-audit/txn-archive/`**; **v1.13 HIGH-1: step-3.5 predicate extended to cover txn=STAGING AND generation_id=null (Branch B) — PreToolUse self-heal for null-generation crash sub-state; on flock acquired (dead coordinator): set txn→ABORTED(null_generation; RETAINED), flip gate→OPEN, admit; on EWOULDBLOCK: block E-MAINTENANCE-001**; crash-recovery gate reconciliation (§Decision 5a Crash-recovery gate reconciliation paragraph — also covers gate=DRAINING per v1.4 H1); stale reservation cleanup with **v1.10 MED-2: operator runbook for abandoned-reservation stall — confirmed-stale reservation files (no live harness session) MAY be manually deleted pre-activation per §Decision 5a operator remediation guidance**; txn record state check blocking mutations | implementer (cluster-5 TDD) |
+| `crates/factory-dispatcher/src/executor.rs` | OPEN/DRAINING gate with writer reservations (PreToolUse-acquire/PostToolUse-release); durable reservation dir `.factory/migration-state/reservations/` (H2 v1.4); atomic admission under gate_state flock; every abort path flips gate → OPEN (H1 v1.4); **v1.10 HIGH-1: step-3.5 stale-gate reconciliation generalised — triggers on gate ∈ {LOCKED, DRAINING} AND no active txn (absent/COMPLETED/ABORTED), regardless of completed.json presence; covers (i) abort-crash-before-gate-reset (txn=ABORTED, no completed.json) and (ii) drain-timeout-crash (gate=DRAINING, no txn record) scenarios**; **v1.11 HIGH-1: step-3.5 flock-gated reconciliation — FIRST attempts `flock(exclusive.lock, LOCK_EX\|LOCK_NB)`; reconcile gate→OPEN ONLY if flock ACQUIRABLE (no live coordinator); on EWOULDBLOCK block with E-MAINTENANCE-001 (no gate flip); sub-steps a→h; parity with crash-recovery paragraph; drain reordered (v1.11): initial txn (state=STAGING, source hashes null) written at "step 2.5" BEFORE DRAINING flip (defense-in-depth — `gate=DRAINING + no-txn` eliminated from normal live drains); step 7 is now UPDATE txn with source hashes; step 4 drain-timeout abort now also sets txn→ABORTED**; **v1.12 F2: null-generation crash recovery path — admission reads `generation_id` from txn record on recovery; if null (pre-generation crash sub-state: drain "step 2.5" written but §7c step 1 not yet run): set txn→ABORTED (null_generation disposition; RETAINED per GC policy), flip gate→OPEN, exit EXPIRY_ABORT; MUST NOT call census or compare PC1 against null `source_body_row_sha256`**; **v1.12 F4: txn-selection disambiguation — admission scans all `txn-*.json` and selects by activation_id match to current manifest; fallback: highest created_at; ABORTED record is inert (treated as absent for selection); terminal-txn GC: on migration completion archive ABORTED + COMPLETED records to `.factory/migration-audit/txn-archive/`**; **v1.13 HIGH-1: step-3.5 predicate extended to cover txn=STAGING AND generation_id=null (Branch B) — PreToolUse self-heal for null-generation crash sub-state; on flock acquired (dead coordinator): set txn→ABORTED(null_generation; RETAINED), flip gate→OPEN, admit; on EWOULDBLOCK: block E-MAINTENANCE-001**; **v1.14 DEF-1 (SUPERSEDES the v1.11 ordering cited above): drain reordering REVERSED — the initial txn record is now written at step 3a, strictly AFTER the step-3 DRAINING flip, not before it; this closes an uncovered crash window (`gate=OPEN, txn=STAGING(generation_id=null), flock released, no gen dir, dead coordinator`) that the v1.11 pre-DRAINING ordering introduced, because that state matched neither the step-3.5 self-heal predicate (requires `gate ∈ {LOCKED, DRAINING}`) nor the ordinary OPEN-admission path (an active txn exists); implementer MUST write the txn record in the step-3a position (after gate_state=DRAINING is durably written and its LOCK_EX released), never before; the flock-gated step-3.5 sub-step a check remains the sole load-bearing writer-exclusion mechanism during the drain, unchanged by this reordering**; crash-recovery gate reconciliation (§Decision 5a Crash-recovery gate reconciliation paragraph — also covers gate=DRAINING per v1.4 H1); stale reservation cleanup with **v1.10 MED-2: operator runbook for abandoned-reservation stall — confirmed-stale reservation files (no live harness session) MAY be manually deleted pre-activation per §Decision 5a operator remediation guidance**; txn record state check blocking mutations | implementer (cluster-5 TDD) |
 | `crates/factory-dispatcher/src/shard_manager.rs` | Full v1.7 migration implementation: advisory flock; txn record (`source_body_row_sha256` field for PC1); intent log (framed+checksummed); step 3b pre-pivot census gate — staging-integrity (sha256(staged_file) vs intent-log expected_post_hash) + PC1 (structured per-BC-row equivalence: extract BC-X.YY.NNN rows from staged shards, sort by BC-ID, sha256 → compare vs `source_body_row_sha256`; `source_sha256` whole-file hash is the step-5 fingerprint recheck only, NOT PC1) + PC2 (per-ID exactly-one-shard set check; EC-001 dup+drop detection); CURRENT.json pointer swap + generation-first/open-with-ENOENT-fallback reader; completed.json; **v1.12 F2 / v1.13 MED-3: recovery path checks `generation_id` field in txn record — if null (pre-generation crash sub-state): set txn→ABORTED (null_generation disposition; RETAINED per GC policy — do NOT delete), flip gate→OPEN, exit EXPIRY_ABORT; MUST NOT census or compare PC1 against null `source_body_row_sha256`**; **v1.12 F4: txn-selection reads all `txn-*.json`, selects by activation_id match to current manifest (fallback: highest created_at); terminal-txn GC at migration completion archives ABORTED/COMPLETED records to `.factory/migration-audit/txn-archive/`**; platform-branched durability (F_FULLFSYNC on macOS); fd-binding exec on Linux with /proc dependency note; programmatic mtime guard on macOS (M-2: mtime re-stat immediately before exec); TTL-based stale-reservation GC at start of every drain; all abort paths flip gate → OPEN; fencing_generation AUDIT-ONLY | implementer (cluster-5 TDD) |
-| `crates/factory-dispatcher/tests/` | v1.7 test suite: advisory flock; txn record state machine (`source_body_row_sha256` field); intent log write+recovery+fault-injection; step 3b census gate (staging-integrity sha256 vs intent-log expected_post_hash + PC1 structured per-BC-row equivalence vs `source_body_row_sha256` + PC2 ID-set exactly-one-shard + EC-001 dup+drop + shard-boundary internal capacity check [NOT `E-SHD-005` — that is the steady-state HookResult, not a migration process exit code]); CURRENT.json pointer swap + generation-first/open-with-ENOENT-fallback reader; completed.json permanence; all abort paths → gate OPEN; Branch 2 gate reconciliation (**v1.12 F6: step 0 flock acquire + EWOULDBLOCK warning-and-exit path + fault injection for crash between step 8 and gate→OPEN**); reservation dir cross-process quiescence; TTL-based stale-reservation GC on first-run drain; test that an IN-FLIGHT reservation is NEVER reclaimed by drain step-1 GC (v1.9 H1); **v1.12 F2 / v1.13 MED-3: null-generation crash test (migration-binary path) — crash between drain step 2.5 (generation_id=null) and §7c step 1 → binary re-invocation: sets txn→ABORTED(null_generation disposition; RETAINED per GC policy — do NOT delete), flips gate→OPEN, exits EXPIRY_ABORT; VERIFY no EC-003 census attempted; VERIFY no PC1 comparison against null source_body_row_sha256; VERIFY txn record still present in ABORTED state after operation**; **v1.12 F4: txn-selection disambiguation test — multiple txn-*.json coexist; recovery selects by activation_id match; ABORTED record inert**; **v1.13 HIGH-1: PreToolUse step-3.5 null-generation self-heal test — gate∈{LOCKED,DRAINING}, txn=STAGING(generation_id=null), no gen dir, flock released; VERIFY step 3.5 matches Branch B → flock acquired → sets txn→ABORTED(null_generation; RETAINED) → gate→OPEN → admits; VERIFY live coordinator (flock held) scenario receives EWOULDBLOCK → E-MAINTENANCE-001 → NO gate flip → NO txn→ABORTED**; 4-branch guard logic; conservative Bash admission; digest mismatch abort; Linux execveat AT_EMPTY_PATH; macOS mtime guard; platform durability; validate_write_target() dot-lowercase + rejection of hyphen-uppercase (C2 ratification test) | implementer (cluster-5 TDD) |
+| `crates/factory-dispatcher/tests/` | v1.7 test suite: advisory flock; txn record state machine (`source_body_row_sha256` field); intent log write+recovery+fault-injection; step 3b census gate (staging-integrity sha256 vs intent-log expected_post_hash + PC1 structured per-BC-row equivalence vs `source_body_row_sha256` + PC2 ID-set exactly-one-shard + EC-001 dup+drop + shard-boundary internal capacity check [NOT `E-SHD-005` — that is the steady-state HookResult, not a migration process exit code]); CURRENT.json pointer swap + generation-first/open-with-ENOENT-fallback reader; completed.json permanence; all abort paths → gate OPEN; Branch 2 gate reconciliation (**v1.12 F6: step 0 flock acquire + EWOULDBLOCK warning-and-exit path + fault injection for crash between step 8 and gate→OPEN**); reservation dir cross-process quiescence; TTL-based stale-reservation GC on first-run drain; test that an IN-FLIGHT reservation is NEVER reclaimed by drain step-1 GC (v1.9 H1); **v1.12 F2 / v1.13 MED-3: null-generation crash test (migration-binary path) — crash between drain step 3a (generation_id=null) and §7c step 1 → binary re-invocation: sets txn→ABORTED(null_generation disposition; RETAINED per GC policy — do NOT delete), flips gate→OPEN, exits EXPIRY_ABORT; VERIFY no EC-003 census attempted; VERIFY no PC1 comparison against null source_body_row_sha256; VERIFY txn record still present in ABORTED state after operation**; **v1.12 F4: txn-selection disambiguation test — multiple txn-*.json coexist; recovery selects by activation_id match; ABORTED record inert**; **v1.13 HIGH-1: PreToolUse step-3.5 null-generation self-heal test — gate∈{LOCKED,DRAINING}, txn=STAGING(generation_id=null), no gen dir, flock released; VERIFY step 3.5 matches Branch B → flock acquired → sets txn→ABORTED(null_generation; RETAINED) → gate→OPEN → admits; VERIFY live coordinator (flock held) scenario receives EWOULDBLOCK → E-MAINTENANCE-001 → NO gate flip → NO txn→ABORTED**; **v1.14 DEF-1: drain-reorder regression suite — (a) crash between step 3 (DRAINING flip) and step 3a (txn write) → gate=DRAINING, no txn → Branch A self-heals (unchanged branch, new crash point); (b) construct-and-assert-UNSAT test: no crash-injection point between step 2 (flock acquired) and step-3 completion can produce a durable txn record with state STAGING/COMMITTING while gate_state=OPEN — i.e. `gate=OPEN, txn=STAGING(generation_id=null), flock released, no gen dir` (the DEF-1 defect state) MUST be unconstructible under the v1.14 step ordering; (c) regression test reproducing the exact pre-v1.14 defect scenario (crash immediately after the old pre-DRAINING txn write, before the DRAINING flip) asserts the harness CANNOT reach it because step 3a no longer precedes step 3** | implementer (cluster-5 TDD) |
 | `crates/factory-dispatcher/tests/darwin_arm64_durability_test.rs` | Empirical darwin-arm64 directory-fsync durability characterization test — **RATIFICATION PREREQUISITE (v1.7 F8)**: this test MUST be completed and reviewed before POLICY 22 ratification of macOS safety. Test validates whether `fsync(dir_fd)` on APFS provides power-loss durability for rename directory entries beyond `F_FULLFSYNC` alone. Results feed §Decision 11 sign-off item 2. | implementer (cluster-5 TDD) — darwin-arm64 CI required; result reviewed at POLICY 22 ratification gate |
 | `.factory/activation/factory-dispatcher.sha256` | SHA-256 of built binary | devops-engineer (cluster-5 activation) |
 | `.factory/activation/` | Created at F4 by state-manager | state-manager |
@@ -2241,6 +2412,7 @@ fix-burst. All changes were completed; no pending actions remain here.)*
 
 | Version | Date | Author | Change |
 |---|---|---|---|
+| 1.14 | 2026-09-20 | architect | Fix-burst (Kani model-checking pass-1, DEF-1, human-directed spec/design convergence per D-386 Option C — "more convergence before accept-at-floor ratification"; pipeline PAUSED, cluster-5 TDD BLOCKED, unaffected by this burst). DEF-1 (HIGH) — uncovered self-heal window: v1.11's step-2.5 reordering (writing the initial txn record BEFORE the DRAINING flip, as a stated "defense-in-depth" measure) opened a NEW crash sub-window that did not exist before v1.11 — a coordinator crash strictly between the old step 2.5 (txn written, gate STILL OPEN) and step 3 (DRAINING flip) left durable state `gate=OPEN, txn=STAGING(generation_id=null), flock released, no gen dir, dead coordinator`. §5a step 3.5's self-heal predicate (gated on `gate_state ∈ {LOCKED, DRAINING}`) never matched this state; the ordinary admission check blocked the writer on the active STAGING txn regardless of gate_state; §4e's DISCARD row for this sub-state is reachable only via migration-binary re-invocation, contradicting this ADR's own v1.10/v1.13 guarantee that E-MAINTENANCE-001 always self-heals by the next PreToolUse. Root cause: v1.11's own rationale for the pre-DRAINING txn write was that the flock check (step 3.5 sub-step a) was already the primary/sufficient exclusion guard — the pre-DRAINING write was redundant defense-in-depth that introduced this regression without adding real safety. Three candidate fixes were evaluated: (A) extend step 3.5 Branch B to also cover `gate=OPEN` (adds another special-case branch — the exact anti-pattern behind the pass-8/9/13 regressions); (B) reorder the drain so the DRAINING flip (step 3) precedes the txn write (structural fix, chosen); (C) make the txn-write and gate-flip a single atomic critical section across two separate files (rejected — the two writes are already effectively serialized by the coordinator's continuous hold on `exclusive.lock`, so "atomicity" does not address the actual defect, which is a *durable-state reachability* problem, not a concurrency-atomicity problem, and cross-file atomic writes would be a materially larger redesign for no additional safety). Fixed (Option B): §Decision 5a drain procedure reordered — the initial txn-record write moves from "step 2.5" to new step **3a**, strictly AFTER step 3 (DRAINING flip) completes, restoring the pre-v1.11 ordering guarantee (`gate_state = OPEN` implies no active STAGING/COMMITTING txn record can exist) while KEEPING the v1.11 flock-gated step-3.5 sub-step-a check as the sole load-bearing writer-exclusion mechanism, unchanged. No new step-3.5 predicate branch was added; Branch A and Branch B are unchanged, and Branch B's precondition (`gate ∈ {LOCKED, DRAINING}`) is now provably always true whenever `txn=STAGING(generation_id=null)` exists, closing the gap by construction rather than by enumeration. Drain-timeout abort (step 4) simplified: the txn record now always exists by step 4 (step 3a is unconditional and precedes it), removing a conditional branch. Swept: §4e scope note, step-3.5 Branch B text and non-reconciliation Note, "Applied same-burst" self-heal description, fault-injection test mandate (2 new DEF-1 tests: step-3/step-3a interstitial-crash test and a construct-and-assert-UNSAT regression test proving `gate=OPEN` with an active txn is unconstructible), §Files-to-Change `executor.rs` and `tests/` rows, Status block. §Consequences → Verification Strategy: added the v1.14 DEF-1 sanctioned formal-finding exception to the §Decision 4e/5a/7c prose-freeze clause, plus a precise re-verification directive (model-order change, crash-point enumeration, and the INV-GATE-TXN invariant statement — `gate_state=OPEN ⟹ no txn record in {STAGING, COMMITTING}` — that the formal-verifier's next Kani pass, labeled VP-M7, must re-prove) for the formal-verifier follow-up pass. §BC Impact: added v1.14 note confirming no BC or error-taxonomy changes are required (the fix is purely an internal step-ordering change; `E-MAINTENANCE-001`'s trigger condition was already accurate and remains unchanged). §Source/Origin and §References updated with Kani pass-1 provenance (D-1231). In-place v1.14 correction (unrelated stale citation found while restructuring §Decision 5a): "Abort gate-reset obligation" list item "Drain-timeout abort (step 3 above)" corrected to "(step 4 above)" — the drain-timeout abort has always been the step-4 reservation-poll-timeout path, not the step-3 DRAINING flip; this was a pre-existing stale citation unrelated to DEF-1, fixed in-scope per the mechanical-fix production-grade default. |
 | 1.13 | 2026-09-13 | architect | Fix-burst (adversary pass-10 accept-at-floor, ADR-owned findings). HIGH-1 (HIGH) — §5a step 3.5 self-heal predicate did not cover `txn=STAGING AND generation_id=null` crash sub-state: after v1.11 step-2.5 writes txn=STAGING(null) before DRAINING flip, a mid-drain coordinator crash leaves gate∈{DRAINING,LOCKED} + txn=STAGING(active, generation_id=null); step 3.5's "no active txn" check does not match → no self-heal → ordinary writers permanently blocked with E-MAINTENANCE-001. Stale v1.10 HIGH-1 test mandate said "txn is first written at drain step 7" — flatly contradicted by v1.11 step 2.5. Fixed: step 3.5 predicate extended to "gate∈{LOCKED,DRAINING} AND (no active txn OR txn=STAGING AND generation_id=null)"; new sub-step e null-generation branch: set txn→ABORTED(null_generation disposition; retained per GC policy), flip gate→OPEN, admit; EWOULDBLOCK → block E-MAINTENANCE-001 (no flip). Stale v1.10 HIGH-1 test mandate rewritten to reflect step-2.5 reality. New v1.13 HIGH-1 fault-injection test added. Applied same-burst note updated: self-heal now covers no-active-txn AND active-STAGING-with-null-generation-dead-coordinator. MED-1 (MED) — §Error Code Semantics EXPIRY_ABORT trigger enumerated only two arms (expired manifest; absent manifest at STAGING resume) but §4e F2 DISCARD also exits EXPIRY_ABORT for a valid manifest when discarding a null-generation STAGING record. Fixed: EXPIRY_ABORT trigger widened with third arm "OR pre-generation crash sub-state (txn=STAGING, generation_id=null) discarded despite valid manifest (v1.12 F2)"; PO handoff note added to widen error-taxonomy.md EXPIRY_ABORT trigger accordingly. MED-2 (MED) — three residual "unchanged from v1.2" dangling annotations: (a) §Downstream BC-1.18.010 Invariant-2 amendment said "Applied per v1.2 text (unchanged from v1.2)" with no inlined text; (b) §Decision 10 body said "CI parity test … unchanged from v1.2"; (c) §5c negative-tests preamble said "unchanged from v1.2 with addition". Fixed: (a) Invariant-2 amendment inlined: three-way parity text (config.arch_index_sha == manifest.approved_arch_index_sha == live ARCH-INDEX SHA, §Decision 10). (b) §Decision 10 annotation stripped. (c) §5c preamble annotation stripped. MED-3 (MED) — §4e disposition contradiction: F2 null-generation row said "DISCARD: delete the partial null txn record" (hard delete) but F4 GC policy said "ABORTED records MUST NOT be deleted before archival"; manifest-absent/expired row said ambiguous "discard partial txn record → ABORTED". Fixed: both rows now say "set txn state → ABORTED (retained per GC policy)"; F2 row adds null_generation disposition marker; GC policy is internally consistent; step 3.5 new branch uses same ABORTED+retain disposition. LOW-1 (LOW) — §Decision 7c step 1 did not state that generation_id is persisted ONLY AFTER gen-dir durable-create + fsync; entire §4e generation_id-partition is only sound under this ordering. Fixed: ordering invariant added to step 1; corruption case (generation_id set but gen dir absent/incomplete) defined as fail-closed EXPIRY_ABORT. LOW-2 (LOW) — ADR-052 changelog/§Source cites "ADR-051 v1.14" but ADR-051 frontmatter carries no version: field (body-changelog versioning). Fixed: clarifying note added in §References; follow-up action noted. §Verification Strategy subsection added to §Consequences: §Decision 4e/5a/7c concurrency state machine frozen for prose review after 10 adversary passes (D-386 Option C asymptotic floor); definitive formal verification deferred to cluster-5 implementation-phase Kani harnesses. §Source/Origin and §References updated with pass-10 (D-1230) provenance. |
 | 1.12 | 2026-09-13 | architect | Fix-burst (adversary pass-9 NOT-RATIFIABLE, ADR-owned findings). F2 (HIGH) — §4e null-STAGING crash sub-state: v1.11 drain step 2.5 writes txn=STAGING with generation_id=null before snapshot (step 5) and generation build (§7c step 1); a crash between step 2.5 and §7c step 1 leaves null-generation STAGING; §4e single STAGING row routes to EC-003 census but no generation exists and PC1 would compare against null source_body_row_sha256. Fixed: §4e STAGING row split by generation_id presence — (a) generation_id=null: DISCARD null txn, flip gate→OPEN, exit EXPIRY_ABORT; MUST NOT census a null generation; MUST NOT compare PC1 against null source_body_row_sha256; (b) generation_id set + gen dir present: existing EC-003 resume path. Exhaustiveness scope note updated. Fault-injection test mandate added. F3 (MED) — residual/inverted reader wording: §Downstream BC-1.18.010 §Reader Integration step 2 used existence-check "if absent" form (not open-with-ENOENT-fallback); §BC Impact v1.4 Invariant-3 Applied cell described "canonical-first / generation-fallback; ENOENT is not possible" (inverted/known-regression direction in an Applied column); BC-1.18.010 provenance labels stale at v1.8 after v1.11 MED-1 open-with-ENOENT-fallback handoff applied BC-1.18.010 v1.9. Fixed: §Downstream step 2 → open(gen-id/file); on ENOENT open(canonical/file); §BC Impact Invariant-3 Applied cell corrected to generation-first/open-with-ENOENT-fallback; v1.5 C-1 applied description updated; all BC-1.18.010 v1.8 provenance labels bumped to v1.9; existence-check language swept from §Downstream + §BC Impact. F4 (MED) — §4e ABORTED row absent + txn-selection ambiguity + terminal-txn GC unspecified: multiple txn-*.json files can coexist; no disambiguation rule; no GC/archival policy → unbounded file growth. Fixed: added explicit ABORTED row ("treated as no active txn; fresh activation permitted"); added activation_id-matching txn-selection rule below table (highest created_at fallback); added GC/archival policy (ABORTED/COMPLETED records archived to .factory/migration-audit/txn-archive/ at next migration completion audit burst; ABORTED records not deleted before archival). F6 (LOW) — §5c Branch 2 gate reconciliation acquired gate LOCK_EX without exclusive.lock flock-acquirable precondition, diverging from step 3.5 and crash-recovery paragraph parity. Fixed: Branch 2 gate reconciliation now first attempts flock(exclusive.lock, LOCK_EX\|LOCK_NB); on acquired proceeds with steps 1–4 + releases both locks; on EWOULDBLOCK logs warning and exits 0 ALREADY_MIGRATED without gate reconciliation. Fault-injection test mandate updated. §Source/Origin and §References updated with pass-9 (D-1229) provenance. |
 | 1.11 | 2026-09-13 | architect | Fix-burst (adversary pass-8 NOT-RATIFIABLE, ADR-owned findings). HIGH-1 (HIGH) — step 3.5 self-heal reopened gate during a LIVE drain: no flock check on exclusive.lock meant gate ∈ {DRAINING,LOCKED} + no-txn matched the reconciliation predicate even while a live coordinator held exclusive.lock mid-drain (between drain step 3 DRAINING flip and drain step 7 txn write), allowing a concurrent PreToolUse to flip gate→OPEN and admit itself — breaking BC-1.18.011 Precondition 6 writer-exclusion while the coordinator snapshots/stages. Fixed: step 3.5 now first attempts `flock(exclusive.lock, LOCK_EX\|LOCK_NB)` before any gate manipulation; on EWOULDBLOCK (live coordinator) block with E-MAINTENANCE-001 without flipping gate; on LOCK_EX acquired (no live coordinator) proceed with existing gate→OPEN flip; sub-steps relabeled a→h; flock-acquire → re-read-under-lock → flip → release discipline matches the existing "Crash-recovery gate reconciliation" paragraph (parity). Defense-in-depth: drain reordered — initial txn record (state=STAGING, source hashes null) written at new step 2.5 BEFORE DRAINING flip at step 3 — ensures gate=DRAINING in a live drain always implies txn=STAGING; step 7 updated to "update txn record with source hashes"; drain timeout abort (step 4) now also sets txn→ABORTED. Fault-injection test mandate added. §Files-to-Change executor.rs row swept. MED-1 (MED) — §Decision 7c reader protocol used existence-check-then-open (TOCTOU-racy): "If the file EXISTS at its generation-dir path, use it" — a rename gen→canonical between exists() and open() yields ENOENT. Fixed: reader protocol step 2a changed to open(gen-<id>/<file>); on ENOENT fall back to open(canonical). Race-free: files move one-directionally gen→canonical. "ENOENT is impossible" rationale updated. BC-impact handoff for PO: mirror open-with-ENOENT-fallback in BC-1.18.010 §Reader Integration step 2 AND BC-1.18.011 Invariant 3. MED-2 (MED) — §BC Impact BC-1.18.010 provenance tables still imperative after v1.10 LOW-2 partial sweep: "v1.3 change required"/"v1.4 change required" headers and imperative cells not swept. Fixed: both BC-1.18.010 table headers → "Applied (BC-1.18.010 v1.8)"; imperative cells converted to past-tense provenance. Sibling sweep complete. LOW-1 (LOW) — §Decision 9/10 headings, §Decision 1 body, and §5b body carried residual "unchanged from v1.2"/"as v1.2" self-references. Fixed: stripped from headings and body; "The same 4 guards as v1.2" → "The following 4 guards" in §5b. §Source/Origin and §References updated with pass-8 (D-1228) provenance. In-place v1.11 correction (sibling-sweep residue — MED-1 handoff blockquote): §BC Impact v1.7 Invariant 3 handoff blockquote updated from existence-check/generation-first framing to open-with-ENOENT-fallback wording per §Decision 7c step 2a; "ENOENT is impossible" claim replaced with accurate ENOENT-safe rationale (files move one-directionally gen→canonical via atomic rename(2); required file never absent from both paths simultaneously during COMMITTING window). In-place structural fix: escaped `LOCK_EX\|LOCK_NB` flag notation in §Files-to-Change executor.rs table cell (validate-table-cell-count hook). |
